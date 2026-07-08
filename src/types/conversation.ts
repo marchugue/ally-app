@@ -1,0 +1,46 @@
+export interface ConversationMemberProfile {
+  id: string;
+  full_name: string;
+  username: string;
+}
+
+export interface ConversationMembership {
+  conversation_id: string;
+  last_read_at: string | null;
+  icebreakers_enabled: boolean;
+  profiles: ConversationMemberProfile[];
+}
+
+export type BlockStatus = "none" | "blocked" | "blocked_by";
+
+export interface MessageReaction {
+  message_id: string;
+  user_id: string;
+  emoji: string;
+}
+
+export interface Message {
+  id: string;
+  conversation_id: string;
+  sender_id: string;
+  content: string;
+  image_url: string | null;
+  created_at: string;
+  reply_to_message_id: string | null;
+  replied_message: Message | null;
+  reactions: MessageReaction[];
+}
+
+export interface Conversation {
+  id: string;
+  updated_at: string;
+  messages: Message[];
+  conversation_members: unknown[];
+  blockStatus: BlockStatus;
+}
+
+export interface SendMessagePayload {
+  content: string;
+  imageUrl?: string | null;
+  replyToMessageId?: string | null;
+}

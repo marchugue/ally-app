@@ -1,0 +1,94 @@
+import "../global.css";
+
+import { useEffect } from "react";
+import { Stack, router, useSegments } from "expo-router";
+import { StatusBar } from "expo-status-bar";
+import { SafeAreaProvider } from "react-native-safe-area-context";
+import { GestureHandlerRootView } from "react-native-gesture-handler";
+import * as SplashScreen from "expo-splash-screen";
+import { useFonts } from "expo-font";
+import { View, ActivityIndicator } from "react-native";
+import { AuthProvider, useAuth } from "@/lib/auth/AuthContext";
+
+SplashScreen.preventAutoHideAsync();
+
+function RootLayoutNav() {
+  const { user, isLoading } = useAuth();
+  const segments = useSegments() as string[];
+
+
+  useEffect(() => {
+    if (isLoading) return;
+
+    const onAuthPages =
+    segments[0] === "pages" &&
+    (segments[1] === "landing" ||
+      segments[1] === "login" ||
+      segments[1] === "register" ||
+      segments[1] === "forgot-password" ||
+      segments.length === 1);
+
+    // If user lands at root with no auth: go to landing
+    const atRoot = segments.length === 0;
+
+    if (!user && !onAuthPages && !atRoot) {
+      router.replace("/pages/landing" as any);
+    } else if (!user && atRoot) {
+      router.replace("/pages/landing" as any);
+    } else if (user && onAuthPages) {
+      router.replace("/(tabs)");
+    }
+  }, [user, isLoading, segments]);
+
+  if (isLoading) {
+    return (
+      <View className="flex-1 bg-background items-center justify-center">
+        <ActivityIndicator color="#1A6B3C" />
+      </View>
+    );
+  }
+
+  return (
+    <Stack screenOptions={{ headerShown: false, animation: "fade",  }}>
+      {/* Auth / onboarding flow */}
+      <Stack.Screen name="pages/landing" options={{ headerShown: false }} />
+      <Stack.Screen name="pages/login" options={{ headerShown: false }} />
+      <Stack.Screen name="pages/register" options={{ headerShown: false }} />
+      <Stack.Screen name="pages/forgot-password" options={{ headerShown: false }} />
+
+      {/* Main app */}
+      <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+
+      {/* Modals */}
+      <Stack.Screen name="modal" options={{ presentation: "modal" }} />
+    </Stack>
+  );
+}
+
+export default function RootLayout() {
+  const [fontsLoaded] = useFonts({
+    // Add custom fonts here, e.g.:
+    // "Fraunces-Bold": require("../assets/fonts/Fraunces-Bold.ttf"),
+  });
+
+  useEffect(() => {
+    if (fontsLoaded) {
+      SplashScreen.hideAsync();
+    }
+  }, [fontsLoaded]);
+
+  if (!fontsLoaded) {
+    return null;
+  }
+
+  return (
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <SafeAreaProvider>
+        <StatusBar style="auto" />
+        <AuthProvider>
+          <RootLayoutNav />
+        </AuthProvider>
+      </SafeAreaProvider>
+    </GestureHandlerRootView>
+  );
+}
