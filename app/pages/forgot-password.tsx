@@ -12,7 +12,7 @@ import {
 import { router, useLocalSearchParams } from "expo-router";
 import { Mail, Lock, Eye, EyeOff, CheckCircle, ArrowLeft } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Button } from "../components/Button";
+import { Button } from "@/components/Button";
 import { apiRequest } from "@/lib/api/client";
 
 export default function ForgotPasswordScreen() {

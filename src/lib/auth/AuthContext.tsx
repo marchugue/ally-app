@@ -2,6 +2,7 @@ import { createContext, useContext, useEffect, useState, ReactNode } from "react
 import * as SecureStore from "expo-secure-store";
 import * as authApi from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/apiError";
+import { disconnectSocket, initSocket } from "@/lib/socket";
 import type { AuthSession, AuthUser, RegisterPayload } from "@/types/auth";
 
 const ACCESS_TOKEN_KEY = "ally_access_token";
@@ -51,14 +52,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function applySession(session: AuthSession) {
     setUser(session.user);
-    setAccessToken(session.accessToken);
-    await SecureStore.setItemAsync(ACCESS_TOKEN_KEY, session.accessToken);
-    await SecureStore.setItemAsync(REFRESH_TOKEN_KEY, session.refreshToken);
+    setAccessToken(session.accessToken ?? null);
+    if (session.accessToken) {
+      await SecureStore.setItemAsync(ACCESS_TOKEN_KEY, session.accessToken);
+      initSocket(session.accessToken);
+    } else {
+      await SecureStore.deleteItemAsync(ACCESS_TOKEN_KEY);
+      disconnectSocket();
+    }
+    if (session.refreshToken) {
+      await SecureStore.setItemAsync(REFRESH_TOKEN_KEY, session.refreshToken);
+    } else {
+      await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);
+    }
   }
 
   async function clearStoredTokens() {
-    await SecureStore.deleteItemAsync(ACCESS_TOKEN_KEY);
-    await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);
+    try {
+      await SecureStore.deleteItemAsync(ACCESS_TOKEN_KEY);
+    } catch {}
+    try {
+      await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);
+    } catch {}
+    disconnectSocket();
     setUser(null);
     setAccessToken(null);
   }

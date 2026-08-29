@@ -6,7 +6,6 @@ import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import * as SplashScreen from "expo-splash-screen";
-import { useFonts } from "expo-font";
 import { View, ActivityIndicator } from "react-native";
 import { AuthProvider, useAuth } from "@/lib/auth/AuthContext";
 
@@ -59,16 +58,53 @@ function RootLayoutNav() {
       {/* Main app */}
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
 
+      {/* App screens */}
+      <Stack.Screen name="pages/conversation" options={{ headerShown: false, animation: "slide_from_right" }} />
+      <Stack.Screen name="pages/post-detail" options={{ headerShown: false, animation: "slide_from_right" }} />
+      <Stack.Screen name="pages/requests" options={{ headerShown: false, animation: "slide_from_right" }} />
+      <Stack.Screen name="pages/settings" options={{ headerShown: false, animation: "slide_from_right" }} />
+      <Stack.Screen name="pages/edit-profile" options={{ headerShown: false, animation: "slide_from_right" }} />
+      <Stack.Screen name="pages/blocked-users" options={{ headerShown: false, animation: "slide_from_right" }} />
+
       {/* Modals */}
       <Stack.Screen name="modal" options={{ presentation: "modal" }} />
     </Stack>
   );
 }
 
+import {
+  useFonts,
+  Fraunces_400Regular,
+  Fraunces_600SemiBold,
+  Fraunces_700Bold,
+  Fraunces_800ExtraBold,
+} from "@expo-google-fonts/fraunces";
+import {
+  PlusJakartaSans_400Regular,
+  PlusJakartaSans_500Medium,
+  PlusJakartaSans_600SemiBold,
+  PlusJakartaSans_700Bold,
+} from "@expo-google-fonts/plus-jakarta-sans";
+
 export default function RootLayout() {
   const [fontsLoaded] = useFonts({
-    // Add custom fonts here, e.g.:
-    // "Fraunces-Bold": require("../assets/fonts/Fraunces-Bold.ttf"),
+    Fraunces_400Regular,
+    Fraunces_600SemiBold,
+    Fraunces_700Bold,
+    Fraunces_800ExtraBold,
+    PlusJakartaSans_400Regular,
+    PlusJakartaSans_500Medium,
+    PlusJakartaSans_600SemiBold,
+    PlusJakartaSans_700Bold,
+
+    // Convenient Aliases
+    Fraunces: Fraunces_700Bold,
+    "Fraunces-Bold": Fraunces_700Bold,
+    "Fraunces-ExtraBold": Fraunces_800ExtraBold,
+    "Fraunces-SemiBold": Fraunces_600SemiBold,
+    "Fraunces-Regular": Fraunces_400Regular,
+    PlusJakartaSans: PlusJakartaSans_400Regular,
+    "PlusJakartaSans-Bold": PlusJakartaSans_700Bold,
   });
 
   useEffect(() => {

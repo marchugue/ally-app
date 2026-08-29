@@ -33,7 +33,9 @@ module.exports = {
         success: "#16A34A",
       },
       fontFamily: {
-        sans: ["System"],          // keep your existing font setting
+        sans: ["PlusJakartaSans_400Regular", "System"],
+        fraunces: ["Fraunces_700Bold"],
+        jakarta: ["PlusJakartaSans_400Regular"],
       },
     },
   },

@@ -1,19 +1,19 @@
 import { Tabs } from "expo-router";
 import {
   Home,
-  Search,
-  PlusSquare,
+  Compass,
+  MessageCircle,
   Bell,
   User,
 } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import TabIcon from "../components/navigation/TabIcon";
+import TabIcon from "@/components/navigation/TabIcon";
 import { TAB_THEME } from "@/constants/tabBarTheme";
 
 const tabs = [
   { name: "index",         title: "Home",         icon: Home },
-  { name: "search",        title: "Search",        icon: Search },
-  { name: "create",        title: "Create",        icon: PlusSquare },
+  { name: "discover",      title: "Discover",     icon: Compass },
+  { name: "messages",      title: "Messages",     icon: MessageCircle },
   { name: "notifications", title: "Alerts",        icon: Bell },
   { name: "profile",       title: "Profile",       icon: User },
 ];

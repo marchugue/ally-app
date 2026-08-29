@@ -14,14 +14,14 @@ import { router } from "expo-router";
 import { ArrowLeft, ArrowRight } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth, ApiError } from "@/lib/auth/AuthContext";
-import { DiagonalStripes } from "../components/DiagonalStripes";
-import { SlideIn } from "../components/SlideIn";
-import { Button } from "../components/Button";
+import { DiagonalStripes } from "@/components/DiagonalStripes";
+import { SlideIn } from "@/components/SlideIn";
+import { Button } from "@/components/Button";
 import { validateEmail } from "@/lib/validator/email";
-import EmailInput from "../components/buttons/email";
-import PasswordInput from "../components/buttons/password";
-import AlertMessage from "../components/AlertMessage";
-import LoadingOverlay from "../components/LoadingOverlay";
+import EmailInput from "@/components/buttons/email";
+import PasswordInput from "@/components/buttons/password";
+import AlertMessage from "@/components/AlertMessage";
+import LoadingOverlay from "@/components/LoadingOverlay";
 
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();

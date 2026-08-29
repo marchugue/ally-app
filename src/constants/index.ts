@@ -25,4 +25,4 @@ export const COLORS = {
 } as const;
 
 export const API_BASE_URL =
-  process.env.EXPO_PUBLIC_API_URL ?? "http://192.168.254.109:3001";
+  process.env.EXPO_PUBLIC_API_URL ?? "https://api.ally-jis.xyz";

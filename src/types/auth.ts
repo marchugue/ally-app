@@ -19,8 +19,8 @@ export interface AuthUser {
 export interface AuthSession {
   user: AuthUser;
   accessToken: string;
-  refreshToken: string;
-  expiresAt: number;
+  refreshToken?: string;
+  expiresAt?: number;
 }
 
 export interface LoginPayload {

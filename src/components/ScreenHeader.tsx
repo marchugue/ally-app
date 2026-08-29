@@ -5,9 +5,10 @@ interface ScreenHeaderProps {
   title: string;
   subtitle?: string;
   right?: React.ReactNode;
+  hideAccent?: boolean;
 }
 
-export function ScreenHeader({ title, subtitle, right }: ScreenHeaderProps) {
+export function ScreenHeader({ title, subtitle, right, hideAccent = false }: ScreenHeaderProps) {
   const insets = useSafeAreaInsets();
 
   return (
@@ -17,25 +18,26 @@ export function ScreenHeader({ title, subtitle, right }: ScreenHeaderProps) {
     >
       <View>
         <View className="flex-row items-center gap-1">
-          {/* Amber accent mark */}
-          <View
-            style={{
-              width: 4,
-              height: 20,
-              borderRadius: 2,
-              backgroundColor: "#E8A838",
-              marginRight: 6,
-            }}
-          />
+          {!hideAccent && (
+            <View
+              style={{
+                width: 4,
+                height: 20,
+                borderRadius: 2,
+                backgroundColor: "#E8A838",
+                marginRight: 6,
+              }}
+            />
+          )}
           <Text
-            className="text-textPrimary text-2xl font-bold"
-            style={{ letterSpacing: -0.5 }}
+            className="text-textPrimary text-2xl"
+            style={{ letterSpacing: -0.5, fontFamily: "Fraunces_700Bold" }}
           >
             {title}
           </Text>
         </View>
         {subtitle ? (
-          <Text className="text-textSecondary text-xs mt-0.5 ml-[10px]">
+          <Text className={`text-textSecondary text-xs mt-0.5 ${!hideAccent ? "ml-[10px]" : ""}`}>
             {subtitle}
           </Text>
         ) : null}

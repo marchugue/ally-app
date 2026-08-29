@@ -1,11 +1,11 @@
 {
   "expo": {
-    "name": "rn-template",
-    "slug": "rn-template",
+    "name": "Ally",
+    "slug": "ally",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/logo.png",
-    "scheme": "rntemplate",
+    "scheme": "ally",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
     "splash": {
@@ -15,7 +15,11 @@
     },
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.yourcompany.rntemplate"
+      "bundleIdentifier": "xyz.allyjis.app",
+      "associatedDomains": [
+        "applinks:ally-jis.xyz",
+        "applinks:www.ally-jis.xyz"
+      ]
     },
     "android": {
       "adaptiveIcon": {
@@ -23,7 +27,29 @@
         "backgroundColor": "#0B0B0F",
         "softwareKeyboardLayoutMode": "resize"
       },
-      "package": "com.yourcompany.rntemplate"
+      "package": "xyz.allyjis.app",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "autoVerify": true,
+          "data": [
+            {
+              "scheme": "https",
+              "host": "ally-jis.xyz",
+              "pathPrefix": "/"
+            },
+            {
+              "scheme": "https",
+              "host": "www.ally-jis.xyz",
+              "pathPrefix": "/"
+            }
+          ],
+          "category": [
+            "BROWSABLE",
+            "DEFAULT"
+          ]
+        }
+      ]
     },
     "web": {
       "bundler": "metro",

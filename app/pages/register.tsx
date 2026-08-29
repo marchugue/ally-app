@@ -38,16 +38,16 @@ import {
 } from "@/lib/validator";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth, ApiError } from "@/lib/auth/AuthContext";
-import { DiagonalStripes } from "../components/DiagonalStripes";
-import { SlideIn } from "../components/SlideIn";
-import { Button } from "../components/Button";
+import { DiagonalStripes } from "@/components/DiagonalStripes";
+import { SlideIn } from "@/components/SlideIn";
+import { Button } from "@/components/Button";
 import { buildRegisterPayload } from "@/lib/validator/buildRegisterPayload";
-import  Input  from "../components/buttons/button";
-import EmailInput from "@app/components/buttons/email";
-import PasswordInput from "@app/components/buttons/password";
-import AlertMessage from "../components/AlertMessage";
-import LoadingOverlay from "../components/LoadingOverlay";
-import AnimatedBottomSheet from "../components/AnimatedBottomSheet"
+import Input from "@/components/buttons/button";
+import EmailInput from "@/components/buttons/email";
+import PasswordInput from "@/components/buttons/password";
+import AlertMessage from "@/components/AlertMessage";
+import LoadingOverlay from "@/components/LoadingOverlay";
+import AnimatedBottomSheet from "@/components/AnimatedBottomSheet";
 
 
 // ── Constants ────────────────────────────────────────────────────────────────

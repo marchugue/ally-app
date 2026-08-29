@@ -80,3 +80,30 @@ export function setIcebreakers(id: string, enabled: boolean, accessToken: string
 export function getIcebreakers(id: string, accessToken: string): Promise<{ data: boolean }> {
   return apiRequest<{ data: boolean }>(`/conversations/${id}/icebreakers`, { accessToken });
 }
+
+/** Hide from my chat list only — backend: DELETE /conversations/:id */
+export function hideConversation(id: string, accessToken: string): Promise<void> {
+  return apiRequest<void>(`/conversations/${id}`, {
+    method: "DELETE",
+    accessToken,
+    noContent: true,
+  });
+}
+
+/** Permanently clear message history for caller — backend: POST /conversations/:id/clear */
+export function clearConversation(id: string, accessToken: string): Promise<void> {
+  return apiRequest<void>(`/conversations/${id}/clear`, {
+    method: "POST",
+    accessToken,
+    noContent: true,
+  });
+}
+
+/** Undo a hide — backend: POST /conversations/:id/unhide */
+export function unhideConversation(id: string, accessToken: string): Promise<void> {
+  return apiRequest<void>(`/conversations/${id}/unhide`, {
+    method: "POST",
+    accessToken,
+    noContent: true,
+  });
+}

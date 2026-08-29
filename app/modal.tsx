@@ -1,6 +1,6 @@
 import { View, Text } from "react-native";
 import { router } from "expo-router";
-import { Button } from "./components/Button";
+import { Button } from "@/components/Button";
 
 export default function Modal() {
   return (
