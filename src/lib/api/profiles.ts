@@ -32,3 +32,26 @@ export function listProfiles(accessToken: string, excludeId?: string): Promise<P
 export function getProfileById(userId: string, accessToken: string): Promise<Profile> {
   return apiRequest<Profile>(`/profiles/${userId}`, { accessToken });
 }
+
+export interface ProfileRelationshipSummary {
+  allyStatus: "none" | "pending_sent" | "pending_received" | "accepted";
+  isFollowing: boolean;
+  isFollowedBy: boolean;
+  followersCount: number;
+  followingCount: number;
+  alliesCount: number;
+  mutualAlliesCount: number;
+  mutualFollowersCount: number;
+}
+
+export function getProfileRelationship(userId: string, accessToken: string): Promise<ProfileRelationshipSummary> {
+  return apiRequest<ProfileRelationshipSummary>(`/profiles/${userId}/relationship`, { accessToken });
+}
+
+export function followUser(userId: string, accessToken: string): Promise<{ following: boolean }> {
+  return apiRequest<{ following: boolean }>(`/follow/${userId}`, { method: "POST", accessToken });
+}
+
+export function unfollowUser(userId: string, accessToken: string): Promise<{ following: boolean }> {
+  return apiRequest<{ following: boolean }>(`/follow/${userId}`, { method: "DELETE", accessToken });
+}

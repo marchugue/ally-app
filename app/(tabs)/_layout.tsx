@@ -20,11 +20,14 @@ const tabs = [
 
 export default function TabsLayout() {
   const insets = useSafeAreaInsets();
+  const bottomInset = insets.bottom > 0 ? insets.bottom : 8;
+  const barHeight = 58 + bottomInset;
 
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
+        tabBarShowLabel: false,
 
         tabBarActiveTintColor: TAB_THEME.activeColor,
         tabBarInactiveTintColor: TAB_THEME.inactiveColor,
@@ -33,9 +36,9 @@ export default function TabsLayout() {
           backgroundColor: TAB_THEME.backgroundColor,
           borderTopColor: TAB_THEME.borderColor,
           borderTopWidth: 1,
-          height: TAB_THEME.baseHeight + insets.bottom + TAB_THEME.extraBottomSpace,
-          paddingTop: 10,
-          paddingBottom: insets.bottom + TAB_THEME.extraBottomSpace,
+          height: barHeight,
+          paddingTop: 6,
+          paddingBottom: bottomInset,
           // Subtle shadow instead of hard border
           shadowColor: "#000",
           shadowOffset: { width: 0, height: -2 },
@@ -44,10 +47,9 @@ export default function TabsLayout() {
           elevation: 12,
         },
 
-        tabBarLabelStyle: {
-          fontSize: TAB_THEME.labelFontSize,
-          fontWeight: "500",
-          marginTop: 2,
+        tabBarItemStyle: {
+          justifyContent: "center",
+          alignItems: "center",
         },
       }}
     >
@@ -60,10 +62,10 @@ export default function TabsLayout() {
             tabBarIcon: ({ color, size, focused }) => (
               <TabIcon
                 Icon={tab.icon}
+                label={tab.title}
                 color={color}
                 size={size}
                 focused={focused}
-                indicatorColor={TAB_THEME.indicatorColor}
               />
             ),
           }}

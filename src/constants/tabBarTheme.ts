@@ -5,10 +5,10 @@ export const TAB_THEME = {
   backgroundColor: "#FFFFFF",
   borderColor: "#E8E6E1",
 
-  baseHeight: 60,
+  baseHeight: 57,
   extraBottomSpace: 8,
 
-  labelFontSize: 10,
+  labelFontSize: 9,
 
   // top-indicator rectangle
   indicatorColor: "#1A6B3C",

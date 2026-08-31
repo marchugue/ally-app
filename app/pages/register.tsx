@@ -9,7 +9,9 @@ import {
   Platform,
   StatusBar,
   Image,
+  Keyboard,
 } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
 import {
   ArrowLeft,
@@ -26,6 +28,7 @@ import {
   Plus,
   X,
   ChevronDown,
+  Users,
 } from "lucide-react-native";
 import {
   validateUsername,
@@ -87,7 +90,7 @@ const DEPARTMENTS: Record<string, string[]> = {
   ],
 };
 
-const YEAR_LEVELS = ["1st Year", "2nd Year", "3rd Year", "4th Year", "5th Year"];
+const YEAR_LEVELS = ["1st Year", "2nd Year", "3rd Year", "4th Year"];
 
 const INTERESTS_BY_CATEGORY: Record<string, string[]> = {
   "Technology": ["Coding", "AI & ML", "Cybersecurity", "Web Dev", "Mobile Dev", "Gaming"],
@@ -110,23 +113,32 @@ const ORGANIZATIONS = [
   "Environmental Club",
 ];
 
-const TERMS_TEXT = `Welcome to Ally-jis! These are placeholder Terms & Conditions.
+const TERMS_TEXT = `Welcome to Ally-jis!
 
-By using this platform, you agree to use Ally-jis respectfully and only for its intended purpose of connecting with fellow CHMSU Alijis Campus students.
+By using this platform, you agree to comply with our community standards and terms of use:
 
-This is sample text. Replace this with your actual Terms & Conditions before launch.`;
+1. Campus Exclusive: Ally-jis is built exclusively for CHMSU Alijis Campus students.
+2. Authenticity: Provide true profile information (department, course, and year level). Impersonation of students or staff is prohibited.
+3. Conduct: Treat fellow students with respect. Harassment, bullying, hate speech, or inappropriate media uploads will result in account suspension.
+4. Privacy & Safety: Direct messaging requires mutual connection approval.
 
-const PRIVACY_TEXT = `This is a placeholder Privacy Policy for Ally-jis.
+Official Terms on Website: https://ally-jis.xyz/terms`;
 
-We collect basic profile information (username, email, course, interests) to help you connect with other students on campus.
+const PRIVACY_TEXT = `Privacy Policy for Ally-jis:
 
-This is sample text. Replace this with your actual Privacy Policy before launch.`;
+1. Data Collection: We collect basic profile details (username, institutional email, course, year level, profile avatar, and bio) and interest selections.
+2. Purpose: Your data is used exclusively to calculate peer match scores and facilitate campus connections.
+3. Data Safety: We never sell or share your personal data with third-party advertisers. Your information stays inside the CHMSU community.
+4. Account Rights: You can edit your profile details or request account deletion at any time.
+
+Official Policy on Website: https://ally-jis.xyz/privacy`;
 
 const STEPS = [
   { num: 1, label: "Basic Info",    icon: User,          hint: "Your identity on the platform" },
   { num: 2, label: "Academic",      icon: GraduationCap, hint: "Your course & year at CHMSU" },
-  { num: 3, label: "Interests",     icon: Sparkles,       hint: "Powers your matches!" },
-  { num: 4, label: "Avatar & Bio",  icon: FileText,       hint: "Pick your emoji & intro" },
+  { num: 3, label: "Organizations", icon: Users,         hint: "Select your student organizations (optional)" },
+  { num: 4, label: "Interests",     icon: Sparkles,      hint: "Powers your matches!" },
+  { num: 5, label: "Avatar & Bio",  icon: FileText,      hint: "Pick your emoji & intro" },
 ];
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -172,6 +184,32 @@ export default function RegisterScreen() {
   // dept picker modal
   const [showDeptPicker, setShowDeptPicker] = useState(false);
   const [showCoursePicker, setShowCoursePicker] = useState(false);
+
+  // Keyboard height & visibility for hugging the action button directly to keyboard top
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+
+  useEffect(() => {
+    const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
+    const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
+
+    const showSub = Keyboard.addListener(showEvent, (e) => {
+      setIsKeyboardVisible(true);
+      if (Platform.OS === "android") {
+        setKeyboardHeight(e.endCoordinates.height);
+      }
+    });
+
+    const hideSub = Keyboard.addListener(hideEvent, () => {
+      setIsKeyboardVisible(false);
+      setKeyboardHeight(0);
+    });
+
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, []);
 
   // Keeps the modal's title/body showing the right content while it
   // fades out, instead of flashing to the other one as activeModal → null.
@@ -260,7 +298,7 @@ export default function RegisterScreen() {
       if (yearLevelError) errs.yearLevel = yearLevelError;
     }
 
-    if (step === 3) {
+    if (step === 4) {
       const interestsError = validateInterests(form.interests);
       if (interestsError) errs.interests = interestsError;
     }
@@ -274,7 +312,7 @@ export default function RegisterScreen() {
     if (!validate()) return;
     setSubmitError("");
 
-    if (step === 4) {
+    if (step === 5) {
       if (!agreedToTerms) {
         setTermsError("You must agree to the Terms & Conditions to continue.");
         return;
@@ -395,98 +433,112 @@ export default function RegisterScreen() {
   const StepIcon = STEPS[step - 1].icon;
 
   return (
-    <View style={{ flex: 1, backgroundColor: "#1A6B3C" }}>
-      <StatusBar barStyle="light-content" />
-
-      <View style={{ paddingTop: insets.top + 12, paddingHorizontal: 24, paddingBottom: 90, overflow: "hidden" }}>
-        <DiagonalStripes />
-
-        <Pressable
-          onPress={handleBack}
-          disabled={isSubmitting}
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 6,
-            alignSelf: "flex-start",
-            paddingVertical: 8,
-            opacity: isSubmitting ? 0.4 : 1,
-            marginBottom: 24,
-          }}
-        >
-          <ArrowLeft size={18} color="#FFFFFF" />
-          <Text style={{ color: "#FFFFFF", fontSize: 14, fontWeight: "500" }}>Back</Text>
-        </Pressable>
-
-        <SlideIn delay={0} style={{ alignItems: "center" }}>
-          <View style={{ width: 60, height: 60, borderRadius: 16, overflow: "hidden", marginBottom: 12 }}>
-            <Image
-              source={require("../../assets/images/logo.png")}
-              style={{ width: "100%", height: "100%" }}
-              resizeMode="cover"
-            />
-          </View>
-          <Text style={{ fontSize: 20, fontWeight: "800", color: "#FFFFFF", letterSpacing: -0.5 }}>
-            Ally<Text style={{ color: "#E8A838" }}>-jis</Text>
-          </Text>
-        </SlideIn>
-      </View>
+    <LinearGradient
+      style={{ flex: 1 }}
+      colors={["#C2E9CE", "#F5EFE0", "#FCDCC5"]}
+      start={{ x: 0, y: 0.5 }}
+      end={{ x: 1, y: 0.5 }}
+    >
+      <StatusBar barStyle="dark-content" />
 
       <KeyboardAvoidingView
-        style={{ flex: 1 }}
+        style={{
+          flex: 1,
+          paddingBottom: Platform.OS === "android" ? keyboardHeight : 0,
+        }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <SlideIn delay={120} distance={30} style={{ flex: 1, marginTop: -60 }}>
-          <View
-            style={{
-              flex: 1,
-              backgroundColor: "#FDFCFB",
-              borderTopLeftRadius: 32,
-              borderTopRightRadius: 32,
-            }}
-          >
-            {/* ── Fixed header: step indicators, progress, title/hint ── */}
-            <View style={{ paddingHorizontal: 28, paddingTop: 28 }}>
-              <View style={{ flexDirection: "row", alignItems: "center", marginBottom: 10 }}>
-                {STEPS.map(({ num }, i) => (
-                  <View key={num} style={{ flexDirection: "row", alignItems: "center", flex: i < STEPS.length - 1 ? 1 : 0 }}>
-                    <View
-                      style={{
-                        width: 30, height: 30, borderRadius: 15,
-                        alignItems: "center", justifyContent: "center",
-                        backgroundColor: step >= num ? "#1A6B3C" : "#F0EDE8",
-                      }}
-                    >
-                      {step > num
-                        ? <Check size={13} color="#fff" />
-                        : <Text style={{ fontSize: 12, fontWeight: "700", color: step === num ? "#fff" : "#9CA3AF" }}>{num}</Text>
-                      }
-                    </View>
-                    {i < STEPS.length - 1 && (
-                      <View style={{ flex: 1, height: 2, marginHorizontal: 4, backgroundColor: step > num ? "#1A6B3C" : "#E2DED7", borderRadius: 1 }} />
+        <View style={{ flex: 1, paddingTop: insets.top + 12 }}>
+          {/* ── Fixed header: step indicators, progress, title/hint ── */}
+          <View style={{ paddingHorizontal: 28 }}>
+            {/* Top Navigation Row (Back button) */}
+            <View style={{ height: 32, justifyContent: "center", marginBottom: 8 }}>
+              <Pressable
+                onPress={handleBack}
+                disabled={isSubmitting}
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 6,
+                  alignSelf: "flex-start",
+                  paddingVertical: 4,
+                  opacity: isSubmitting ? 0.4 : 1,
+                }}
+              >
+                <ArrowLeft size={18} color="#111827" />
+                <Text style={{ color: "#111827", fontSize: 14, fontWeight: "500" }}>Back</Text>
+              </Pressable>
+            </View>
+
+            {/* Progress Level Indicators */}
+            <View style={{ position: "relative", marginBottom: 16, justifyContent: "center" }}>
+              {/* Background Track Line */}
+              <View
+                style={{
+                  position: "absolute",
+                  left: 14,
+                  right: 14,
+                  height: 2,
+                  backgroundColor: "#E2DED7",
+                  top: 13,
+                }}
+              />
+              {/* Active Progress Fill Line */}
+              <View
+                style={{
+                  position: "absolute",
+                  left: 14,
+                  width: `${((step - 1) / (STEPS.length - 1)) * 100}%`,
+                  height: 2,
+                  backgroundColor: "#1A6B3C",
+                  top: 13,
+                }}
+              />
+
+              {/* Step Circles */}
+              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                {STEPS.map(({ num }) => (
+                  <View
+                    key={num}
+                    style={{
+                      width: 28,
+                      height: 28,
+                      borderRadius: 14,
+                      alignItems: "center",
+                      justifyContent: "center",
+                      backgroundColor: step >= num ? "#1A6B3C" : "#F0EDE8",
+                    }}
+                  >
+                    {step > num ? (
+                      <Check size={12} color="#fff" />
+                    ) : (
+                      <Text style={{ fontSize: 11, fontWeight: "700", color: step === num ? "#fff" : "#9CA3AF" }}>
+                        {num}
+                      </Text>
                     )}
                   </View>
                 ))}
               </View>
+            </View>
 
-              {submitError ? (
-                <View style={{ marginBottom: 20 }}>
-                  <AlertMessage message={submitError} type="error" />
-                </View>
-              ) : null}
-
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 4 }}>
-                <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: "#1A6B3C12", alignItems: "center", justifyContent: "center" }}>
-                  <StepIcon size={16} color="#1A6B3C" />
-                </View>
-                <Text style={{ fontSize: 22, fontWeight: "800", color: "#1A6B3C", letterSpacing: -0.5 }}>
-                  {STEPS[step - 1].label}
-                </Text>
+            {submitError ? (
+              <View style={{ marginBottom: 16 }}>
+                <AlertMessage message={submitError} type="error" />
               </View>
-              <Text style={{ color: "#6B7280", fontSize: 14, marginBottom: 24 }}>
-                {STEPS[step - 1].hint}
+            ) : null}
+
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 4 }}>
+              <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: "#1A6B3C12", alignItems: "center", justifyContent: "center" }}>
+                <StepIcon size={16} color="#1A6B3C" />
+              </View>
+              <Text style={{ fontSize: 22, fontWeight: "800", color: "#1A6B3C", letterSpacing: -0.5 }}>
+                {STEPS[step - 1].label}
               </Text>
             </View>
+            <Text style={{ color: "#6B7280", fontSize: 14, marginBottom: 16 }}>
+              {STEPS[step - 1].hint}
+            </Text>
+          </View>
 
             {/* ── Scrollable: step content + footer ── */}
             <ScrollView
@@ -580,12 +632,16 @@ export default function RegisterScreen() {
                     ))}
                   </View>
                   <FieldError msg={errors.yearLevel} />
+                </View>
+              )}
 
-                  <Text style={[labelStyle, { marginTop: 22 }]}>
-                    Student Organizations{" "}
-                    <Text style={{ color: "#9CA3AF", fontWeight: "400" }}>(optional)</Text>
+              {/* ── STEP 3: Organizations ── */}
+              {step === 3 && (
+                <View>
+                  <Text style={{ fontSize: 13, color: "#6B7280", marginBottom: 16 }}>
+                    Select any student organizations you belong to. You can skip this step if none.
                   </Text>
-                  <View style={{ gap: 8, marginTop: 8 }}>
+                  <View style={{ gap: 8 }}>
                     {ORGANIZATIONS.map(org => {
                       const selected = form.organizations.includes(org);
                       return (
@@ -621,8 +677,8 @@ export default function RegisterScreen() {
                 </View>
               )}
 
-              {/* ── STEP 3: Interests ── */}
-              {step === 3 && (
+              {/* ── STEP 4: Interests ── */}
+              {step === 4 && (
                 <View>
                   <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
                     <Text style={{ fontSize: 13, color: "#6B7280" }}>
@@ -752,8 +808,8 @@ export default function RegisterScreen() {
                 </View>
               )}
 
-              {/* ── STEP 4: Avatar & Bio ── */}
-              {step === 4 && (
+              {/* ── STEP 5: Avatar & Bio ── */}
+              {step === 5 && (
                 <View>
                   <Text style={[labelStyle, { marginBottom: 10 }]}>Select Avatar</Text>
                   <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -4, marginBottom: 22 }}>
@@ -859,97 +915,102 @@ export default function RegisterScreen() {
                 </View>
               )}
 
-              {/* ── Footer buttons ── */}
-              <View style={{ flexDirection: "row", gap: 12, marginTop: 32 }}>
-                <Button
-                  label="Back"
-                  variant="secondary"
-                  size="lg"
-                  onPress={handleBack}
-                  disabled={isSubmitting}
-                />
-                <Button
-                  label={isSubmitting ? "Processing…" : step === 4 ? "Complete Profile" : "Continue"}
-                  variant="primary"
-                  pill
-                  size="lg"
-                  disabled={isSubmitting || (step === 4 && !agreedToTerms)}
-                  icon={step === 4 ? <Check size={16} color="#FFFFFF" /> : <ArrowRight size={16} color="#FFFFFF" />}
-                  onPress={handleNext}
-                  className="flex-1"
-                />
-              </View>
-              <View style={{ marginTop: "auto", marginBottom: -24 }}>
-                <View style={{ flexDirection: "row", justifyContent: "center", marginTop: 24, gap: 4 }}>
-                  <Text style={{ fontSize: 13, color: "#6B7280" }}>Already have an account?</Text>
-                  <Pressable onPress={() => router.replace("/pages/login")}>
-                    <Text style={{ fontSize: 13, fontWeight: "700", color: "#1A6B3C" }}>Sign in</Text>
-                  </Pressable>
-                </View>
-
-                <Text style={{ textAlign: "center", fontSize: 11, color: "#9CA3AF", marginTop: 10, lineHeight: 16 }}>
-                  For CHMSU Alijis Campus students only
-                </Text>
-              </View>
             </ScrollView>
+
+            {/* ── Fixed Footer (Non-scrollable, hugs keyboard when inputting) ── */}
+            <View
+              style={{
+                paddingHorizontal: 28,
+                paddingTop: 10,
+                paddingBottom: isKeyboardVisible || keyboardHeight > 0 ? 10 : Math.max(insets.bottom + 12, 16),
+                borderTopWidth: 1,
+                borderTopColor: "rgba(0,0,0,0.05)",
+                backgroundColor: "transparent",
+              }}
+            >
+              <Button
+                label={isSubmitting ? "Processing…" : step === 5 ? "Complete Profile" : "Continue"}
+                variant="primary"
+                pill
+                size="lg"
+                disabled={isSubmitting || (step === 5 && !agreedToTerms)}
+                icon={step === 5 ? <Check size={16} color="#FFFFFF" /> : <ArrowRight size={16} color="#FFFFFF" />}
+                onPress={handleNext}
+                className="w-full"
+              />
+
+              {!isKeyboardVisible && (
+                <>
+                  <View style={{ flexDirection: "row", justifyContent: "center", marginTop: 14, gap: 4 }}>
+                    <Text style={{ fontSize: 13, color: "#6B7280" }}>Already have an account?</Text>
+                    <Pressable onPress={() => router.replace("/pages/login")}>
+                      <Text style={{ fontSize: 13, fontWeight: "700", color: "#1A6B3C" }}>Sign in</Text>
+                    </Pressable>
+                  </View>
+
+                  <Text style={{ textAlign: "center", fontSize: 11, color: "#9CA3AF", marginTop: 6, lineHeight: 16 }}>
+                    For CHMSU Alijis Campus students only
+                  </Text>
+                </>
+              )}
+            </View>
           </View>
-        </SlideIn>
-      </KeyboardAvoidingView>
+        </KeyboardAvoidingView>
 
-      {/* ── Department picker modal ── */}
-      <PickerModal
-        visible={showDeptPicker}
-        title="Select Department"
-        options={Object.keys(DEPARTMENTS)}
-        selected={form.department}
-        onSelect={v => { set("department", v); set("course", ""); setShowDeptPicker(false); }}
-        onClose={() => setShowDeptPicker(false)}
-      />
+        {/* ── Department picker modal ── */}
+        <PickerModal
+          visible={showDeptPicker}
+          title="Select Department"
+          options={Object.keys(DEPARTMENTS)}
+          selected={form.department}
+          onSelect={v => { set("department", v); set("course", ""); setShowDeptPicker(false); }}
+          onClose={() => setShowDeptPicker(false)}
+        />
 
-      {/* ── Course picker modal ── */}
-      <PickerModal
-        visible={showCoursePicker}
-        title="Select Course"
-        options={availableCourses}
-        selected={form.course}
-        onSelect={v => { set("course", v); setShowCoursePicker(false); }}
-        onClose={() => setShowCoursePicker(false)}
-      />
+        {/* ── Course picker modal ── */}
+        <PickerModal
+          visible={showCoursePicker}
+          title="Select Course"
+          options={availableCourses}
+          selected={form.course}
+          onSelect={v => { set("course", v); setShowCoursePicker(false); }}
+          onClose={() => setShowCoursePicker(false)}
+        />
 
-      {/* ── Terms / Privacy modal ── */}
-      <AnimatedBottomSheet visible={!!activeModal} onClose={() => setActiveModal(null)} maxHeightPct="80%">
-        <View style={{ backgroundColor: "#1A6B3C", paddingHorizontal: 24, paddingVertical: 20, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-          <Text style={{ fontSize: 18, fontWeight: "800", color: "#fff" }}>
-            {lastModalContent === "terms" ? "Terms & Conditions" : "Privacy Policy"}
-          </Text>
-          <Pressable onPress={() => setActiveModal(null)} hitSlop={8}>
-            <X size={20} color="rgba(255,255,255,0.7)" />
-          </Pressable>
-        </View>
-        <ScrollView style={{ paddingHorizontal: 24, paddingTop: 20 }} contentContainerStyle={{ paddingBottom: 20 }}>
-          <Text style={{ fontSize: 14, color: "#374151", lineHeight: 22 }}>
-            {lastModalContent === "terms" ? TERMS_TEXT : PRIVACY_TEXT}
-          </Text>
-        </ScrollView>
-        <View style={{ padding: 20, borderTopWidth: 1, borderTopColor: "#F0EDE8" }}>
-          <Button
-            label="I Agree"
-            variant="primary"
-            pill
-            size="lg"
-            className="w-full"
-            onPress={() => {
-              if (activeModal === "terms") { setAgreedToTerms(true); setTermsError(""); }
-              setActiveModal(null);
-            }}
-          />
-        </View>
-      </AnimatedBottomSheet>
+        {/* ── Terms / Privacy modal ── */}
+        <AnimatedBottomSheet visible={!!activeModal} onClose={() => setActiveModal(null)} maxHeightPct="80%">
+          <View style={{ backgroundColor: "#1A6B3C", paddingHorizontal: 24, paddingVertical: 20, flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+            <Text style={{ fontSize: 18, fontWeight: "800", color: "#fff" }}>
+              {lastModalContent === "terms" ? "Terms & Conditions" : "Privacy Policy"}
+            </Text>
+            <Pressable onPress={() => setActiveModal(null)} hitSlop={8}>
+              <X size={20} color="rgba(255,255,255,0.7)" />
+            </Pressable>
+          </View>
+          <ScrollView style={{ paddingHorizontal: 24, paddingTop: 20 }} contentContainerStyle={{ paddingBottom: 20 }}>
+            <Text style={{ fontSize: 14, color: "#374151", lineHeight: 22 }}>
+              {lastModalContent === "terms" ? TERMS_TEXT : PRIVACY_TEXT}
+            </Text>
+          </ScrollView>
+          <View style={{ padding: 20, borderTopWidth: 1, borderTopColor: "#F0EDE8" }}>
+            <Button
+              label="I Agree"
+              variant="primary"
+              pill
+              size="lg"
+              className="w-full"
+              onPress={() => {
+                if (activeModal === "terms") { setAgreedToTerms(true); setTermsError(""); }
+                setActiveModal(null);
+              }}
+            />
+          </View>
+        </AnimatedBottomSheet>
 
-      <LoadingOverlay visible={isSubmitting} />
-    </View>
-  );
-}
+        <LoadingOverlay visible={isSubmitting} />
+      </LinearGradient>
+    );
+  }
 
 // ── Picker Modal ─────────────────────────────────────────────────────────────
 
@@ -1004,21 +1065,27 @@ const rowInputStyle = {
   flexDirection: "row" as const,
   alignItems: "center" as const,
   backgroundColor: "#FFFFFF",
-  borderWidth: 1.5,
-  borderColor: "#E2DED7",
+  borderWidth: 0,
+  borderColor: "transparent",
   borderRadius: 20,
   paddingHorizontal: 18,
   paddingVertical: 10,
+  shadowColor: "#000",
+  shadowOffset: { width: 0, height: 2 },
+  shadowOpacity: 0.04,
+  shadowRadius: 6,
+  elevation: 2,
 };
 
 const errorRowStyle = {
+  borderWidth: 1.5,
   borderColor: "#FECACA",
   backgroundColor: "#FEF2F2",
 };
 
 const multilineInputStyle = {
-  borderWidth: 1.5,
-  borderColor: "#E2DED7",
+  borderWidth: 0,
+  borderColor: "transparent",
   borderRadius: 20,
   paddingHorizontal: 18,
   paddingVertical: 14,
@@ -1028,4 +1095,9 @@ const multilineInputStyle = {
   backgroundColor: "#FFFFFF",
   minHeight: 100,
   textAlignVertical: "top" as const,
+  shadowColor: "#000",
+  shadowOffset: { width: 0, height: 2 },
+  shadowOpacity: 0.04,
+  shadowRadius: 6,
+  elevation: 2,
 };

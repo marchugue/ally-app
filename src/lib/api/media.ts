@@ -4,6 +4,7 @@ import { ApiError } from "./apiError";
 export interface LocalFile { uri: string; name: string; type: string; }
 export interface ChatMediaUploadResult { url: string; }
 export interface PostMediaUploadResult { urls: string[]; }
+export interface AvatarUploadResult { url: string; }
 
 /**
  * Multipart uploads bypass apiRequest — it always forces
@@ -33,6 +34,16 @@ async function uploadRequest<T>(path: string, formData: FormData, accessToken: s
   }
 
   return data as T;
+}
+
+/** POST /api/media/avatar — field name "file", returns { url } */
+export async function uploadUserAvatar(
+  file: LocalFile,
+  accessToken: string
+): Promise<AvatarUploadResult> {
+  const formData = new FormData();
+  formData.append("file", file as unknown as Blob);
+  return uploadRequest<AvatarUploadResult>("/media/avatar", formData, accessToken);
 }
 
 /** POST /api/media/chat — field name "file" */

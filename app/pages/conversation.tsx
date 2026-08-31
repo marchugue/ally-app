@@ -8,6 +8,7 @@ import {
   KeyboardAvoidingView,
   Platform,
   Modal,
+  Keyboard,
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { ArrowLeft, MoreVertical, Shield, Flag, Ban } from "lucide-react-native";
@@ -62,8 +63,28 @@ export default function ConversationScreen() {
   const [showBlockConfirm, setShowBlockConfirm] = useState(false);
   const [showReportConfirm, setShowReportConfirm] = useState(false);
 
+  // keyboardHeight tracks the real keyboard height from OS events.
+  // Works in Expo Go AND production because it reads the actual event, not app.json config.
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
   const flatListRef = useRef<FlatList>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (Platform.OS === "android") {
+      const showSub = Keyboard.addListener("keyboardDidShow", (e) => {
+        setKeyboardHeight(e.endCoordinates.height);
+        setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
+      });
+      const hideSub = Keyboard.addListener("keyboardDidHide", () => setKeyboardHeight(0));
+      return () => { showSub.remove(); hideSub.remove(); };
+    } else {
+      // iOS: KAV behavior="padding" handles the push; just scroll to end.
+      const showSub = Keyboard.addListener("keyboardWillShow", () => {
+        setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
+      });
+      return () => showSub.remove();
+    }
+  }, []);
 
   // ── Load messages & profile ───────────────────────────────────────────
   const loadMessages = useCallback(async (_silent = false) => {
@@ -102,7 +123,7 @@ export default function ConversationScreen() {
             getOnlinePresence(accessToken),
           ]);
           if (profiles.length > 0) setOtherProfile(profiles[0]);
-          setIsOnline(presence.online.some((e) => e.user_id === otherId));
+          setIsOnline(Boolean(presence?.online?.some((e) => e.user_id === otherId)));
         }
       }
     } catch (err) {
@@ -254,9 +275,14 @@ export default function ConversationScreen() {
 
   return (
     <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: "#FFFFFF" }}
+      style={{
+        flex: 1,
+        backgroundColor: "#FFFFFF",
+        // Android: manually push content up by exact keyboard height from OS events.
+        // Works in Expo Go (which ignores app.json softwareKeyboardLayoutMode).
+        paddingBottom: Platform.OS === "android" ? keyboardHeight : 0,
+      }}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
-      keyboardVerticalOffset={0}
     >
       {/* ── Header ──────────────────────────────────────────────────────── */}
       <View
@@ -303,7 +329,11 @@ export default function ConversationScreen() {
       <FlatList
         ref={flatListRef}
         data={messages}
-        keyExtractor={(item) => item.id}
+        keyExtractor={(item, index) => (item.id ? `${item.id}-${index}` : `msg-${index}`)}
+        initialNumToRender={15}
+        maxToRenderPerBatch={10}
+        windowSize={10}
+        removeClippedSubviews={Platform.OS === "android"}
         contentContainerStyle={{
           paddingVertical: 12,
           flexGrow: 1,
@@ -332,7 +362,20 @@ export default function ConversationScreen() {
       />
 
       {/* ── Input ────────────────────────────────────────────────────────── */}
-      <View style={{ paddingBottom: insets.bottom, backgroundColor: "#FFFFFF" }}>
+      <View
+        style={{
+          // Android: 0 always (paddingBottom on KAV handles spacing).
+          // iOS: insets.bottom for home indicator when keyboard is closed;
+          //      KAV behavior=padding already lifts content when keyboard is open.
+          paddingBottom:
+            Platform.OS === "android"
+              ? 0
+              : insets.bottom > 0
+              ? insets.bottom
+              : 8,
+          backgroundColor: "#FFFFFF",
+        }}
+      >
         <ChatInput
           onSend={handleSend}
           sending={sending}

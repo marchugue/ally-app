@@ -61,6 +61,8 @@ function RootLayoutNav() {
       {/* App screens */}
       <Stack.Screen name="pages/conversation" options={{ headerShown: false, animation: "slide_from_right" }} />
       <Stack.Screen name="pages/post-detail" options={{ headerShown: false, animation: "slide_from_right" }} />
+      <Stack.Screen name="pages/media-preview" options={{ headerShown: false, animation: "fade" }} />
+      <Stack.Screen name="pages/user-profile" options={{ headerShown: false, animation: "slide_from_right" }} />
       <Stack.Screen name="pages/requests" options={{ headerShown: false, animation: "slide_from_right" }} />
       <Stack.Screen name="pages/settings" options={{ headerShown: false, animation: "slide_from_right" }} />
       <Stack.Screen name="pages/edit-profile" options={{ headerShown: false, animation: "slide_from_right" }} />
@@ -85,6 +87,8 @@ import {
   PlusJakartaSans_600SemiBold,
   PlusJakartaSans_700Bold,
 } from "@expo-google-fonts/plus-jakarta-sans";
+
+import { NetworkProvider } from "@/context/NetworkContext";
 
 export default function RootLayout() {
   const [fontsLoaded] = useFonts({
@@ -121,9 +125,11 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <StatusBar style="auto" />
-        <AuthProvider>
-          <RootLayoutNav />
-        </AuthProvider>
+        <NetworkProvider>
+          <AuthProvider>
+            <RootLayoutNav />
+          </AuthProvider>
+        </NetworkProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

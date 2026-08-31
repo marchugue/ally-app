@@ -1,48 +1,62 @@
-import { View, Text } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { View, Text, Pressable } from "react-native";
+import { Menu } from "lucide-react-native";
+import { router } from "expo-router";
+import { useResponsive } from "@/lib/responsive";
 
 interface ScreenHeaderProps {
-  title: string;
+  title?: string;
   subtitle?: string;
   right?: React.ReactNode;
   hideAccent?: boolean;
 }
 
-export function ScreenHeader({ title, subtitle, right, hideAccent = false }: ScreenHeaderProps) {
-  const insets = useSafeAreaInsets();
+export function ScreenHeader({ right }: ScreenHeaderProps) {
+  const { insets, isSmallScreen, scaleClamped } = useResponsive();
+
+  const topPadding = Math.max(insets.top + 8, 16);
+  const horizontalPadding = isSmallScreen ? 14 : 20;
+  const brandFontSize = scaleClamped(22, 0.9, 1.15);
 
   return (
     <View
-      style={{ paddingTop: insets.top + 12 }}
-      className="flex-row items-center justify-between px-5 pb-3 border-b border-border bg-surface"
+      style={{
+        paddingTop: topPadding,
+        paddingBottom: 12,
+        paddingHorizontal: horizontalPadding,
+        backgroundColor: "#FFFFFF",
+        borderBottomWidth: 1,
+        borderBottomColor: "#F0EDE8",
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+      }}
     >
-      <View>
-        <View className="flex-row items-center gap-1">
-          {!hideAccent && (
-            <View
-              style={{
-                width: 4,
-                height: 20,
-                borderRadius: 2,
-                backgroundColor: "#E8A838",
-                marginRight: 6,
-              }}
-            />
-          )}
-          <Text
-            className="text-textPrimary text-2xl"
-            style={{ letterSpacing: -0.5, fontFamily: "Fraunces_700Bold" }}
-          >
-            {title}
-          </Text>
-        </View>
-        {subtitle ? (
-          <Text className={`text-textSecondary text-xs mt-0.5 ${!hideAccent ? "ml-[10px]" : ""}`}>
-            {subtitle}
-          </Text>
-        ) : null}
-      </View>
-      {right ? <View>{right}</View> : null}
+      {/* Brand Name on Left */}
+      <Pressable
+        hitSlop={8}
+        onPress={() => router.push("/(tabs)" as any)}
+      >
+        <Text
+          style={{
+            fontFamily: "Fraunces_700Bold",
+            fontSize: brandFontSize,
+            color: "#1A6B3C",
+            letterSpacing: -0.5,
+          }}
+        >
+          Ally-jis
+        </Text>
+      </Pressable>
+
+      {/* Hamburger Icon on Right */}
+      {right ?? (
+        <Pressable
+          hitSlop={12}
+          onPress={() => router.push("/pages/settings" as any)}
+        >
+          <Menu size={isSmallScreen ? 22 : 24} color="#111827" />
+        </Pressable>
+      )}
     </View>
   );
 }

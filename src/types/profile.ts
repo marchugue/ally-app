@@ -17,6 +17,8 @@ export interface ProfileSummary {
   id: string;
   username: string;
   full_name: string;
+  avatar_url?: string | null;
+  course?: string | null;
 }
 
 export interface UpdateProfilePayload {

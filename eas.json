@@ -1,0 +1,34 @@
+{
+  "cli": {
+    "version": ">= 10.0.0",
+    "appVersionSource": "remote"
+  },
+  "build": {
+    "development": {
+      "developmentClient": true,
+      "distribution": "internal"
+    },
+    "preview": {
+      "distribution": "internal",
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://ally-jisbackend-production.up.railway.app",
+        "APK_FILENAME": "ally-jis-app-beta-test-1.0.apk"
+      }
+    },
+    "production": {
+      "android": {
+        "buildType": "apk"
+      },
+      "env": {
+        "EXPO_PUBLIC_API_URL": "https://ally-jisbackend-production.up.railway.app",
+        "APK_FILENAME": "ally-jis-app-beta-test-1.0.apk"
+      }
+    }
+  },
+  "submit": {
+    "production": {}
+  }
+}

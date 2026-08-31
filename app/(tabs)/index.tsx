@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -8,46 +8,59 @@ import {
   Pressable,
 } from "react-native";
 import { router } from "expo-router";
-import { Plus, Home } from "lucide-react-native";
-import { ScreenHeader } from "@/components/ScreenHeader";
+import { Plus, Home, Users } from "lucide-react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { ResponsiveContainer } from "@/components/ResponsiveContainer";
 import { PostCard } from "@/components/PostCard";
 import { CreatePostSheet } from "@/components/CreatePostSheet";
 import { EmptyState } from "@/components/EmptyState";
 import { useAuth } from "@/lib/auth/AuthContext";
 import { listFeed, likePost, unlikePost } from "@/lib/api/feed";
+import { listAllies } from "@/lib/api/interaction";
 import type { FeedPost } from "@/types/feed";
 
 export default function HomeScreen() {
-  const { accessToken } = useAuth();
+  const insets = useSafeAreaInsets();
+  const { user, accessToken } = useAuth();
   const [posts, setPosts] = useState<FeedPost[]>([]);
+  const [allyUserIds, setAllyUserIds] = useState<Set<string>>(new Set());
+  const [activeFilter, setActiveFilter] = useState<"all" | "allies">("all");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
 
-  const loadFeed = useCallback(async () => {
+  const loadData = useCallback(async () => {
     if (!accessToken) return;
     try {
-      const feed = await listFeed(accessToken);
+      const feedPromise = listFeed(accessToken);
+      const alliesPromise = user?.id
+        ? listAllies(user.id, accessToken).catch(() => ({ items: [] }))
+        : Promise.resolve({ items: [] });
+
+      const [feed, alliesRes] = await Promise.all([feedPromise, alliesPromise]);
       setPosts(feed);
+      if (alliesRes?.items) {
+        setAllyUserIds(new Set(alliesRes.items.map((item) => item.id)));
+      }
     } catch (err) {
-      console.warn("Failed to load feed", err);
+      console.warn("Failed to load feed data", err);
     }
-  }, [accessToken]);
+  }, [user?.id, accessToken]);
 
   useEffect(() => {
     async function init() {
       setLoading(true);
-      await loadFeed();
+      await loadData();
       setLoading(false);
     }
     init();
-  }, [loadFeed]);
+  }, [loadData]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await loadFeed();
+    await loadData();
     setRefreshing(false);
-  }, [loadFeed]);
+  }, [loadData]);
 
   const toggleLike = useCallback(
     async (post: FeedPost) => {
@@ -94,10 +107,28 @@ export default function HomeScreen() {
 
   const navigateToPost = useCallback((post: FeedPost) => {
     router.push({
-      pathname: "/pages/post-detail" as any,
-      params: { postId: post.id },
+      pathname: "/pages/media-preview" as any,
+      params: {
+        mediaUrls: post.media && post.media.length > 0 ? JSON.stringify(post.media) : "",
+        initialIndex: "0",
+        postId: post.id,
+        caption: post.content || "",
+        authorName: post.author?.full_name || `@${post.author?.username}`,
+        authorAvatar: post.author?.avatar_url || "",
+        likesCount: String(post.likes_count || 0),
+        commentsCount: String(post.comments_count || 0),
+        isLiked: post.liked_by_me ? "true" : "false",
+        openComments: "true",
+      },
     });
   }, []);
+
+  // Filter posts based on selected tab
+  const displayedPosts = activeFilter === "all"
+    ? posts
+    : posts.filter(
+        (p) => p.author?.id === user?.id || (p.author?.id && allyUserIds.has(p.author.id))
+      );
 
   if (loading) {
     return (
@@ -108,11 +139,79 @@ export default function HomeScreen() {
   }
 
   return (
-    <View className="flex-1 bg-background">
-      <ScreenHeader title="Home" subtitle="Latest from your campus" />
+    <ResponsiveContainer backgroundColor="#F9FAFB">
+      {/* ── Feed Header Bar: Ally-jis Label on Left & Filters on Right ── */}
+      <View
+        style={{
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          paddingHorizontal: 16,
+          paddingTop: insets.top > 0 ? insets.top + 8 : 12,
+          paddingBottom: 10,
+          backgroundColor: "#FFFFFF",
+          borderBottomWidth: 1,
+          borderBottomColor: "#E5E7EB",
+        }}
+      >
+        {/* Left: Ally-jis Brand Title */}
+        <Text
+          style={{
+            fontFamily: "Fraunces_700Bold",
+            fontSize: 22,
+            color: "#1A6B3C",
+            letterSpacing: -0.5,
+          }}
+        >
+          Ally-jis
+        </Text>
+
+        {/* Right: Feed Filter Segment Pills */}
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          <Pressable
+            onPress={() => setActiveFilter("all")}
+            style={{
+              paddingHorizontal: 14,
+              paddingVertical: 6,
+              borderRadius: 20,
+              backgroundColor: activeFilter === "all" ? "#1A6B3C" : "#F3F4F6",
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 13,
+                fontWeight: "600",
+                color: activeFilter === "all" ? "#FFFFFF" : "#4B5563",
+              }}
+            >
+              All Feed
+            </Text>
+          </Pressable>
+
+          <Pressable
+            onPress={() => setActiveFilter("allies")}
+            style={{
+              paddingHorizontal: 14,
+              paddingVertical: 6,
+              borderRadius: 20,
+              backgroundColor: activeFilter === "allies" ? "#1A6B3C" : "#F3F4F6",
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 13,
+                fontWeight: "600",
+                color: activeFilter === "allies" ? "#FFFFFF" : "#4B5563",
+              }}
+            >
+              Allies
+            </Text>
+          </Pressable>
+        </View>
+      </View>
 
       <FlatList
-        data={posts}
+        data={displayedPosts}
         keyExtractor={(item) => item.id}
         refreshControl={
           <RefreshControl
@@ -122,7 +221,7 @@ export default function HomeScreen() {
           />
         }
         contentContainerStyle={
-          posts.length === 0 ? { flex: 1 } : { paddingBottom: 80 }
+          displayedPosts.length === 0 ? { flex: 1 } : { paddingBottom: 16 }
         }
         renderItem={({ item }) => (
           <PostCard
@@ -132,13 +231,23 @@ export default function HomeScreen() {
           />
         )}
         ListEmptyComponent={
-          <EmptyState
-            icon={<Home size={28} color="#1A6B3C" />}
-            title="Your feed is empty"
-            description="Follow classmates and their posts will show up here."
-            actionLabel="Create a post"
-            onAction={() => setShowCreate(true)}
-          />
+          activeFilter === "allies" ? (
+            <EmptyState
+              icon={<Users size={28} color="#1A6B3C" />}
+              title="No posts from allies yet"
+              description="Connect with classmates to see their posts in your Allies feed."
+              actionLabel="Find Allies"
+              onAction={() => router.push("/(tabs)/chat" as any)}
+            />
+          ) : (
+            <EmptyState
+              icon={<Home size={28} color="#1A6B3C" />}
+              title="Your feed is empty"
+              description="Follow classmates and their posts will show up here."
+              actionLabel="Create a post"
+              onAction={() => setShowCreate(true)}
+            />
+          )
         }
       />
 
@@ -169,8 +278,8 @@ export default function HomeScreen() {
       <CreatePostSheet
         visible={showCreate}
         onClose={() => setShowCreate(false)}
-        onPostCreated={loadFeed}
+        onPostCreated={loadData}
       />
-    </View>
+    </ResponsiveContainer>
   );
 }

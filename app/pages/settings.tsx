@@ -1,4 +1,4 @@
-import { View, Text, Pressable, ScrollView } from "react-native";
+import { View, Text, Pressable, ScrollView, Linking, Alert } from "react-native";
 import { router } from "expo-router";
 import {
   ArrowLeft,
@@ -10,23 +10,39 @@ import {
   LogOut,
   Shield,
   Info,
+  RotateCw,
 } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useState } from "react";
 import { useAuth } from "@/lib/auth/AuthContext";
+import { useNetwork } from "@/context/NetworkContext";
 import { deleteMyProfile } from "@/lib/api/profiles";
 import { ConfirmModal } from "@/components/ConfirmModal";
 
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const { accessToken, signOut } = useAuth();
+  const { currentVersion, checkForUpdates } = useNetwork();
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleting, setDeleting] = useState(false);
+  const [checkingUpdate, setCheckingUpdate] = useState(false);
 
   const handleSignOut = async () => {
     setShowLogoutConfirm(false);
     await signOut();
+  };
+
+  const handleManualCheckForUpdates = async () => {
+    setCheckingUpdate(true);
+    try {
+      const res = await checkForUpdates(true);
+      if (res.message) {
+        Alert.alert("App Version", res.message);
+      }
+    } finally {
+      setCheckingUpdate(false);
+    }
   };
 
   const handleDeleteAccount = async () => {
@@ -88,7 +104,15 @@ export default function SettingsScreen() {
         <SettingsRow
           icon={Shield}
           label="Privacy Policy"
-          onPress={() => {}}
+          onPress={() => Linking.openURL("https://ally-jis.xyz/privacy")}
+        />
+
+        {/* System & Updates */}
+        <SectionHeader label="App & Updates" />
+        <SettingsRow
+          icon={RotateCw}
+          label={checkingUpdate ? "Checking for updates…" : "Check for Updates"}
+          onPress={handleManualCheckForUpdates}
         />
 
         {/* Account Section */}
@@ -124,7 +148,7 @@ export default function SettingsScreen() {
         >
           <Info size={18} color="#9CA3AF" />
           <Text style={{ fontSize: 14, color: "#6B7280" }}>
-            Ally-jis v1.0.0
+            Ally-jis v{currentVersion}
           </Text>
         </View>
         <Text

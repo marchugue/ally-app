@@ -124,7 +124,6 @@ export default function LoginScreen() {
       <KeyboardAvoidingView style={{ flex: 1, marginTop: -60,  }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <SlideIn delay={120} distance={30} style={{ flex: 1 }}>
           <ScrollView
-            scrollEnabled={false}
             contentContainerStyle={{
               flexGrow: 1,
               backgroundColor: "#FDFCFB",

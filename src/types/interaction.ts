@@ -10,3 +10,17 @@ export interface Interaction {
 export interface InteractionStatusResponse {
   status: InteractionStatus | "none";
 }
+
+export interface AllyListItem {
+  id: string;
+  username: string | null;
+  fullName: string | null;
+  avatarUrl: string | null;
+  course: string | null;
+  alliedAt: string;
+}
+
+export interface PaginatedAllyList {
+  items: AllyListItem[];
+  nextCursor: string | null;
+}

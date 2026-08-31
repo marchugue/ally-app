@@ -1,50 +1,46 @@
-import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   View,
   Text,
   FlatList,
-  ScrollView,
   Pressable,
-  RefreshControl,
   ActivityIndicator,
-  Modal,
+  RefreshControl,
+  ScrollView,
   Image,
 } from "react-native";
-import { router } from "expo-router";
+import { useLocalSearchParams, router } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
-  Settings,
-  Bookmark,
-  LogOut,
-  ChevronRight,
-  Pencil,
+  ChevronLeft,
   Shield,
+  UserPlus,
+  MessageCircle,
+  UserCheck,
   X,
   Building2,
   Users,
   GraduationCap,
   BookOpen,
-  Plus,
   Layers,
 } from "lucide-react-native";
 import { UserAvatar, resolveImageUri } from "@/components/UserAvatar";
-import { PostCard } from "@/components/PostCard";
 import { ResponsiveContainer } from "@/components/ResponsiveContainer";
-import { CreatePostSheet } from "@/components/CreatePostSheet";
+import { PostCard } from "@/components/PostCard";
 import { useAuth } from "@/lib/auth/AuthContext";
 import {
-  getMyProfile,
-  listProfiles,
+  getProfileById,
   getProfileRelationship,
+  listProfiles,
   followUser,
   unfollowUser,
   type ProfileRelationshipSummary,
 } from "@/lib/api/profiles";
+import { requestConnection } from "@/lib/api/interaction";
+import { getOrCreateConversationWithUser } from "@/lib/api/conversation";
 import { listFeedByUser, likePost, unlikePost } from "@/lib/api/feed";
 import type { Profile, ProfileSummary } from "@/types/profile";
 import type { FeedPost } from "@/types/feed";
-
-const PAGE_SIZE = 10;
 
 const COLORS = {
   forest: "#1A6B3C",
@@ -63,127 +59,117 @@ const FALLBACK_SUGGESTED: ProfileSummary[] = [
   { id: "s5", username: "claire_gomez", full_name: "Claire Gomez", avatar_url: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150", course: "BSN 3rd Year" },
 ];
 
-export default function ProfileScreen() {
-  const { user, accessToken, signOut } = useAuth();
+export default function UserProfileScreen() {
+  const { userId } = useLocalSearchParams<{ userId?: string }>();
+  const { user, accessToken } = useAuth();
+
+  const viewedUserId = userId || user?.id || null;
+  const isOwnProfile = !userId || userId === user?.id;
 
   const [profile, setProfile] = useState<Profile | null>(null);
-  const [relationship, setRelationship] = useState<ProfileRelationshipSummary | null>(null);
-  const [profileLoading, setProfileLoading] = useState(true);
+  const [relationship, setRelationship] =
+    useState<ProfileRelationshipSummary | null>(null);
+  const [posts, setPosts] = useState<FeedPost[]>([]);
 
   const [activeTab, setActiveTab] = useState<"feed" | "media" | "about">("feed");
-  const [showCreatePost, setShowCreatePost] = useState(false);
-
-  const [posts, setPosts] = useState<FeedPost[]>([]);
-  const [postsLoading, setPostsLoading] = useState(true);
-  const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const [hasMore, setHasMore] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const cursorRef = useRef<string | undefined>(undefined);
 
   const [suggested, setSuggested] = useState<ProfileSummary[]>([]);
   const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
 
-  const [menuOpen, setMenuOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [actionLoading, setActionLoading] = useState(false);
 
-  const loadProfileData = useCallback(async () => {
-    if (!accessToken || !user) return;
+  // Load Profile & Relationship Details
+  const loadData = useCallback(async () => {
+    if (!viewedUserId || !accessToken) return;
     try {
-      const [current, relationshipData, others] = await Promise.all([
-        getMyProfile(accessToken),
-        getProfileRelationship(user.id, accessToken).catch(() => null),
-        listProfiles(accessToken, user.id).catch(() => []),
+      setLoading(true);
+
+      const [profileData, relData, others, userPosts] = await Promise.all([
+        getProfileById(viewedUserId, accessToken),
+        !isOwnProfile
+          ? getProfileRelationship(viewedUserId, accessToken).catch(() => null)
+          : Promise.resolve(null),
+        listProfiles(accessToken, viewedUserId).catch(() => []),
+        listFeedByUser(viewedUserId, accessToken).catch(() => []),
       ]);
-      setProfile(current);
-      setRelationship(relationshipData);
+
+      setProfile(profileData);
+      setRelationship(relData);
+      setPosts(userPosts);
 
       const list = others && others.length > 0 ? others : FALLBACK_SUGGESTED;
       setSuggested(list);
     } catch (err) {
-      console.warn("Failed to load profile", err);
+      console.warn("Failed to load user profile", err);
       setSuggested(FALLBACK_SUGGESTED);
     } finally {
-      setProfileLoading(false);
+      setLoading(false);
     }
-  }, [user?.id, accessToken]);
-
-  const loadPosts = useCallback(async () => {
-    if (!user?.id || !accessToken) return;
-    setPostsLoading(true);
-    try {
-      const page = await listFeedByUser(user.id, accessToken!);
-      setPosts(page);
-      setHasMore(page.length === PAGE_SIZE);
-      cursorRef.current = page.length > 0 ? page[page.length - 1].created_at : undefined;
-    } catch (err) {
-      console.warn("Failed to load posts", err);
-    } finally {
-      setPostsLoading(false);
-    }
-  }, [user?.id, accessToken]);
+  }, [viewedUserId, accessToken, isOwnProfile]);
 
   useEffect(() => {
-    loadProfileData();
-    loadPosts();
-  }, [loadProfileData, loadPosts]);
-
-  const loadMore = useCallback(async () => {
-    if (!user?.id || !accessToken || isLoadingMore || !hasMore || activeTab !== "feed") return;
-    setIsLoadingMore(true);
-    try {
-      const next = await listFeedByUser(user.id, accessToken!);
-      setPosts((prev) => {
-        const existingIds = new Set(prev.map((p) => p.id));
-        const newItems = next.filter((p) => !existingIds.has(p.id));
-        return [...prev, ...newItems];
-      });
-      setHasMore(next.length === PAGE_SIZE);
-      if (next.length > 0) cursorRef.current = next[next.length - 1].created_at;
-    } catch (err) {
-      console.warn("Failed to load more posts", err);
-    } finally {
-      setIsLoadingMore(false);
-    }
-  }, [user?.id, accessToken, isLoadingMore, hasMore, activeTab]);
+    loadData();
+  }, [loadData]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    cursorRef.current = undefined;
-    await Promise.all([loadProfileData(), loadPosts()]);
+    await loadData();
     setRefreshing(false);
-  }, [loadProfileData, loadPosts]);
+  }, [loadData]);
 
-  const toggleLike = useCallback(
-    async (post: FeedPost) => {
-      const wasLiked = post.liked_by_me;
-      setPosts((prev) =>
-        prev.map((p) =>
-          p.id === post.id
-            ? { ...p, liked_by_me: !wasLiked, likes_count: p.likes_count + (wasLiked ? -1 : 1) }
-            : p
-        )
+  // Handle Connect Request
+  const handleToggleConnect = async () => {
+    if (!viewedUserId || !accessToken || actionLoading) return;
+    try {
+      setActionLoading(true);
+      await requestConnection(viewedUserId, accessToken);
+      setRelationship((prev) =>
+        prev
+          ? {
+              ...prev,
+              allyStatus:
+                prev.allyStatus === "none" ? "pending_sent" : prev.allyStatus,
+            }
+          : null
       );
-      try {
-        const result = wasLiked
-          ? await unlikePost(post.id, accessToken!)
-          : await likePost(post.id, accessToken!);
-        setPosts((prev) =>
-          prev.map((p) =>
-            p.id === post.id
-              ? { ...p, liked_by_me: result.liked, likes_count: result.likesCount }
-              : p
-          )
-        );
-      } catch (err) {
-        setPosts((prev) =>
-          prev.map((p) =>
-            p.id === post.id ? { ...p, liked_by_me: wasLiked, likes_count: post.likes_count } : p
-          )
-        );
-      }
-    },
-    [accessToken]
-  );
+    } catch (err) {
+      console.warn("Failed to update ally request", err);
+    } finally {
+      setActionLoading(false);
+    }
+  };
 
+  // Handle Follow / Unfollow Profile
+  const handleToggleFollow = async () => {
+    if (!viewedUserId || !accessToken || !relationship || actionLoading) return;
+    const currentlyFollowing = relationship.isFollowing;
+    try {
+      setActionLoading(true);
+      if (currentlyFollowing) {
+        await unfollowUser(viewedUserId, accessToken);
+      } else {
+        await followUser(viewedUserId, accessToken);
+      }
+      setRelationship((prev) =>
+        prev
+          ? {
+              ...prev,
+              isFollowing: !currentlyFollowing,
+              followersCount:
+                prev.followersCount + (currentlyFollowing ? -1 : 1),
+            }
+          : null
+      );
+    } catch (err) {
+      console.warn("Failed to update follow state", err);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Toggle follow on suggested ally card
   const toggleFollowSuggested = useCallback(
     async (targetId: string) => {
       const currentlyFollowing = followingIds.has(targetId);
@@ -220,44 +206,129 @@ export default function ProfileScreen() {
     [accessToken, followingIds]
   );
 
+  // Handle Open Direct Chat
+  const handleOpenChat = async () => {
+    if (!viewedUserId || !accessToken || actionLoading) return;
+    try {
+      setActionLoading(true);
+      const conversation = await getOrCreateConversationWithUser(
+        viewedUserId,
+        accessToken
+      );
+      router.push({
+        pathname: "/pages/chat",
+        params: {
+          id: (conversation as any).id || (conversation as any).conversationId,
+          name: profile?.full_name || `@${profile?.username}`,
+          avatar: profile?.avatar_url || "",
+          type: "direct",
+        },
+      } as any);
+    } catch (err) {
+      console.warn("Failed to start conversation", err);
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  // Toggle Like on User Post
+  const handleToggleLike = useCallback(
+    async (post: FeedPost) => {
+      const wasLiked = post.liked_by_me;
+      setPosts((prev) =>
+        prev.map((p) =>
+          p.id === post.id
+            ? {
+                ...p,
+                liked_by_me: !wasLiked,
+                likes_count: p.likes_count + (wasLiked ? -1 : 1),
+              }
+            : p
+        )
+      );
+      try {
+        const result = wasLiked
+          ? await unlikePost(post.id, accessToken!)
+          : await likePost(post.id, accessToken!);
+        setPosts((prev) =>
+          prev.map((p) =>
+            p.id === post.id
+              ? { ...p, liked_by_me: result.liked, likes_count: result.likesCount }
+              : p
+          )
+        );
+      } catch (err) {
+        setPosts((prev) =>
+          prev.map((p) =>
+            p.id === post.id
+              ? { ...p, liked_by_me: wasLiked, likes_count: post.likes_count }
+              : p
+          )
+        );
+      }
+    },
+    [accessToken]
+  );
+
   const mediaPosts = useMemo(() => {
     return posts.filter(
       (p) => p.media && p.media.length > 0 && resolveImageUri(p.media[0]) !== null
     );
   }, [posts]);
 
-  const handleSignOut = async () => {
-    setMenuOpen(false);
-    await signOut();
-  };
-
-  if (profileLoading || !profile) {
+  if (loading || !profile) {
     return (
-      <SafeAreaView className="flex-1 items-center justify-center" style={{ backgroundColor: COLORS.bg }}>
+      <SafeAreaView
+        style={{ flex: 1, backgroundColor: COLORS.bg }}
+        className="items-center justify-center"
+      >
         <ActivityIndicator size="large" color={COLORS.forest} />
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView className="flex-1" style={{ backgroundColor: COLORS.bg }} edges={["top"]}>
+    <SafeAreaView
+      style={{ flex: 1, backgroundColor: COLORS.bg }}
+      edges={["top"]}
+    >
       <ResponsiveContainer maxContentWidth={540} backgroundColor={COLORS.bg}>
         <FlatList
-          key={`profile-list-${activeTab}`}
+          key={`user-profile-list-${activeTab}`}
           data={activeTab === "feed" ? posts : activeTab === "media" ? mediaPosts : []}
           numColumns={activeTab === "media" ? 3 : 1}
           columnWrapperStyle={activeTab === "media" ? { gap: 2, paddingHorizontal: 2 } : undefined}
-          keyExtractor={(item, index) => `${item.id}-${index}`}
-          onEndReached={loadMore}
-          onEndReachedThreshold={0.4}
+          keyExtractor={(item) => item.id}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.forest} />
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor={COLORS.forest}
+            />
           }
           contentContainerStyle={{ paddingBottom: 40 }}
           ListHeaderComponent={
             <View>
+              {/* ── Top Header with Back Button ── */}
+              <View style={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: 4 }}>
+                <Pressable
+                  onPress={() => router.back()}
+                  hitSlop={10}
+                  style={{
+                    width: 36,
+                    height: 36,
+                    borderRadius: 18,
+                    backgroundColor: "#F3F4F6",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <ChevronLeft size={22} color="#111827" />
+                </Pressable>
+              </View>
+
               {/* ── Avatar + Stats Header ── */}
-              <View style={{ paddingHorizontal: 16, paddingTop: 10, marginBottom: 12 }}>
+              <View style={{ paddingHorizontal: 16, paddingTop: 6, marginBottom: 12 }}>
                 <View
                   style={{
                     flexDirection: "row",
@@ -316,92 +387,241 @@ export default function ProfileScreen() {
                 </View>
               </View>
 
-              {/* ── Identity & Name Header ── */}
+              {/* ── User Information Header ── */}
               <View style={{ paddingHorizontal: 20 }}>
+                {/* Full Name & Verification */}
                 <View
                   style={{
                     flexDirection: "row",
                     alignItems: "center",
-                    justifyContent: "space-between",
+                    gap: 6,
+                    flexWrap: "wrap",
                   }}
                 >
-                  <View style={{ flex: 1 }}>
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                      <Text style={{ fontSize: 22, fontWeight: "700", color: "#111827" }}>
-                        {profile.full_name || `@${profile.username}`}
-                      </Text>
-                      {profile.username && (
-                        <View
-                          style={{
-                            flexDirection: "row",
-                            alignItems: "center",
-                            gap: 3,
-                            backgroundColor: "rgba(26, 107, 60, 0.08)",
-                            paddingHorizontal: 8,
-                            paddingVertical: 3,
-                            borderRadius: 12,
-                          }}
-                        >
-                          <Shield size={11} color={COLORS.forest} />
-                          <Text
-                            style={{
-                              fontSize: 10,
-                              fontWeight: "700",
-                              color: COLORS.forest,
-                              letterSpacing: 0.3,
-                            }}
-                          >
-                            CHMSU VERIFIED
-                          </Text>
-                        </View>
-                      )}
-                    </View>
+                  <Text
+                    style={{
+                      fontSize: 22,
+                      fontWeight: "700",
+                      color: "#111827",
+                    }}
+                  >
+                    {profile.full_name || `@${profile.username}`}
+                  </Text>
 
-                    <Text style={{ fontSize: 13, color: "#6B7280", marginTop: 2 }}>
-                      @{profile.username} · {profile.course} · {profile.year_level}
-                    </Text>
-                  </View>
+                  {profile.username && (
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 3,
+                        backgroundColor: "rgba(26, 107, 60, 0.08)",
+                        paddingHorizontal: 8,
+                        paddingVertical: 3,
+                        borderRadius: 12,
+                      }}
+                    >
+                      <Shield size={11} color={COLORS.forest} />
+                      <Text
+                        style={{
+                          fontSize: 10,
+                          fontWeight: "700",
+                          color: COLORS.forest,
+                          letterSpacing: 0.3,
+                        }}
+                      >
+                        CHMSU VERIFIED
+                      </Text>
+                    </View>
+                  )}
                 </View>
 
+                {/* Username & Academic Tag */}
+                <Text style={{ fontSize: 13, color: "#6B7280", marginTop: 2 }}>
+                  @{profile.username} · {profile.course || "CHMSU Student"} ·{" "}
+                  {profile.year_level || "1st Year"}
+                </Text>
+
+                {/* User Bio */}
                 {profile.bio ? (
-                  <Text style={{ fontSize: 14, color: "#374151", lineHeight: 20, marginTop: 8 }}>
+                  <Text
+                    style={{
+                      fontSize: 14,
+                      color: "#374151",
+                      lineHeight: 20,
+                      marginTop: 8,
+                    }}
+                  >
                     {profile.bio}
                   </Text>
                 ) : (
-                  <Pressable
-                    onPress={() => router.push("/pages/edit-profile" as any)}
-                    style={{ marginTop: 8, paddingVertical: 2 }}
-                    hitSlop={6}
-                  >
-                    <Text style={{ fontSize: 13, color: "#9CA3AF", fontStyle: "italic" }}>
-                      + Add bio to introduce yourself to campus allies...
-                    </Text>
-                  </Pressable>
-                )}
-
-                {/* Own Profile Action Buttons */}
-                <View style={{ flexDirection: "row", gap: 10, marginTop: 8 }}>
-                  <Pressable
-                    onPress={() => router.push("/pages/edit-profile" as any)}
+                  <Text
                     style={{
-                      flex: 1,
-                      flexDirection: "row",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: 6,
-                      height: 40,
-                      borderRadius: 12,
-                      borderWidth: 1,
-                      borderColor: "rgba(26, 107, 60, 0.3)",
-                      backgroundColor: "#FFFFFF",
+                      fontSize: 13,
+                      color: "#9CA3AF",
+                      fontStyle: "italic",
+                      marginTop: 8,
                     }}
                   >
-                    <Pencil size={15} color={COLORS.forest} />
-                    <Text style={{ fontSize: 13, fontWeight: "600", color: COLORS.forest }}>
-                      Edit profile
-                    </Text>
-                  </Pressable>
-                </View>
+                    No bio provided yet.
+                  </Text>
+                )}
+
+                {/* ── Relationship Action Bar ── */}
+                {!isOwnProfile && relationship && (
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 10,
+                      marginTop: 8,
+                    }}
+                  >
+                    {/* Connect / Ally Button */}
+                    <Pressable
+                      onPress={handleToggleConnect}
+                      disabled={
+                        actionLoading ||
+                        relationship.allyStatus === "accepted" ||
+                        relationship.allyStatus === "pending_sent"
+                      }
+                      style={{
+                        flex: 1,
+                        flexDirection: "row",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: 6,
+                        height: 40,
+                        borderRadius: 12,
+                        backgroundColor:
+                          relationship.allyStatus === "accepted"
+                            ? COLORS.forestSoft
+                            : relationship.allyStatus === "pending_sent"
+                            ? "#FFFBEB"
+                            : COLORS.forest,
+                        borderWidth:
+                          relationship.allyStatus === "accepted" ||
+                          relationship.allyStatus === "pending_sent"
+                            ? 1
+                            : 0,
+                        borderColor:
+                          relationship.allyStatus === "accepted"
+                            ? "rgba(26, 107, 60, 0.3)"
+                            : "#FCD34D",
+                      }}
+                    >
+                      <UserPlus
+                        size={15}
+                        color={
+                          relationship.allyStatus === "accepted"
+                            ? COLORS.forest
+                            : relationship.allyStatus === "pending_sent"
+                            ? "#D97706"
+                            : "#FFFFFF"
+                        }
+                      />
+                      <Text
+                        style={{
+                          fontSize: 13,
+                          fontWeight: "600",
+                          color:
+                            relationship.allyStatus === "accepted"
+                              ? COLORS.forest
+                              : relationship.allyStatus === "pending_sent"
+                              ? "#D97706"
+                              : "#FFFFFF",
+                        }}
+                      >
+                        {relationship.allyStatus === "accepted"
+                          ? "Ally Connected"
+                          : relationship.allyStatus === "pending_sent"
+                          ? "Requested"
+                          : "Connect"}
+                      </Text>
+                    </Pressable>
+
+                    {/* Follow / Unfollow Button */}
+                    <Pressable
+                      onPress={handleToggleFollow}
+                      disabled={actionLoading}
+                      style={{
+                        flex: 1,
+                        flexDirection: "row",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: 6,
+                        height: 40,
+                        borderRadius: 12,
+                        backgroundColor: relationship.isFollowing
+                          ? "#F3F4F6"
+                          : "#FFFFFF",
+                        borderWidth: 1,
+                        borderColor: relationship.isFollowing
+                          ? "#D1D5DB"
+                          : COLORS.forest,
+                      }}
+                    >
+                      <UserCheck
+                        size={15}
+                        color={
+                          relationship.isFollowing ? "#374151" : COLORS.forest
+                        }
+                      />
+                      <Text
+                        style={{
+                          fontSize: 13,
+                          fontWeight: "600",
+                          color:
+                            relationship.isFollowing ? "#374151" : COLORS.forest,
+                        }}
+                      >
+                        {relationship.isFollowing ? "Following" : "Follow"}
+                      </Text>
+                    </Pressable>
+
+                    {/* Message Button */}
+                    <Pressable
+                      onPress={handleOpenChat}
+                      disabled={actionLoading}
+                      style={{
+                        width: 40,
+                        height: 40,
+                        borderRadius: 12,
+                        backgroundColor: "#FFFFFF",
+                        borderWidth: 1,
+                        borderColor: "#E5E7EB",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <MessageCircle size={18} color="#374151" />
+                    </Pressable>
+                  </View>
+                )}
+
+                {/* Mutual Allies Info */}
+                {!isOwnProfile &&
+                relationship &&
+                (relationship.mutualAlliesCount > 0 ||
+                  relationship.mutualFollowersCount > 0) ? (
+                  <Text
+                    style={{
+                      fontSize: 11,
+                      color: "#6B7280",
+                      marginTop: 6,
+                    }}
+                  >
+                    {relationship.mutualAlliesCount > 0
+                      ? `${relationship.mutualAlliesCount} Mutual Allies`
+                      : ""}
+                    {relationship.mutualAlliesCount > 0 &&
+                    relationship.mutualFollowersCount > 0
+                      ? " · "
+                      : ""}
+                    {relationship.mutualFollowersCount > 0
+                      ? `${relationship.mutualFollowersCount} Mutual Followers`
+                      : ""}
+                  </Text>
+                ) : null}
               </View>
 
               {/* ── Feed & About Tab Switcher ── */}
@@ -541,108 +761,36 @@ export default function ProfileScreen() {
                 </Pressable>
               );
             }
-            return <PostCard post={item} onToggleLike={toggleLike} />;
+            return (
+              <PostCard
+                post={item}
+                onToggleLike={() => handleToggleLike(item)}
+              />
+            );
           }}
           ListEmptyComponent={
-            activeTab === "feed" && !postsLoading ? (
-              <View style={{ alignItems: "center", paddingHorizontal: 24, paddingVertical: 36 }}>
-                <Text style={{ fontSize: 15, fontWeight: "600", color: "#6B7280" }}>
-                  No posts yet
+            activeTab === "feed" ? (
+              <View className="items-center px-6 py-10">
+                <Text className="font-semibold text-gray-500">
+                  No posts to display
                 </Text>
-                <Text style={{ fontSize: 12, color: "#9CA3AF", marginTop: 4, textAlign: "center" }}>
-                  Share something with your campus community.
+                <Text className="text-xs text-gray-400 mt-1">
+                  This user has not published any posts yet.
                 </Text>
-
-                <Pressable
-                  onPress={() => setShowCreatePost(true)}
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    gap: 6,
-                    backgroundColor: COLORS.forest,
-                    paddingHorizontal: 16,
-                    paddingVertical: 10,
-                    borderRadius: 20,
-                    marginTop: 16,
-                    elevation: 2,
-                    shadowColor: "#000",
-                    shadowOffset: { width: 0, height: 1 },
-                    shadowOpacity: 0.1,
-                    shadowRadius: 3,
-                  }}
-                >
-                  <Plus size={16} color="#FFFFFF" />
-                  <Text style={{ fontSize: 13, fontWeight: "600", color: "#FFFFFF" }}>
-                    Create post
-                  </Text>
-                </Pressable>
               </View>
-            ) : activeTab === "media" && !postsLoading ? (
-              <View style={{ alignItems: "center", paddingHorizontal: 24, paddingVertical: 36 }}>
-                <Text style={{ fontSize: 15, fontWeight: "600", color: "#6B7280" }}>
-                  No media yet
+            ) : activeTab === "media" ? (
+              <View className="items-center px-6 py-10">
+                <Text className="font-semibold text-gray-500">
+                  No media to display
                 </Text>
-                <Text style={{ fontSize: 12, color: "#9CA3AF", marginTop: 4, textAlign: "center" }}>
-                  Share photos with your campus community.
+                <Text className="text-xs text-gray-400 mt-1">
+                  This user has not published any media yet.
                 </Text>
-
-                <Pressable
-                  onPress={() => setShowCreatePost(true)}
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    gap: 6,
-                    backgroundColor: COLORS.forest,
-                    paddingHorizontal: 16,
-                    paddingVertical: 10,
-                    borderRadius: 20,
-                    marginTop: 16,
-                    elevation: 2,
-                    shadowColor: "#000",
-                    shadowOffset: { width: 0, height: 1 },
-                    shadowOpacity: 0.1,
-                    shadowRadius: 3,
-                  }}
-                >
-                  <Plus size={16} color="#FFFFFF" />
-                  <Text style={{ fontSize: 13, fontWeight: "600", color: "#FFFFFF" }}>
-                    Create post
-                  </Text>
-                </Pressable>
-              </View>
-            ) : null
-          }
-          ListFooterComponent={
-            activeTab === "feed" && isLoadingMore ? (
-              <View className="py-4 items-center">
-                <ActivityIndicator color={COLORS.forest} />
               </View>
             ) : null
           }
         />
       </ResponsiveContainer>
-
-      <CreatePostSheet
-        visible={showCreatePost}
-        onClose={() => setShowCreatePost(false)}
-        onPostCreated={() => {
-          loadPosts();
-        }}
-      />
-
-      <AccountSheet
-        visible={menuOpen}
-        onClose={() => setMenuOpen(false)}
-        onSignOut={handleSignOut}
-        onEdit={() => {
-          setMenuOpen(false);
-          router.push("/pages/edit-profile" as any);
-        }}
-        onSettings={() => {
-          setMenuOpen(false);
-          router.push("/pages/settings" as any);
-        }}
-      />
     </SafeAreaView>
   );
 }
@@ -977,62 +1125,6 @@ function SuggestedAllyCard({
           {isFollowing ? "Following" : "Follow"}
         </Text>
       </Pressable>
-    </Pressable>
-  );
-}
-
-function AccountSheet({
-  visible,
-  onClose,
-  onSignOut,
-  onEdit,
-  onSettings,
-}: {
-  visible: boolean;
-  onClose: () => void;
-  onSignOut: () => void;
-  onEdit: () => void;
-  onSettings: () => void;
-}) {
-  return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable className="flex-1 bg-black/30" onPress={onClose}>
-        <Pressable className="mt-auto bg-white rounded-t-3xl px-5 pt-5 pb-8" onPress={(e) => e.stopPropagation()}>
-          <View className="w-10 h-1 rounded-full bg-gray-200 self-center mb-5" />
-
-          <MenuRow icon={Pencil} label="Edit profile" onPress={onEdit} />
-          <MenuRow icon={Settings} label="Settings" onPress={onSettings} />
-          <MenuRow icon={Bookmark} label="Saved posts" onPress={onClose} />
-
-          <View className="h-3" />
-
-          <MenuRow icon={LogOut} label="Log out" onPress={onSignOut} destructive />
-        </Pressable>
-      </Pressable>
-    </Modal>
-  );
-}
-
-function MenuRow({
-  icon: Icon,
-  label,
-  onPress,
-  destructive,
-}: {
-  icon: any;
-  label: string;
-  onPress: () => void;
-  destructive?: boolean;
-}) {
-  return (
-    <Pressable onPress={onPress} className="flex-row items-center justify-between py-3.5">
-      <View className="flex-row items-center gap-3">
-        <Icon size={17} color={destructive ? "#DC2626" : "#374151"} />
-        <Text className={destructive ? "text-red-600 font-medium" : "text-gray-800 font-medium"}>
-          {label}
-        </Text>
-      </View>
-      <ChevronRight size={16} color="#D1D5DB" />
     </Pressable>
   );
 }

@@ -1,5 +1,9 @@
 import { apiRequest } from "./client";
-import type { Interaction, InteractionStatusResponse } from "@/types/interaction";
+import type {
+  Interaction,
+  InteractionStatusResponse,
+  PaginatedAllyList,
+} from "@/types/interaction";
 
 export function listInteractions(accessToken: string): Promise<Interaction[]> {
   return apiRequest<Interaction[]>("/interactions", { accessToken });
@@ -41,4 +45,13 @@ export function rejectConnection(targetUserId: string, accessToken: string): Pro
 
 export function getInteractionStatus(targetUserId: string, accessToken: string): Promise<InteractionStatusResponse> {
   return apiRequest<InteractionStatusResponse>(`/interactions/status/${targetUserId}`, { accessToken });
+}
+
+export function listAllies(
+  userId: string,
+  accessToken: string,
+  cursor?: string | null
+): Promise<PaginatedAllyList> {
+  const qs = cursor ? `?cursor=${encodeURIComponent(cursor)}` : "";
+  return apiRequest<PaginatedAllyList>(`/interactions/allies/${userId}${qs}`, { accessToken });
 }

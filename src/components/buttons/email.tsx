@@ -64,12 +64,17 @@ export default function EmailInput({
         style={{
           flexDirection: "row",
           alignItems: "center",
-          borderWidth: 1.5,
-          borderColor: error ? "#DC2626" : "#E2DED7",
+          borderWidth: error ? 1.5 : 0,
+          borderColor: error ? "#DC2626" : "transparent",
           borderRadius: 20,
           backgroundColor: "#FFF",
           paddingHorizontal: 18,
           paddingVertical: 10,
+          shadowColor: "#000",
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.04,
+          shadowRadius: 6,
+          elevation: 2,
         }}
       >
         <Mail size={17} color={error ? "#DC2626" : "#9CA3AF"} />

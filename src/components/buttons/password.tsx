@@ -72,11 +72,16 @@ export default function PasswordInput({
           flexDirection: "row",
           alignItems: "center",
           backgroundColor: "#FFFFFF",
-          borderWidth: 1.5,
-          borderColor: error ? "#DC2626" : "#E2DED7",
+          borderWidth: error ? 1.5 : 0,
+          borderColor: error ? "#DC2626" : "transparent",
           borderRadius: 20,
           paddingHorizontal: 18,
           paddingVertical: 10,
+          shadowColor: "#000",
+          shadowOffset: { width: 0, height: 2 },
+          shadowOpacity: 0.04,
+          shadowRadius: 6,
+          elevation: 2,
         }}
       >
         <Lock size={17} color={error ? "#DC2626" : "#9CA3AF"} />

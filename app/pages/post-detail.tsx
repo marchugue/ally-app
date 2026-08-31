@@ -8,6 +8,7 @@ import {
   ActivityIndicator,
   KeyboardAvoidingView,
   Platform,
+  Keyboard,
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { ArrowLeft, Send, Heart } from "lucide-react-native";
@@ -50,6 +51,17 @@ export default function PostDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [commentText, setCommentText] = useState("");
   const [submitting, setSubmitting] = useState(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
+
+  useEffect(() => {
+    if (Platform.OS === "android") {
+      const showSub = Keyboard.addListener("keyboardDidShow", (e) =>
+        setKeyboardHeight(e.endCoordinates.height)
+      );
+      const hideSub = Keyboard.addListener("keyboardDidHide", () => setKeyboardHeight(0));
+      return () => { showSub.remove(); hideSub.remove(); };
+    }
+  }, []);
 
   const loadData = useCallback(async () => {
     if (!postId || !accessToken) return;
@@ -185,7 +197,11 @@ export default function PostDetailScreen() {
 
   return (
     <KeyboardAvoidingView
-      style={{ flex: 1, backgroundColor: "#F7F4EF" }}
+      style={{
+        flex: 1,
+        backgroundColor: "#F7F4EF",
+        paddingBottom: Platform.OS === "android" ? keyboardHeight : 0,
+      }}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       {/* Header */}
@@ -324,7 +340,12 @@ export default function PostDetailScreen() {
           borderTopWidth: 1,
           borderTopColor: "#E2DED7",
           backgroundColor: "#FFFFFF",
-          paddingBottom: insets.bottom + 8,
+          paddingBottom:
+            Platform.OS === "android"
+              ? 0
+              : insets.bottom > 0
+              ? insets.bottom + 4
+              : 12,
           gap: 8,
         }}
       >
