@@ -21,7 +21,7 @@ import { ConfirmModal } from "@/components/ConfirmModal";
 
 export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
-  const { accessToken, signOut } = useAuth();
+  const { deleteAccount, signOut } = useAuth();
   const { currentVersion, checkForUpdates } = useNetwork();
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
@@ -46,12 +46,11 @@ export default function SettingsScreen() {
   };
 
   const handleDeleteAccount = async () => {
-    if (!accessToken || deleting) return;
+    if (deleting) return;
     setDeleting(true);
     try {
-      await deleteMyProfile(accessToken);
+      await deleteAccount();
       setShowDeleteConfirm(false);
-      await signOut();
     } catch (err) {
       console.warn("Failed to delete account", err);
       setDeleting(false);

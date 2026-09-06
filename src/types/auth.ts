@@ -10,6 +10,9 @@ export interface AuthUser {
     full_name?: string | null;
     username?: string | null;
     avatar_url?: string | null;
+    pending_student_verification?: boolean;
+    student_verification_status?: string | null;
+    [key: string]: unknown;
   };
   app_metadata?: Record<string, unknown>;
   aud?: string;
@@ -32,13 +35,30 @@ export interface RegisterPayload {
   email: string;
   password: string;
   username: string;
-  bio: string | null;
-  department: string | null;
-  course: string | null;
-  year_level: string | null;
-  interests: string[];
-  organizations: string[];
-  avatar_url: string | null;
+  bio?: string | null;
+  department?: string | null;
+  course?: string | null;
+  year_level?: string | null;
+  interests?: string[];
+  organizations?: string[];
+  avatar_url?: string | null;
+  email_type?: 'chmsu' | 'external';
+  student_id_url?: string | null;
+}
+
+/** Returned by POST /auth/register — no session until OTP is verified */
+export interface RegisterResponse {
+  userId: string;
+  email: string;
+  accessToken: string;
+}
+
+export interface OtpStatus {
+  exists: boolean;
+  verified: boolean;
+  resendCount: number;
+  resendLimit: number;
+  expiresAt: string | null;
 }
 
 export interface RegisterFormData {

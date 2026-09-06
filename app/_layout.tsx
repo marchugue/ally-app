@@ -6,15 +6,45 @@ import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import * as SplashScreen from "expo-splash-screen";
-import { View, ActivityIndicator } from "react-native";
+import { View, ActivityIndicator, Platform } from "react-native";
+import Constants from "expo-constants";
 import { AuthProvider, useAuth } from "@/lib/auth/AuthContext";
 
 SplashScreen.preventAutoHideAsync();
 
 function RootLayoutNav() {
-  const { user, isLoading } = useAuth();
+  const { user, accessToken, isLoading } = useAuth();
   const segments = useSegments() as string[];
 
+  useEffect(() => {
+    if (!accessToken) return;
+
+    // Expo Go (Android SDK 53+) explicitly disables expo-notifications.
+    // Guarding the require prevents Expo Go from throwing an UnavailabilityError screen.
+    const isExpoGo = Constants.appOwnership === "expo" || Constants.executionEnvironment === "storeClient";
+    if (isExpoGo && Platform.OS === "android") {
+      console.log("[PushNotifications] Expo Go (Android) active. Push notifications operate in dev builds & production APKs.");
+      return;
+    }
+
+    try {
+      const { registerForPushNotificationsAsync, setupNotificationListeners } = require("@/lib/pushNotifications");
+
+      registerForPushNotificationsAsync(accessToken).catch((err: any) =>
+        console.warn("Failed to register push token:", err)
+      );
+
+      const unsubscribe = setupNotificationListeners(accessToken, (conversationId: string) => {
+        router.push({ pathname: "/pages/conversation", params: { id: conversationId } } as any);
+      });
+
+      return () => {
+        unsubscribe?.();
+      };
+    } catch (err) {
+      console.warn("[PushNotifications] Could not load push notification listener:", err);
+    }
+  }, [accessToken]);
 
   useEffect(() => {
     if (isLoading) return;
@@ -27,6 +57,14 @@ function RootLayoutNav() {
       segments[1] === "forgot-password" ||
       segments.length === 1);
 
+    const onPendingPage = segments[0] === "pages" && segments[1] === "pending-approval";
+
+    // Is the user a non-CHMSU student waiting for admin approval?
+    const isPendingApproval = Boolean(
+      user?.user_metadata?.pending_student_verification &&
+      user?.user_metadata?.student_verification_status !== 'approved'
+    );
+
     // If user lands at root with no auth: go to landing
     const atRoot = segments.length === 0;
 
@@ -34,6 +72,12 @@ function RootLayoutNav() {
       router.replace("/pages/landing" as any);
     } else if (!user && atRoot) {
       router.replace("/pages/landing" as any);
+    } else if (user && isPendingApproval && !onPendingPage) {
+      // Non-CHMSU student, ID pending review — lock to pending-approval screen
+      router.replace("/pages/pending-approval" as any);
+    } else if (user && !isPendingApproval && onPendingPage) {
+      // Already approved — push them back to main tabs
+      router.replace("/(tabs)");
     } else if (user && onAuthPages) {
       router.replace("/(tabs)");
     }
@@ -54,6 +98,7 @@ function RootLayoutNav() {
       <Stack.Screen name="pages/login" options={{ headerShown: false }} />
       <Stack.Screen name="pages/register" options={{ headerShown: false }} />
       <Stack.Screen name="pages/forgot-password" options={{ headerShown: false }} />
+      <Stack.Screen name="pages/pending-approval" options={{ headerShown: false }} />
 
       {/* Main app */}
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />

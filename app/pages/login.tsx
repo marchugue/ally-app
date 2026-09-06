@@ -60,13 +60,26 @@ export default function LoginScreen() {
     setIsSubmitting(true);
     
     try {
-      await Promise.all([
+      const [session] = await Promise.all([
         signIn(email.trim().toLowerCase(), password),
         new Promise(resolve => setTimeout(resolve, 2000)),
       ]);
 
-      router.replace("/(tabs)");
-    } catch (error) {
+      // Non-CHMSU students with pending student ID review go to waiting room.
+      // CHMSU / approved users go straight to the main app.
+      const isPending =
+        session.user?.user_metadata?.pending_student_verification === true &&
+        session.user?.user_metadata?.student_verification_status !== 'approved';
+
+      router.replace(isPending ? ('/pages/pending-approval' as any) : '/(tabs)');
+    } catch (error: any) {
+      // OTP not yet verified — redirect to verify screen
+      if (error?.requiresOtp && error?.userId) {
+        router.replace(
+          `/pages/verify-otp?userId=${encodeURIComponent(error.userId)}&email=${encodeURIComponent(error.email ?? email)}` as any
+        );
+        return;
+      }
       if (error instanceof ApiError) {
         setErrorMessage(error.message);
       } else {

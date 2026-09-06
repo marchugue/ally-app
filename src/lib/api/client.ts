@@ -32,15 +32,22 @@ export async function apiRequest<T>(
   }
 
   let response: Response;
+  const fullUrl = `${API_BASE_URL}/api${path}`;
+
   try {
-    response = await fetch(`${API_BASE_URL}/api${path}`, {
+    response = await fetch(fullUrl, {
       method,
       headers,
       body: body ? JSON.stringify(body) : undefined,
     });
-  } catch {
-    // Network failure (no connection, backend unreachable, etc.)
-    throw new ApiError("Unable to reach the server. Check your connection.", 0);
+  } catch (err: any) {
+    console.error(`[API Error] ${method} ${fullUrl} failed:`, err);
+    throw new ApiError(
+      err?.message
+        ? `Cannot connect to backend (${fullUrl}): ${err.message}`
+        : `Unable to reach backend at ${fullUrl}. Check connection.`,
+      0
+    );
   }
 
   if (noContent || response.status === 204) {

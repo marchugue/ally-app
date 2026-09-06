@@ -55,3 +55,11 @@ export function followUser(userId: string, accessToken: string): Promise<{ follo
 export function unfollowUser(userId: string, accessToken: string): Promise<{ following: boolean }> {
   return apiRequest<{ following: boolean }>(`/follow/${userId}`, { method: "DELETE", accessToken });
 }
+
+export function updatePushToken(expoPushToken: string | null, accessToken: string): Promise<{ ok: boolean }> {
+  return apiRequest<{ ok: boolean }>("/profiles/push-token", {
+    method: "POST",
+    body: { expoPushToken },
+    accessToken,
+  });
+}

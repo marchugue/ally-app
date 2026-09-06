@@ -11,7 +11,7 @@ import {
   Modal,
 } from "react-native";
 import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { Search, X, MessageCircle, UserPlus, Trash2 } from "lucide-react-native";
 import { ScreenHeader } from "@/components/ScreenHeader";
 import { UserAvatar } from "@/components/UserAvatar";
@@ -64,6 +64,34 @@ function getParticipantInfo(conv: any, myId: string) {
 function getLastMessage(conv: Conversation) {
   if (!conv.messages || conv.messages.length === 0) return null;
   return conv.messages[conv.messages.length - 1];
+}
+
+function getUnreadInfo(conv: Conversation, myId: string) {
+  if (!myId) return { unreadCount: 0, isUnread: false };
+  const members = (conv.conversation_members || []) as any[];
+  const myMember = members.find((m: any) => {
+    const profile = Array.isArray(m.profiles) ? m.profiles[0] : (m.profiles || m);
+    const mUserId = m.user_id || profile?.id;
+    return String(mUserId).toLowerCase() === String(myId).toLowerCase();
+  });
+
+  const lastReadAt = myMember?.last_read_at ? new Date(myMember.last_read_at).getTime() : 0;
+  const messages = conv.messages || [];
+
+  let unreadCount = 0;
+  for (const msg of messages) {
+    if (msg.sender_id && String(msg.sender_id).toLowerCase() !== String(myId).toLowerCase()) {
+      const msgTime = new Date(msg.created_at).getTime();
+      if (msgTime > lastReadAt) {
+        unreadCount++;
+      }
+    }
+  }
+
+  return {
+    unreadCount,
+    isUnread: unreadCount > 0,
+  };
 }
 
 function formatRelativeTime(dateStr: string): string {
@@ -165,6 +193,7 @@ interface SwipeableRowProps {
   lastMsg: ReturnType<typeof getLastMessage>;
   isOnline: boolean;
   isMine: boolean;
+  unreadInfo: { unreadCount: number; isUnread: boolean };
   swipeableRefs: React.MutableRefObject<Map<string, any>>;
   onDeletePrompt: (id: string, name: string) => void;
 }
@@ -175,6 +204,7 @@ function SwipeableRow({
   lastMsg,
   isOnline,
   isMine,
+  unreadInfo,
   swipeableRefs,
   onDeletePrompt,
 }: SwipeableRowProps) {
@@ -202,7 +232,6 @@ function SwipeableRow({
         onDeletePrompt(item.id, info.participantName);
       }}
       renderRightActions={() => (
-        /* Layer 2 (Lower): Red background + trash icon revealed on swipe */
         <Pressable
           onPress={() => onDeletePrompt(item.id, info.participantName)}
           style={{
@@ -226,7 +255,6 @@ function SwipeableRow({
         </Pressable>
       )}
     >
-      {/* Layer 1 (Top): Chat content — background matches page surface */}
       <Pressable
         onPress={() =>
           router.push({
@@ -240,11 +268,15 @@ function SwipeableRow({
         }
         android_ripple={{ color: "rgba(0,0,0,0.04)" }}
         style={({ pressed }) => ({
-          backgroundColor: pressed ? "#F9FAFB" : "#FFFFFF",
+          backgroundColor: pressed
+            ? "#F9FAFB"
+            : unreadInfo.isUnread
+            ? "#F0FDF4"
+            : "#FFFFFF",
         })}
       >
         <View
-          className="w-full flex-row items-start px-5 py-3"
+          className="w-full flex-row items-center px-5 py-3"
           style={{ flexDirection: "row", width: "100%", flexWrap: "nowrap" }}
         >
           {/* Avatar */}
@@ -262,7 +294,7 @@ function SwipeableRow({
             style={{ flex: 1, flexBasis: 0, minWidth: 0, overflow: "hidden" }}
           >
             <Text
-              className="text-[15px] font-bold text-[#111827]"
+              className={`text-[15px] ${unreadInfo.isUnread ? "font-extrabold text-[#111827]" : "font-bold text-[#111827]"}`}
               numberOfLines={1}
               ellipsizeMode="tail"
             >
@@ -271,7 +303,8 @@ function SwipeableRow({
             <Text
               className="text-[13px] mt-0.5"
               style={{
-                color: lastMsg ? "#6B7280" : "#9CA3AF",
+                color: unreadInfo.isUnread ? "#111827" : lastMsg ? "#6B7280" : "#9CA3AF",
+                fontWeight: unreadInfo.isUnread ? "700" : "400",
                 fontStyle: lastMsg ? "normal" : "italic",
               }}
               numberOfLines={1}
@@ -283,14 +316,40 @@ function SwipeableRow({
             </Text>
           </View>
 
-          {/* Timestamp */}
-          {lastMsg ? (
-            <View className="shrink-0 pt-0.5" style={{ flexShrink: 0 }}>
-              <Text className="text-[11px] text-[#9CA3AF]">
+          {/* Timestamp & Red Unread Badge */}
+          <View className="shrink-0 items-end justify-center" style={{ flexShrink: 0, alignItems: "flex-end" }}>
+            {lastMsg ? (
+              <Text
+                style={{
+                  fontSize: 11,
+                  color: unreadInfo.isUnread ? "#1A6B3C" : "#9CA3AF",
+                  fontWeight: unreadInfo.isUnread ? "700" : "400",
+                  marginBottom: unreadInfo.isUnread ? 4 : 0,
+                }}
+              >
                 {formatRelativeTime(lastMsg.created_at)}
               </Text>
-            </View>
-          ) : null}
+            ) : null}
+
+            {unreadInfo.isUnread && (
+              <View
+                style={{
+                  backgroundColor: "#EF4444",
+                  borderRadius: 999,
+                  minWidth: 20,
+                  height: 20,
+                  paddingHorizontal: 6,
+                  alignItems: "center",
+                  justifyContent: "center",
+                  marginTop: 2,
+                }}
+              >
+                <Text style={{ color: "#FFFFFF", fontSize: 11, fontWeight: "800" }}>
+                  {unreadInfo.unreadCount > 99 ? "99+" : unreadInfo.unreadCount}
+                </Text>
+              </View>
+            )}
+          </View>
         </View>
       </Pressable>
     </ReanimatedSwipeable>
@@ -308,7 +367,6 @@ export default function MessagesScreen() {
   const [startingUserId, setStartingUserId] = useState<string | null>(null);
   const [variantFilter, setVariantFilter] = useState<"all" | "regular" | "anonymous">("all");
   const searchInputRef = useRef<TextInput>(null);
-  // id of conversation pending delete confirmation shown in Modal
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const [deleteTargetName, setDeleteTargetName] = useState<string>("");
   const swipeableRefs = useRef<Map<string, any>>(new Map());
@@ -323,7 +381,7 @@ export default function MessagesScreen() {
     closeAllSwipeables();
   }, [closeAllSwipeables]);
 
-  const loadConversations = useCallback(async (silent = false) => {
+  const loadConversations = useCallback(async (_silent = false) => {
     if (!accessToken) return;
     try {
       const convs = await listConversations(accessToken);
@@ -334,7 +392,7 @@ export default function MessagesScreen() {
         return new Date(bTime).getTime() - new Date(aTime).getTime();
       });
 
-      // Deduplicate by participantId (EXACT web version behavior from useConversations.ts)
+      // Deduplicate by participantId
       const deduped = new Map<string, Conversation>();
       convs.forEach((conv) => {
         const info = getParticipantInfo(conv, user?.id || "");
@@ -354,7 +412,7 @@ export default function MessagesScreen() {
       const { online } = await getOnlinePresence(accessToken);
       setOnlineUsers(new Set(online.map((e) => e.user_id)));
     } catch {
-      // Presence is best-effort
+      // Best-effort
     }
   }, [accessToken]);
 
@@ -366,15 +424,23 @@ export default function MessagesScreen() {
     }
     init();
 
-    // Fallback poll if the socket disconnects.
+    // Passive fallback poll (60s instead of 15s; focusEffect + sockets handle active updates)
     const interval = setInterval(() => {
       loadConversations(true);
       loadOnlineStatus();
-    }, POLL_INTERVAL_MS);
+    }, 60000);
     return () => clearInterval(interval);
   }, [loadConversations, loadOnlineStatus]);
 
-  // Instant list refresh when a message arrives on any device.
+  // Re-fetch when navigating back to the Messages tab to instantly reflect read status changes
+  useFocusEffect(
+    useCallback(() => {
+      void loadConversations(true);
+      void loadOnlineStatus();
+    }, [loadConversations, loadOnlineStatus])
+  );
+
+  // Real-time update on socket message
   useEffect(() => {
     if (!accessToken) return;
 
@@ -410,13 +476,9 @@ export default function MessagesScreen() {
       setDeleteTargetId(null);
       setDeleteTargetName("");
       closeAllSwipeables();
-      // Optimistically remove from list immediately
       setConversations((prev) => prev.filter((c) => c.id !== id));
-      // Permanent delete: clears message history + hides from list
       if (accessToken) {
-        clearConversation(id, accessToken).catch(() => {
-          // Silently ignore — local removal already happened
-        });
+        clearConversation(id, accessToken).catch(() => {});
       }
     },
     [accessToken, closeAllSwipeables]
@@ -611,7 +673,6 @@ export default function MessagesScreen() {
               elevation: 8,
             }}
           >
-            {/* Icon */}
             <View
               style={{
                 width: 52,
@@ -654,7 +715,6 @@ export default function MessagesScreen() {
               {"? This will hide it from your chat list."}
             </Text>
 
-            {/* Buttons */}
             <View style={{ flexDirection: "row", gap: 10 }}>
               <Pressable
                 onPress={handleCancelDelete}
@@ -805,6 +865,7 @@ export default function MessagesScreen() {
           const lastMsg = getLastMessage(item);
           const isOnline = !info.isAnonymous && onlineUsers.has(info.participantId);
           const isMine = lastMsg?.sender_id === user?.id;
+          const unreadInfo = getUnreadInfo(item, user?.id || "");
 
           return (
             <SwipeableRow
@@ -813,6 +874,7 @@ export default function MessagesScreen() {
               lastMsg={lastMsg}
               isOnline={isOnline}
               isMine={isMine}
+              unreadInfo={unreadInfo}
               swipeableRefs={swipeableRefs}
               onDeletePrompt={(id, name) => {
                 setDeleteTargetId(id);

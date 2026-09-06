@@ -3,7 +3,7 @@ import * as SecureStore from "expo-secure-store";
 import * as authApi from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/apiError";
 import { disconnectSocket, initSocket } from "@/lib/socket";
-import type { AuthSession, AuthUser, RegisterPayload } from "@/types/auth";
+import type { AuthSession, AuthUser, RegisterPayload, RegisterResponse } from "@/types/auth";
 
 const ACCESS_TOKEN_KEY = "ally_access_token";
 const REFRESH_TOKEN_KEY = "ally_refresh_token";
@@ -13,9 +13,14 @@ interface AuthContextValue {
   accessToken: string | null;
   /** True while restoring a persisted session on app launch. */
   isLoading: boolean;
-  signIn: (email: string, password: string) => Promise<void>;
-  signUp: (payload: RegisterPayload) => Promise<void>;
+  /** Signs in and returns the resolved AuthSession so callers can check user_metadata. */
+  signIn: (email: string, password: string) => Promise<AuthSession>;
+  /** Register returns { userId, email } so the caller can navigate to OTP screen. */
+  signUp: (payload: RegisterPayload) => Promise<RegisterResponse>;
   signOut: () => Promise<void>;
+  deleteAccount: () => Promise<void>;
+  /** Apply a session obtained externally (e.g., after OTP verify). */
+  completeLogin: (session: AuthSession) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -79,13 +84,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAccessToken(null);
   }
 
-  async function signIn(email: string, password: string) {
-    const session = await authApi.login({ email, password });
-    await applySession(session);
+  async function signIn(email: string, password: string): Promise<AuthSession> {
+    try {
+      const session = await authApi.login({ email, password });
+      await applySession(session);
+      return session;
+    } catch (err: any) {
+      // Surface OTP-required as a special error shape the caller can act on
+      if (err?.status === 403 && err?.body?.requiresOtp) {
+        const otpErr: any = new Error('Email not verified');
+        otpErr.requiresOtp = true;
+        otpErr.userId = err.body.userId;
+        otpErr.email = err.body.email;
+        throw otpErr;
+      }
+      throw err;
+    }
   }
 
-  async function signUp(payload: RegisterPayload) {
-    await authApi.Register(payload);
+  async function signUp(payload: RegisterPayload): Promise<RegisterResponse> {
+    return authApi.Register(payload);
+  }
+
+  async function completeLogin(session: AuthSession): Promise<void> {
+    await applySession(session);
   }
 
   async function signOut() {
@@ -101,8 +123,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  async function deleteAccount() {
+    try {
+      if (accessToken) {
+        await authApi.deleteAccount(accessToken);
+      }
+    } catch {
+      // Clear tokens even if network fails
+    } finally {
+      await clearStoredTokens();
+    }
+  }
+
   return (
-    <AuthContext.Provider value={{ user, accessToken, isLoading, signIn, signOut, signUp }}>
+    <AuthContext.Provider value={{ user, accessToken, isLoading, signIn, signOut, deleteAccount, signUp, completeLogin }}>
       {children}
     </AuthContext.Provider>
   );

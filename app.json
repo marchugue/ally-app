@@ -16,12 +16,18 @@
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "xyz.allyjis.app",
+      "infoPlist": {
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true
+        }
+      },
       "associatedDomains": [
         "applinks:ally-jis.xyz",
         "applinks:www.ally-jis.xyz"
       ]
     },
     "android": {
+      "usesCleartextTraffic": true,
       "softwareKeyboardLayoutMode": "resize",
       "versionCode": 1,
       "adaptiveIcon": {
@@ -57,8 +63,19 @@
       "output": "static",
       "favicon": "./assets/images/favicon.png"
     },
+    "notification": {
+      "icon": "./assets/images/group9.png",
+      "color": "#1F663C"
+    },
     "plugins": [
       "expo-router",
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/group9.png",
+          "color": "#1F663C"
+        }
+      ],
       [
         "expo-splash-screen",
         {

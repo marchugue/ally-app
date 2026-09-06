@@ -2,6 +2,15 @@ export interface ConversationMemberProfile {
   id: string;
   full_name: string;
   username: string;
+  avatar_url?: string | null;
+}
+
+export interface ConversationMember {
+  conversation_id: string;
+  user_id: string;
+  last_read_at: string | null;
+  icebreakers_enabled?: boolean;
+  profiles?: ConversationMemberProfile | ConversationMemberProfile[];
 }
 
 export interface ConversationMembership {
@@ -35,8 +44,11 @@ export interface Conversation {
   id: string;
   updated_at: string;
   messages: Message[];
-  conversation_members: unknown[];
+  conversation_members: ConversationMember[];
   blockStatus: BlockStatus;
+  variant?: "regular" | "anonymous" | "anonymous_ended";
+  matchInfo?: any;
+  dayStreak?: number;
 }
 
 export interface SendMessagePayload {

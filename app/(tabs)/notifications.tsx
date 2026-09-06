@@ -95,13 +95,13 @@ export default function NotificationsScreen() {
     }
   }, [accessToken]);
 
-  // Screen Focus + Real-time Polling (10s interval matching web app)
+  // Screen Focus + Real-time socket events (relaxed 60s fallback matching web)
   useFocusEffect(
     useCallback(() => {
-      void loadNotifications(true);
+      void loadNotifications(false);
       const interval = setInterval(() => {
         void loadNotifications(false);
-      }, POLL_INTERVAL_MS);
+      }, 60000);
 
       return () => clearInterval(interval);
     }, [loadNotifications])

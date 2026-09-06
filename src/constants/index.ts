@@ -1,3 +1,6 @@
+import Constants from "expo-constants";
+import { Platform } from "react-native";
+
 export const COLORS = {
   // Backgrounds
   background: "#F7F4EF",       // warm cream — main app bg
@@ -24,5 +27,28 @@ export const COLORS = {
   success: "#16A34A",
 } as const;
 
-export const API_BASE_URL =
-  process.env.EXPO_PUBLIC_API_URL ?? "https://api.ally-jis.xyz";
+function getApiBaseUrl(): string {
+  // 1. Explicit environment variable if specified
+  if (process.env.EXPO_PUBLIC_API_URL && process.env.EXPO_PUBLIC_API_URL !== "http://localhost:3001") {
+    return process.env.EXPO_PUBLIC_API_URL;
+  }
+
+  // 2. Auto-detect host IP address from Expo bundler connection (Expo Go / Dev Server)
+  const hostUri = Constants.expoConfig?.hostUri || (Constants as any).manifest2?.extra?.expoGo?.debuggerHost || (Constants as any).debuggerHost;
+  if (hostUri && typeof hostUri === "string") {
+    const hostIp = hostUri.split(":")[0];
+    if (hostIp && hostIp !== "localhost" && hostIp !== "127.0.0.1") {
+      return `http://${hostIp}:3001`;
+    }
+  }
+
+  // 3. Android Emulator fallback
+  if (Platform.OS === "android") {
+    return "http://10.0.2.2:3001";
+  }
+
+  // 4. Default fallback
+  return "http://192.168.254.105:3001";
+}
+
+export const API_BASE_URL = getApiBaseUrl();
