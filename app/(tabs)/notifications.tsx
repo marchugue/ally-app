@@ -186,12 +186,26 @@ export default function NotificationsScreen() {
         router.push("/(tabs)/messages" as any);
       } else if (item.type === "match") {
         router.push("/(tabs)/discover" as any);
+      } else if (item.type === "comment_reply") {
+        // Deep-link with commentId so media-preview can auto-enter reply mode
+        const targetPostId = item.post_id || item.target_id;
+        if (targetPostId) {
+          router.push({
+            pathname: "/pages/media-preview" as any,
+            params: {
+              postId: targetPostId,
+              openComments: "true",
+              ...(item.comment_id ? { commentId: item.comment_id } : {}),
+            },
+          });
+        } else {
+          router.push("/(tabs)" as any);
+        }
       } else if (
         item.type === "like" ||
         item.type === "post_like" ||
         item.type === "comment" ||
         item.type === "post_comment" ||
-        item.type === "comment_reply" ||
         item.type === "comment_like"
       ) {
         const targetPostId = item.post_id || item.target_id;

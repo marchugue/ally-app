@@ -20,6 +20,7 @@ export async function listNotifications(accessToken: string): Promise<Notificati
     const description = row.description || row.message || "";
 
     const postId = row.post_id || row.target_id || row.resource_id || "";
+    const commentId = row.comment_id || "";
 
     return {
       ...row,
@@ -28,6 +29,7 @@ export async function listNotifications(accessToken: string): Promise<Notificati
       username: username,
       description: description,
       post_id: postId,
+      comment_id: commentId,
     };
   });
 }

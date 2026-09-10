@@ -64,6 +64,7 @@ export default function MediaPreviewScreen() {
     commentsCount: rawComments,
     isLiked: rawLiked,
     openComments,
+    commentId,
   } = useLocalSearchParams<{
     mediaUrls?: string;
     initialIndex?: string;
@@ -77,6 +78,8 @@ export default function MediaPreviewScreen() {
     commentsCount?: string;
     isLiked?: string;
     openComments?: string;
+    /** commentId: when set from a comment_reply notification, auto-sets reply mode on this comment */
+    commentId?: string;
   }>();
 
   const parsedUrls: string[] = useMemo(() => {
@@ -146,8 +149,8 @@ export default function MediaPreviewScreen() {
     }
   }, []);
 
-  const fetchComments = useCallback(async () => {
-    if (!postId || !accessToken) return;
+  const fetchComments = useCallback(async (): Promise<Comment[]> => {
+    if (!postId || !accessToken) return [];
     try {
       setCommentsLoading(true);
       const data: any = await listComments(postId, accessToken);
@@ -163,8 +166,10 @@ export default function MediaPreviewScreen() {
         }
       }
       setComments(flattened);
+      return flattened;
     } catch (err) {
       console.warn("Failed to load comments", err);
+      return [];
     } finally {
       setCommentsLoading(false);
     }
@@ -173,9 +178,17 @@ export default function MediaPreviewScreen() {
   useEffect(() => {
     if (openComments === "true") {
       setShowCommentModal(true);
-      fetchComments();
+      fetchComments().then((loadedComments) => {
+        // Auto-set reply mode if commentId param is present
+        if (commentId && loadedComments) {
+          const target = loadedComments.find((c: any) => c.id === commentId);
+          if (target) {
+            setReplyingToComment(target);
+          }
+        }
+      });
     }
-  }, [openComments, fetchComments]);
+  }, [openComments, fetchComments, commentId]);
 
   const handleOpenCommentModal = () => {
     setShowCommentModal(true);

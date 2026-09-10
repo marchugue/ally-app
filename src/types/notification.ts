@@ -28,6 +28,7 @@ export interface NotificationItem {
   fromUserId?: string;
   from_user_id?: string;
   post_id?: string;
+  comment_id?: string;
   target_id?: string;
   user_id?: string;
   avatar_url?: string;
