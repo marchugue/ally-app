@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   View,
   Text,
@@ -15,6 +15,7 @@ interface ChatInputProps {
   sending?: boolean;
   replyTo?: Message | null;
   onCancelReply?: () => void;
+  draftText?: string;
 }
 
 export function ChatInput({
@@ -23,9 +24,20 @@ export function ChatInput({
   sending = false,
   replyTo,
   onCancelReply,
+  draftText,
 }: ChatInputProps) {
-  const [text, setText] = useState("");
+  const [text, setText] = useState(draftText || "");
   const inputRef = useRef<TextInput>(null);
+
+  // Sync draftText when external source updates it (e.g. icebreaker card tapped)
+  React.useEffect(() => {
+    if (draftText !== undefined) {
+      setText(draftText);
+      if (draftText) {
+        setTimeout(() => inputRef.current?.focus(), 150);
+      }
+    }
+  }, [draftText]);
 
   const handleSend = () => {
     const trimmed = text.trim();

@@ -12,9 +12,10 @@ import {
 } from "react-native";
 import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
 import { router, useFocusEffect } from "expo-router";
-import { Search, X, MessageCircle, UserPlus, Trash2 } from "lucide-react-native";
+import { Search, X, MessageCircle, UserPlus, Trash2, Drama } from "lucide-react-native";
 import { ScreenHeader } from "@/components/ScreenHeader";
 import { UserAvatar } from "@/components/UserAvatar";
+import { AnonymousAvatar } from "@/components/AnonymousAvatar";
 import { FilterChip } from "@/components/FilterChip";
 import { EmptyState } from "@/components/EmptyState";
 import { useAuth } from "@/lib/auth/AuthContext";
@@ -36,10 +37,13 @@ function getParticipantInfo(conv: any, myId: string) {
 
   if (isAnonymous) {
     return {
-      participantId: conv.matchInfo?.matchId || conv.id || "anonymous",
-      participantName: conv.matchInfo?.partnerAlias || "Anonymous",
-      participantAvatar: conv.matchInfo?.partnerAvatar || null,
+      participantId: conv.matchInfo?.id || conv.matchInfo?.matchId || conv.id || "anonymous",
+      participantName: conv.matchInfo?.partnerAlias || "Anonymous Ally",
+      participantAvatar: conv.matchInfo?.partnerAvatar || "fox",
       isAnonymous: true,
+      stage: conv.matchInfo?.stage ?? 0,
+      dayStreak: conv.matchInfo?.dayStreak ?? conv.dayStreak ?? 0,
+      ended: conv.variant === "anonymous_ended" || Boolean(conv.matchInfo?.ended),
     };
   }
 
@@ -263,6 +267,7 @@ function SwipeableRow({
               conversationId: item.id,
               prefillName: info.participantName,
               prefillAvatar: info.participantAvatar || "",
+              isAnonymous: info.isAnonymous ? "true" : "false",
             },
           })
         }
@@ -281,11 +286,15 @@ function SwipeableRow({
         >
           {/* Avatar */}
           <View className="shrink-0" style={{ flexShrink: 0 }}>
-            <UserAvatar
-              avatar={info.participantAvatar}
-              size="md"
-              online={isOnline}
-            />
+            {info.isAnonymous ? (
+              <AnonymousAvatar avatarKey={info.participantAvatar} size={40} />
+            ) : (
+              <UserAvatar
+                avatar={info.participantAvatar}
+                size="md"
+                online={isOnline}
+              />
+            )}
           </View>
 
           {/* Details */}
@@ -293,13 +302,21 @@ function SwipeableRow({
             className="flex-1 min-w-0 mx-3"
             style={{ flex: 1, flexBasis: 0, minWidth: 0, overflow: "hidden" }}
           >
-            <Text
-              className={`text-[15px] ${unreadInfo.isUnread ? "font-extrabold text-[#111827]" : "font-bold text-[#111827]"}`}
-              numberOfLines={1}
-              ellipsizeMode="tail"
-            >
-              {info.participantName}
-            </Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+              <Text
+                className={`text-[15px] ${unreadInfo.isUnread ? "font-extrabold text-[#111827]" : "font-bold text-[#111827]"}`}
+                numberOfLines={1}
+                ellipsizeMode="tail"
+              >
+                {info.participantName}
+              </Text>
+              {info.isAnonymous && <Drama size={13} color="#1A6B3C" />}
+              {info.isAnonymous && info.dayStreak > 0 && (
+                <Text style={{ fontSize: 11, color: "#EA580C", fontWeight: "700" }}>
+                  🔥{info.dayStreak}d
+                </Text>
+              )}
+            </View>
             <Text
               className="text-[13px] mt-0.5"
               style={{

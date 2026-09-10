@@ -45,6 +45,7 @@ import {
   joinMatchmakingQueue,
   leaveMatchmakingQueue,
 } from "@/lib/api/matchmaking";
+import { useMatchmaking } from "@/hooks/useMatchmaking";
 import type { Profile, ProfileSummary } from "@/types/profile";
 
 type ConnectionStatus = "none" | "pending" | "accepted";
@@ -156,12 +157,9 @@ export default function DiscoverScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Matchmaking State
-  const [dailyMatchCount, setDailyMatchCount] = useState(0);
-  const [inQueue, setInQueue] = useState(false);
-  const [queueLoading, setQueueLoading] = useState(false);
+  // Matchmaking State (Powered by real backend Socket.IO & REST)
+  const matchmaking = useMatchmaking();
   const [showMatchOverlay, setShowMatchOverlay] = useState(false);
-  const DAILY_LIMIT = 5;
 
   // Search & Filter State
   const [searchQuery, setSearchQuery] = useState("");
@@ -177,19 +175,13 @@ export default function DiscoverScreen() {
   const loadData = useCallback(async () => {
     if (!accessToken || !user) return;
     try {
-      const [myProfile, profiles, interactions, mmStatus] = await Promise.all([
+      const [myProfile, profiles, interactions] = await Promise.all([
         getMyProfile(accessToken).catch(() => null),
         listProfiles(accessToken, user.id),
         listInteractions(accessToken).catch(() => []),
-        getMatchmakingStatus(accessToken).catch(() => ({ inQueue: false, dailyCount: 0, dailyLimit: 5 })),
       ]);
 
       setCurrentUserProfile(myProfile);
-
-      if (mmStatus) {
-        setDailyMatchCount(mmStatus.dailyCount || 0);
-        setInQueue(Boolean(mmStatus.inQueue));
-      }
 
       const connMap: Record<string, ConnectionStatus> = {};
       (interactions ?? []).forEach((r: any) => {
@@ -215,20 +207,22 @@ export default function DiscoverScreen() {
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await loadData();
+    await Promise.all([loadData(), matchmaking.refreshStatus()]);
     setRefreshing(false);
-  }, [loadData]);
+  }, [loadData, matchmaking]);
 
   // Matchmaking Queue Handler
   const handleToggleMatchQueue = async () => {
-    if (dailyMatchCount >= DAILY_LIMIT) {
-      Alert.alert("Daily Limit Reached", "You have reached your 5 daily anonymous matches.");
+    if (matchmaking.dailyMatchCount >= matchmaking.dailyLimit) {
+      Alert.alert(
+        "Daily Limit Reached",
+        `You have reached your ${matchmaking.dailyLimit} daily anonymous matches.`
+      );
       return;
     }
     setShowMatchOverlay(true);
-    if (accessToken && !inQueue) {
-      joinMatchmakingQueue(accessToken).catch(() => {});
-      setDailyMatchCount((prev) => Math.min(DAILY_LIMIT, prev + 1));
+    if (matchmaking.phase === "idle" || matchmaking.phase === "ended") {
+      matchmaking.joinQueue();
     }
   };
 
@@ -379,7 +373,7 @@ export default function DiscoverScreen() {
 
         <ShinyFindMatchButton
           onPress={handleToggleMatchQueue}
-          remainingCount={DAILY_LIMIT - dailyMatchCount}
+          remainingCount={Math.max(0, matchmaking.dailyLimit - matchmaking.dailyMatchCount)}
         />
       </Pressable>
 
@@ -952,8 +946,9 @@ export default function DiscoverScreen() {
 
       {/* ═══ Matchmaking Fullscreen Queue Overlay Modal ═══ */}
       <MatchmakingOverlayModal
-        visible={showMatchOverlay}
+        visible={showMatchOverlay || matchmaking.phase === "searching" || matchmaking.phase === "pending"}
         onClose={() => setShowMatchOverlay(false)}
+        matchmaking={matchmaking}
       />
     </View>
   );

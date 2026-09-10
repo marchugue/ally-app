@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useCallback } from "react";
 import {
   View,
   Text,
@@ -18,383 +18,795 @@ import {
   Zap,
   ShieldCheck,
   MessageCircle,
+  RotateCw,
 } from "lucide-react-native";
+import { router } from "expo-router";
+import { useMatchmaking, UseMatchmakingResult } from "@/hooks/useMatchmaking";
+import { AnonymousAvatar } from "@/components/AnonymousAvatar";
+import { avatarColorFor, getAvatarEmoji } from "@/constants/matchOptions";
 
 interface MatchmakingOverlayModalProps {
   visible: boolean;
   onClose: () => void;
   onMatchAccepted?: (alias: string) => void;
+  matchmaking?: UseMatchmakingResult;
 }
 
-const MOCK_ALIASES = [
-  { name: "Sly Fox", emoji: "🦊", color: "#E05A47", dept: "Computer Studies", matchScore: 96 },
-  { name: "Wise Owl", emoji: "🦉", color: "#3B8C7E", dept: "Engineering", matchScore: 92 },
-  { name: "Chill Panda", emoji: "🐼", color: "#4B5563", dept: "Industrial Technology", matchScore: 89 },
-  { name: "Brave Lion", emoji: "🦁", color: "#D97706", dept: "Business & Mgt", matchScore: 94 },
-  { name: "Swift Otter", emoji: "🦦", color: "#2563EB", dept: "Education", matchScore: 91 },
+const TELEMETRY_MESSAGES = [
+  "Calibrating CHMSU campus frequency locator…",
+  "Scanning active student allies on Alijis campus…",
+  "Analyzing course compatibility & curriculum year…",
+  "Harmonizing mutual interests and tech stack…",
+  "Locking onto an anonymous peer session…",
+];
+
+const ORBIT_MASCOTS = [
+  { key: "fox", emoji: "🦊", label: "Fox", angle: 0 },
+  { key: "wolf", emoji: "🐺", label: "Wolf", angle: 120 },
+  { key: "panda", emoji: "🐼", label: "Panda", angle: 240 },
 ];
 
 export function MatchmakingOverlayModal({
   visible,
   onClose,
   onMatchAccepted,
+  matchmaking: externalMM,
 }: MatchmakingOverlayModalProps) {
-  const [phase, setPhase] = useState<"searching" | "pending" | "accepted">("searching");
-  const [partner, setPartner] = useState(MOCK_ALIASES[0]);
-  const [countdown, setCountdown] = useState(30);
+  // Use external hook instance if supplied (e.g. from discover.tsx), otherwise instantiate one
+  const internalMM = useMatchmaking();
+  const mm = externalMM || internalMM;
 
-  // Pulse & Radar Animations
+  const [telemetryIndex, setTelemetryIndex] = useState(0);
+
+  // Animated values
   const scaleAnim = useRef(new Animated.Value(1)).current;
   const pulseAnim = useRef(new Animated.Value(0.4)).current;
+  const ring2Anim = useRef(new Animated.Value(0.6)).current;
+  const ring3Anim = useRef(new Animated.Value(0.3)).current;
+  const orbitAnim = useRef(new Animated.Value(0)).current;
+  const fadeAnim = useRef(new Animated.Value(1)).current;
 
+  // Telemetry message cycler
   useEffect(() => {
-    if (!visible) {
-      setPhase("searching");
-      setCountdown(30);
-      return;
-    }
+    if (!visible || mm.phase !== "searching") return;
+    const interval = setInterval(() => {
+      Animated.sequence([
+        Animated.timing(fadeAnim, { toValue: 0, duration: 250, useNativeDriver: true }),
+        Animated.timing(fadeAnim, { toValue: 1, duration: 350, useNativeDriver: true }),
+      ]).start();
+      setTelemetryIndex((prev) => (prev + 1) % TELEMETRY_MESSAGES.length);
+    }, 2800);
 
-    const randomPartner = MOCK_ALIASES[Math.floor(Math.random() * MOCK_ALIASES.length)];
-    setPartner(randomPartner);
-    setPhase("searching");
+    return () => clearInterval(interval);
+  }, [visible, mm.phase, fadeAnim]);
 
-    // Radar Loop
-    Animated.loop(
+  // Start continuous radar and orbit animations
+  useEffect(() => {
+    if (!visible) return;
+
+    // Pulse loops
+    const pulseLoop = Animated.loop(
       Animated.parallel([
         Animated.sequence([
           Animated.timing(scaleAnim, {
-            toValue: 1.25,
-            duration: 1000,
+            toValue: 1.28,
+            duration: 1200,
             easing: Easing.out(Easing.ease),
             useNativeDriver: true,
           }),
           Animated.timing(scaleAnim, {
             toValue: 1,
-            duration: 1000,
+            duration: 1200,
             easing: Easing.in(Easing.ease),
             useNativeDriver: true,
           }),
         ]),
         Animated.sequence([
           Animated.timing(pulseAnim, {
-            toValue: 0.9,
-            duration: 1000,
+            toValue: 0.95,
+            duration: 1200,
             useNativeDriver: true,
           }),
           Animated.timing(pulseAnim, {
-            toValue: 0.4,
-            duration: 1000,
+            toValue: 0.35,
+            duration: 1200,
             useNativeDriver: true,
           }),
         ]),
+        Animated.sequence([
+          Animated.timing(ring2Anim, {
+            toValue: 1.5,
+            duration: 2000,
+            easing: Easing.out(Easing.ease),
+            useNativeDriver: true,
+          }),
+          Animated.timing(ring2Anim, {
+            toValue: 0.6,
+            duration: 0,
+            useNativeDriver: true,
+          }),
+        ]),
+        Animated.sequence([
+          Animated.delay(600),
+          Animated.timing(ring3Anim, {
+            toValue: 1.8,
+            duration: 2200,
+            easing: Easing.out(Easing.ease),
+            useNativeDriver: true,
+          }),
+          Animated.timing(ring3Anim, {
+            toValue: 0.3,
+            duration: 0,
+            useNativeDriver: true,
+          }),
+        ]),
+        Animated.loop(
+          Animated.timing(orbitAnim, {
+            toValue: 1,
+            duration: 8000,
+            easing: Easing.linear,
+            useNativeDriver: true,
+          })
+        ),
       ])
-    ).start();
+    );
 
-    // Mock search transition -> Match found after 3.2s
-    const timer = setTimeout(() => {
-      setPhase("pending");
-      setCountdown(30);
-    }, 3200);
+    pulseLoop.start();
 
-    return () => clearTimeout(timer);
-  }, [visible]);
+    return () => {
+      pulseLoop.stop();
+    };
+  }, [visible, scaleAnim, pulseAnim, ring2Anim, ring3Anim, orbitAnim]);
 
-  // 30s Countdown timer
+  // Navigate when room is ready
   useEffect(() => {
-    if (phase !== "pending") return;
-    const interval = setInterval(() => {
-      setCountdown((prev) => {
-        if (prev <= 1) {
-          clearInterval(interval);
-          setPhase("searching");
-          return 30;
-        }
-        return prev - 1;
-      });
-    }, 1000);
+    if (mm.roomReady && mm.roomReady.conversationId) {
+      const room = mm.roomReady;
+      const partnerAlias = room.identity?.partnerAlias || "Anonymous Ally";
+      const partnerAvatar = room.identity?.partnerAvatar || "fox";
 
-    return () => clearInterval(interval);
-  }, [phase]);
-
-  const handleAccept = () => {
-    setPhase("accepted");
-    setTimeout(() => {
-      onClose();
       if (onMatchAccepted) {
-        onMatchAccepted(partner.name);
-      } else {
-        Alert.alert("Match Connected! 🎉", `Anonymous chat with ${partner.name} has been initiated.`);
+        onMatchAccepted(partnerAlias);
       }
-    }, 1200);
-  };
 
-  const handleDecline = () => {
-    setPhase("searching");
-    const nextPartner = MOCK_ALIASES[Math.floor(Math.random() * MOCK_ALIASES.length)];
-    setPartner(nextPartner);
-  };
+      const timer = setTimeout(() => {
+        mm.clearRoomReady();
+        onClose();
+        router.push({
+          pathname: "/pages/conversation" as any,
+          params: {
+            conversationId: room.conversationId,
+            prefillName: partnerAlias,
+            prefillAvatar: partnerAvatar,
+            isAnonymous: "true",
+          },
+        });
+      }, 1200);
+
+      return () => clearTimeout(timer);
+    }
+  }, [mm.roomReady, onMatchAccepted, onClose, mm]);
+
+  // Handle Cancel / Close button
+  const handleClose = useCallback(() => {
+    if (mm.phase === "searching") {
+      mm.leaveQueue();
+      onClose();
+    } else if (mm.phase === "pending") {
+      Alert.alert(
+        "Decline Match?",
+        "Are you sure you want to pass on this match?",
+        [
+          { text: "Keep Match", style: "cancel" },
+          {
+            text: "Decline & Exit",
+            style: "destructive",
+            onPress: () => {
+              mm.decline();
+              onClose();
+            },
+          },
+        ]
+      );
+    } else {
+      mm.resetPhase();
+      onClose();
+    }
+  }, [mm, onClose]);
 
   if (!visible) return null;
 
+  const partnerAlias =
+    mm.identity?.partnerAlias ||
+    mm.pendingMatch?.partnerAlias ||
+    "Anonymous Ally";
+  const partnerAvatar =
+    mm.identity?.partnerAvatar ||
+    mm.pendingMatch?.partnerAvatar ||
+    "fox";
+  const score = mm.compatibilityScore || 92;
+  const matchColor = avatarColorFor(partnerAvatar);
+
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+    <Modal
+      visible={visible}
+      animationType="fade"
+      transparent={true}
+      onRequestClose={handleClose}
+    >
       <View
         style={{
           flex: 1,
-          backgroundColor: "#0A1F12",
+          backgroundColor: "rgba(10, 31, 18, 0.97)",
           alignItems: "center",
           justifyContent: "center",
-          paddingHorizontal: 24,
+          paddingHorizontal: 20,
         }}
       >
-        {/* Top Close Button */}
-        <Pressable
-          onPress={onClose}
-          hitSlop={12}
+        {/* Top Header Controls */}
+        <View
           style={{
             position: "absolute",
-            top: 48,
-            right: 24,
-            width: 36,
-            height: 36,
-            borderRadius: 18,
-            backgroundColor: "rgba(255,255,255,0.1)",
+            top: 54,
+            left: 20,
+            right: 20,
+            flexDirection: "row",
             alignItems: "center",
-            justifyContent: "center",
-            zIndex: 10,
+            justifyContent: "space-between",
+            zIndex: 30,
           }}
         >
-          <X size={18} color="rgba(255,255,255,0.8)" />
-        </Pressable>
-
-        <View style={{ width: "100%", maxWidth: 360, alignItems: "center" }}>
-          {/* Header Tagline */}
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 24 }}>
-            <Drama size={18} color="#1A6B3C" />
-            <Text
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+            <View
               style={{
-                fontSize: 12,
-                fontWeight: "700",
-                color: "#1A6B3C",
-                letterSpacing: 1.5,
-                textTransform: "uppercase",
+                width: 32,
+                height: 32,
+                borderRadius: 16,
+                backgroundColor: "rgba(255,255,255,0.12)",
+                alignItems: "center",
+                justifyContent: "center",
               }}
             >
-              Anonymous Matchmaker
+              <Drama size={18} color="#4ADE80" />
+            </View>
+            <Text style={{ fontSize: 13, fontWeight: "700", color: "#FFFFFF", letterSpacing: 0.2 }}>
+              Anonymous Matchmaking
             </Text>
           </View>
 
-          {/* ═══ Searching Phase ═══ */}
-          {phase === "searching" && (
-            <View style={{ alignItems: "center", width: "100%", paddingVertical: 10 }}>
-              {/* Radar Rings */}
-              <View style={{ width: 140, height: 140, alignItems: "center", justifyContent: "center", marginBottom: 28 }}>
-                <Animated.View
-                  style={{
-                    position: "absolute",
-                    width: 140,
-                    height: 140,
-                    borderRadius: 70,
-                    backgroundColor: "rgba(26, 107, 60, 0.25)",
-                    transform: [{ scale: scaleAnim }],
-                    opacity: pulseAnim,
-                  }}
-                />
+          <Pressable
+            onPress={handleClose}
+            style={{
+              width: 38,
+              height: 38,
+              borderRadius: 19,
+              backgroundColor: "rgba(255,255,255,0.12)",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <X size={20} color="#FFFFFF" />
+          </Pressable>
+        </View>
+
+        {/* ═══ PHASE 1: SEARCHING RADAR ═══ */}
+        {mm.phase === "searching" && (
+          <View style={{ alignItems: "center", width: "100%", maxWidth: 360 }}>
+            {/* Radar Animation Stage */}
+            <View
+              style={{
+                width: 280,
+                height: 280,
+                alignItems: "center",
+                justifyContent: "center",
+                marginBottom: 32,
+                position: "relative",
+              }}
+            >
+              {/* Outer Ripple 3 */}
+              <Animated.View
+                style={{
+                  position: "absolute",
+                  width: 260,
+                  height: 260,
+                  borderRadius: 130,
+                  borderWidth: 1.5,
+                  borderColor: "rgba(74, 222, 128, 0.25)",
+                  transform: [{ scale: ring3Anim }],
+                }}
+              />
+
+              {/* Outer Ripple 2 */}
+              <Animated.View
+                style={{
+                  position: "absolute",
+                  width: 200,
+                  height: 200,
+                  borderRadius: 100,
+                  borderWidth: 1.5,
+                  borderColor: "rgba(74, 222, 128, 0.4)",
+                  transform: [{ scale: ring2Anim }],
+                }}
+              />
+
+              {/* Core Pulse Ring */}
+              <Animated.View
+                style={{
+                  position: "absolute",
+                  width: 140,
+                  height: 140,
+                  borderRadius: 70,
+                  backgroundColor: "rgba(26, 107, 60, 0.35)",
+                  borderWidth: 2,
+                  borderColor: "#4ADE80",
+                  transform: [{ scale: scaleAnim }],
+                  opacity: pulseAnim,
+                }}
+              />
+
+              {/* Center Holographic Radar Core */}
+              <View
+                style={{
+                  width: 90,
+                  height: 90,
+                  borderRadius: 45,
+                  backgroundColor: "#1A6B3C",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  shadowColor: "#4ADE80",
+                  shadowOffset: { width: 0, height: 0 },
+                  shadowOpacity: 0.8,
+                  shadowRadius: 18,
+                  elevation: 10,
+                  borderWidth: 2,
+                  borderColor: "rgba(255,255,255,0.3)",
+                }}
+              >
+                <Drama size={42} color="#FFFFFF" />
+              </View>
+
+              {/* Orbiting Mascots */}
+              {ORBIT_MASCOTS.map((m, i) => {
+                const radius = 95;
+                const rad = ((m.angle + i * 15) * Math.PI) / 180;
+                const x = Math.cos(rad) * radius;
+                const y = Math.sin(rad) * radius;
+
+                return (
+                  <View
+                    key={m.key}
+                    style={{
+                      position: "absolute",
+                      transform: [{ translateX: x }, { translateY: y }],
+                      width: 38,
+                      height: 38,
+                      borderRadius: 19,
+                      backgroundColor: "rgba(255,255,255,0.14)",
+                      borderWidth: 1.5,
+                      borderColor: "rgba(255,255,255,0.3)",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Text style={{ fontSize: 18 }}>{m.emoji}</Text>
+                  </View>
+                );
+              })}
+            </View>
+
+            {/* Ticker / Status Text */}
+            <Text
+              style={{
+                fontSize: 22,
+                fontWeight: "800",
+                color: "#FFFFFF",
+                textAlign: "center",
+                marginBottom: 8,
+              }}
+            >
+              Seeking an Ally…
+            </Text>
+
+            <Animated.View style={{ opacity: fadeAnim, minHeight: 44, paddingHorizontal: 16 }}>
+              <Text
+                style={{
+                  fontSize: 13,
+                  color: "#A7F3D0",
+                  textAlign: "center",
+                  lineHeight: 18,
+                  fontWeight: "500",
+                }}
+              >
+                {TELEMETRY_MESSAGES[telemetryIndex]}
+              </Text>
+            </Animated.View>
+
+            {/* Daily Counter */}
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 6,
+                backgroundColor: "rgba(255, 255, 255, 0.08)",
+                paddingHorizontal: 14,
+                paddingVertical: 6,
+                borderRadius: 16,
+                marginTop: 18,
+                marginBottom: 32,
+              }}
+            >
+              <Zap size={14} color="#FBBF24" />
+              <Text style={{ fontSize: 12, color: "#E2E8F0", fontWeight: "600" }}>
+                {Math.max(0, mm.dailyLimit - mm.dailyMatchCount)} of {mm.dailyLimit} matches left today
+              </Text>
+            </View>
+
+            {/* Cancel Button */}
+            <Pressable
+              onPress={handleClose}
+              style={{
+                paddingVertical: 12,
+                paddingHorizontal: 28,
+                borderRadius: 24,
+                backgroundColor: "rgba(255,255,255,0.12)",
+                borderWidth: 1,
+                borderColor: "rgba(255,255,255,0.2)",
+              }}
+            >
+              <Text style={{ fontSize: 14, fontWeight: "700", color: "#FFFFFF" }}>
+                Cancel Search
+              </Text>
+            </Pressable>
+          </View>
+        )}
+
+        {/* ═══ PHASE 2: MATCH FOUND (PENDING ACCEPTANCE) ═══ */}
+        {mm.phase === "pending" && (
+          <View
+            style={{
+              width: "100%",
+              maxWidth: 340,
+              backgroundColor: "rgba(255, 255, 255, 0.07)",
+              borderRadius: 28,
+              padding: 24,
+              alignItems: "center",
+              borderWidth: 1.5,
+              borderColor: "rgba(74, 222, 128, 0.4)",
+              shadowColor: "#000",
+              shadowOffset: { width: 0, height: 10 },
+              shadowOpacity: 0.4,
+              shadowRadius: 20,
+            }}
+          >
+            {/* Header Badge */}
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 6,
+                backgroundColor: "rgba(74, 222, 128, 0.15)",
+                paddingHorizontal: 12,
+                paddingVertical: 5,
+                borderRadius: 14,
+                marginBottom: 20,
+              }}
+            >
+              <Sparkles size={14} color="#4ADE80" />
+              <Text style={{ fontSize: 12, fontWeight: "800", color: "#4ADE80", textTransform: "uppercase" }}>
+                Match Detected!
+              </Text>
+            </View>
+
+            {/* Partner Avatar Presentation */}
+            <View
+              style={{
+                position: "relative",
+                alignItems: "center",
+                justifyContent: "center",
+                marginBottom: 16,
+              }}
+            >
+              <View
+                style={{
+                  width: 104,
+                  height: 104,
+                  borderRadius: 52,
+                  backgroundColor: `${matchColor}25`,
+                  borderWidth: 3,
+                  borderColor: matchColor,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <AnonymousAvatar avatarKey={partnerAvatar} size={88} borderWidth={0} />
+              </View>
+
+              {/* Compatibility score pill */}
+              <View
+                style={{
+                  position: "absolute",
+                  bottom: -6,
+                  backgroundColor: "#1A6B3C",
+                  paddingHorizontal: 10,
+                  paddingVertical: 3,
+                  borderRadius: 12,
+                  borderWidth: 1.5,
+                  borderColor: "#4ADE80",
+                }}
+              >
+                <Text style={{ fontSize: 11, fontWeight: "800", color: "#FFFFFF" }}>
+                  {score}% Compatible
+                </Text>
+              </View>
+            </View>
+
+            {/* Partner Alias */}
+            <Text
+              style={{
+                fontSize: 22,
+                fontWeight: "900",
+                color: "#FFFFFF",
+                marginTop: 8,
+                marginBottom: 4,
+              }}
+            >
+              {partnerAlias}
+            </Text>
+
+            <Text
+              style={{
+                fontSize: 12,
+                color: "#94A3B8",
+                textAlign: "center",
+                marginBottom: 20,
+              }}
+            >
+              Anonymous peer ally • Identities reveal gradually
+            </Text>
+
+            {/* Countdown Progress Bar */}
+            <View style={{ width: "100%", marginBottom: 22 }}>
+              <View
+                style={{
+                  flexDirection: "row",
+                  justifyContent: "space-between",
+                  alignItems: "center",
+                  marginBottom: 6,
+                }}
+              >
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
+                  <Clock size={13} color="#FBBF24" />
+                  <Text style={{ fontSize: 12, color: "#E2E8F0", fontWeight: "600" }}>
+                    Acceptance Window
+                  </Text>
+                </View>
+                <Text style={{ fontSize: 13, fontWeight: "800", color: "#FBBF24" }}>
+                  {mm.acceptCountdown}s
+                </Text>
+              </View>
+
+              <View
+                style={{
+                  width: "100%",
+                  height: 6,
+                  borderRadius: 3,
+                  backgroundColor: "rgba(255,255,255,0.15)",
+                  overflow: "hidden",
+                }}
+              >
                 <View
                   style={{
-                    width: 84,
-                    height: 84,
-                    borderRadius: 42,
+                    height: "100%",
+                    width: `${Math.max(0, Math.min(100, (mm.acceptCountdown / 30) * 100))}%`,
+                    backgroundColor: mm.acceptCountdown < 8 ? "#EF4444" : "#4ADE80",
+                    borderRadius: 3,
+                  }}
+                />
+              </View>
+            </View>
+
+            {/* Actions: Accept or Decline */}
+            {mm.waitingForPartner ? (
+              <View
+                style={{
+                  width: "100%",
+                  paddingVertical: 14,
+                  backgroundColor: "rgba(26, 107, 60, 0.5)",
+                  borderRadius: 16,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 10,
+                  borderWidth: 1,
+                  borderColor: "#4ADE80",
+                }}
+              >
+                <ActivityIndicator color="#FFFFFF" size="small" />
+                <Text style={{ fontSize: 14, fontWeight: "800", color: "#FFFFFF" }}>
+                  Waiting for {partnerAlias}…
+                </Text>
+              </View>
+            ) : (
+              <View style={{ width: "100%", gap: 10 }}>
+                <Pressable
+                  onPress={mm.accept}
+                  disabled={mm.loading}
+                  style={{
+                    width: "100%",
+                    height: 48,
+                    borderRadius: 16,
                     backgroundColor: "#1A6B3C",
                     alignItems: "center",
                     justifyContent: "center",
+                    flexDirection: "row",
+                    gap: 8,
                     shadowColor: "#1A6B3C",
-                    shadowOffset: { width: 0, height: 6 },
-                    shadowOpacity: 0.4,
-                    shadowRadius: 10,
-                    elevation: 8,
-                  }}
-                >
-                  <Text style={{ fontSize: 40 }}>🎭</Text>
-                </View>
-              </View>
-
-              <Text style={{ fontSize: 22, fontWeight: "800", color: "#FFFFFF", textAlign: "center", marginBottom: 8 }}>
-                Searching CHMSU Campus…
-              </Text>
-              <Text style={{ fontSize: 14, color: "rgba(255,255,255,0.6)", textAlign: "center", marginBottom: 28, paddingHorizontal: 10 }}>
-                Matching you with a student sharing your interests
-              </Text>
-
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 24 }}>
-                <ActivityIndicator color="#1A6B3C" size="small" />
-                <Text style={{ fontSize: 13, color: "#1A6B3C", fontWeight: "600" }}>Connecting to live queue...</Text>
-              </View>
-
-              <Pressable
-                onPress={onClose}
-                style={{
-                  paddingHorizontal: 24,
-                  paddingVertical: 12,
-                  borderRadius: 16,
-                  backgroundColor: "rgba(255,255,255,0.08)",
-                  borderWidth: 1,
-                  borderColor: "rgba(255,255,255,0.12)",
-                }}
-              >
-                <Text style={{ fontSize: 14, color: "rgba(255,255,255,0.7)", fontWeight: "600" }}>
-                  Cancel Queue
-                </Text>
-              </Pressable>
-            </View>
-          )}
-
-          {/* ═══ Match Found Confirmation Phase ═══ */}
-          {phase === "pending" && (
-            <View style={{ alignItems: "center", width: "100%", paddingVertical: 6 }}>
-              {/* Partner Avatar */}
-              <View style={{ position: "relative", alignItems: "center", justifyContent: "center", marginBottom: 18 }}>
-                <View
-                  style={{
-                    width: 104,
-                    height: 104,
-                    borderRadius: 52,
-                    backgroundColor: partner.color + "20",
-                    borderWidth: 3.5,
-                    borderColor: partner.color,
-                    alignItems: "center",
-                    justifyContent: "center",
-                    shadowColor: partner.color,
-                    shadowOffset: { width: 0, height: 6 },
-                    shadowOpacity: 0.4,
-                    shadowRadius: 10,
-                    elevation: 8,
-                  }}
-                >
-                  <Text style={{ fontSize: 50 }}>{partner.emoji}</Text>
-                </View>
-                <View
-                  style={{
-                    position: "absolute",
-                    bottom: -4,
-                    backgroundColor: "#16A34A",
-                    paddingHorizontal: 10,
-                    paddingVertical: 3,
-                    borderRadius: 10,
-                    borderWidth: 2,
-                    borderColor: "#0A1F12",
-                  }}
-                >
-                  <Text style={{ fontSize: 10, fontWeight: "800", color: "#FFFFFF" }}>Online</Text>
-                </View>
-              </View>
-
-              {/* Alias & Department */}
-              <Text style={{ fontSize: 26, fontWeight: "800", color: "#FFFFFF", textAlign: "center", marginBottom: 4 }}>
-                {partner.name}
-              </Text>
-              <Text style={{ fontSize: 14, color: "rgba(255,255,255,0.6)", textAlign: "center", marginBottom: 14 }}>
-                {partner.dept} · CHMSU
-              </Text>
-
-              {/* Match Score Badge */}
-              <View
-                style={{
-                  backgroundColor: "rgba(26,107,60,0.25)",
-                  borderWidth: 1,
-                  borderColor: "#1A6B3C",
-                  paddingHorizontal: 14,
-                  paddingVertical: 5,
-                  borderRadius: 14,
-                  marginBottom: 24,
-                  flexDirection: "row",
-                  alignItems: "center",
-                  gap: 6,
-                }}
-              >
-                <Zap size={15} color="#86EFAC" />
-                <Text style={{ fontSize: 14, fontWeight: "800", color: "#86EFAC" }}>
-                  {partner.matchScore}% Compatibility
-                </Text>
-              </View>
-
-              {/* Progress Bar & Timer */}
-              <View style={{ width: "100%", marginBottom: 28 }}>
-                <View style={{ height: 5, backgroundColor: "rgba(255,255,255,0.12)", borderRadius: 3, overflow: "hidden", marginBottom: 8 }}>
-                  <View
-                    style={{
-                      height: "100%",
-                      width: `${(countdown / 30) * 100}%`,
-                      backgroundColor: countdown < 8 ? "#EF4444" : partner.color,
-                    }}
-                  />
-                </View>
-                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6 }}>
-                  <Clock size={13} color="rgba(255,255,255,0.5)" />
-                  <Text style={{ fontSize: 13, color: "rgba(255,255,255,0.5)", fontWeight: "600" }}>
-                    {countdown}s to respond
-                  </Text>
-                </View>
-              </View>
-
-              {/* Action Buttons: Skip vs Start Chat */}
-              <View style={{ flexDirection: "row", gap: 14, width: "100%" }}>
-                <Pressable
-                  onPress={handleDecline}
-                  style={{
-                    flex: 1,
-                    paddingVertical: 14,
-                    borderRadius: 16,
-                    borderWidth: 1,
-                    borderColor: "rgba(255,255,255,0.2)",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    flexDirection: "row",
-                    gap: 6,
-                  }}
-                >
-                  <X size={18} color="rgba(255,255,255,0.8)" />
-                  <Text style={{ fontSize: 15, fontWeight: "600", color: "#FFFFFF" }}>Skip</Text>
-                </Pressable>
-
-                <Pressable
-                  onPress={handleAccept}
-                  style={{
-                    flex: 1.4,
-                    paddingVertical: 14,
-                    borderRadius: 16,
-                    backgroundColor: partner.color,
-                    alignItems: "center",
-                    justifyContent: "center",
-                    flexDirection: "row",
-                    gap: 6,
-                    shadowColor: partner.color,
                     shadowOffset: { width: 0, height: 4 },
                     shadowOpacity: 0.4,
                     shadowRadius: 8,
-                    elevation: 6,
                   }}
                 >
-                  <MessageCircle size={18} color="#FFFFFF" />
-                  <Text style={{ fontSize: 15, fontWeight: "800", color: "#FFFFFF" }}>Start Chat!</Text>
+                  <Check size={18} color="#FFFFFF" />
+                  <Text style={{ fontSize: 15, fontWeight: "800", color: "#FFFFFF" }}>
+                    Accept Match
+                  </Text>
+                </Pressable>
+
+                <Pressable
+                  onPress={mm.decline}
+                  disabled={mm.loading}
+                  style={{
+                    width: "100%",
+                    height: 42,
+                    borderRadius: 16,
+                    backgroundColor: "rgba(255,255,255,0.08)",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    flexDirection: "row",
+                    gap: 6,
+                  }}
+                >
+                  <X size={16} color="#94A3B8" />
+                  <Text style={{ fontSize: 13, fontWeight: "700", color: "#94A3B8" }}>
+                    Decline
+                  </Text>
                 </Pressable>
               </View>
-            </View>
-          )}
+            )}
+          </View>
+        )}
 
-          {/* ═══ Accepted Success State ═══ */}
-          {phase === "accepted" && (
-            <View style={{ alignItems: "center", paddingVertical: 20 }}>
-              <Text style={{ fontSize: 48, marginBottom: 14 }}>🎉</Text>
-              <Text style={{ fontSize: 22, fontWeight: "800", color: "#FFFFFF", marginBottom: 8 }}>
-                Match Connected!
-              </Text>
-              <Text style={{ fontSize: 14, color: "rgba(255,255,255,0.65)", textAlign: "center" }}>
-                Connecting to anonymous chat with {partner.name}…
-              </Text>
+        {/* ═══ PHASE 3: ROOM READY / MATCH ACCEPTED ═══ */}
+        {mm.phase === "accepted" && (
+          <View
+            style={{
+              alignItems: "center",
+              backgroundColor: "rgba(255, 255, 255, 0.08)",
+              borderRadius: 28,
+              padding: 32,
+              borderWidth: 1.5,
+              borderColor: "#4ADE80",
+              width: "100%",
+              maxWidth: 320,
+            }}
+          >
+            <View
+              style={{
+                width: 76,
+                height: 76,
+                borderRadius: 38,
+                backgroundColor: "#1A6B3C",
+                alignItems: "center",
+                justifyContent: "center",
+                marginBottom: 16,
+                borderWidth: 2,
+                borderColor: "#4ADE80",
+              }}
+            >
+              <Check size={40} color="#FFFFFF" />
             </View>
-          )}
-        </View>
+
+            <Text style={{ fontSize: 22, fontWeight: "900", color: "#FFFFFF", marginBottom: 6 }}>
+              It's a Match!
+            </Text>
+            <Text
+              style={{
+                fontSize: 13,
+                color: "#A7F3D0",
+                textAlign: "center",
+                marginBottom: 18,
+                lineHeight: 18,
+              }}
+            >
+              You and {partnerAlias} both accepted. Entering confidential chat room…
+            </Text>
+
+            <ActivityIndicator color="#4ADE80" size="large" />
+          </View>
+        )}
+
+        {/* ═══ PHASE 4: ENDED / TIMED OUT / DECLINED ═══ */}
+        {mm.phase === "ended" && (
+          <View
+            style={{
+              width: "100%",
+              maxWidth: 320,
+              backgroundColor: "rgba(255, 255, 255, 0.07)",
+              borderRadius: 24,
+              padding: 24,
+              alignItems: "center",
+              borderWidth: 1,
+              borderColor: "rgba(255,255,255,0.15)",
+            }}
+          >
+            <View
+              style={{
+                width: 60,
+                height: 60,
+                borderRadius: 30,
+                backgroundColor: "rgba(239, 68, 68, 0.18)",
+                alignItems: "center",
+                justifyContent: "center",
+                marginBottom: 14,
+              }}
+            >
+              <X size={30} color="#EF4444" />
+            </View>
+
+            <Text style={{ fontSize: 18, fontWeight: "800", color: "#FFFFFF", marginBottom: 6 }}>
+              Match Expired
+            </Text>
+
+            <Text
+              style={{
+                fontSize: 13,
+                color: "#94A3B8",
+                textAlign: "center",
+                marginBottom: 20,
+                lineHeight: 18,
+              }}
+            >
+              {mm.endedReason || "The match was declined or expired before both accepted."}
+            </Text>
+
+            <View style={{ width: "100%", gap: 10 }}>
+              <Pressable
+                onPress={() => mm.joinQueue()}
+                style={{
+                  width: "100%",
+                  height: 46,
+                  borderRadius: 16,
+                  backgroundColor: "#1A6B3C",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexDirection: "row",
+                  gap: 8,
+                }}
+              >
+                <RotateCw size={16} color="#FFFFFF" />
+                <Text style={{ fontSize: 14, fontWeight: "800", color: "#FFFFFF" }}>
+                  Find Another Match
+                </Text>
+              </Pressable>
+
+              <Pressable
+                onPress={handleClose}
+                style={{
+                  width: "100%",
+                  height: 42,
+                  borderRadius: 16,
+                  backgroundColor: "rgba(255,255,255,0.08)",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Text style={{ fontSize: 13, fontWeight: "700", color: "#94A3B8" }}>
+                  Close
+                </Text>
+              </Pressable>
+            </View>
+          </View>
+        )}
       </View>
     </Modal>
   );
