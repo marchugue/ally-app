@@ -7,12 +7,6 @@
     "icon": "./assets/images/group9.png",
     "scheme": "ally",
     "userInterfaceStyle": "dark",
-    "newArchEnabled": true,
-    "splash": {
-      "image": "./assets/images/splash.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#0B0B0F"
-    },
     "ios": {
       "supportsTablet": true,
       "bundleIdentifier": "xyz.allyjis.app",
@@ -27,7 +21,6 @@
       ]
     },
     "android": {
-      "usesCleartextTraffic": true,
       "softwareKeyboardLayoutMode": "resize",
       "versionCode": 1,
       "adaptiveIcon": {
@@ -63,10 +56,6 @@
       "output": "static",
       "favicon": "./assets/images/favicon.png"
     },
-    "notification": {
-      "icon": "./assets/images/group9.png",
-      "color": "#1F663C"
-    },
     "plugins": [
       "expo-router",
       [
@@ -91,7 +80,10 @@
           "photosPermission": "The app needs access to your photo gallery to select a profile picture.",
           "cameraPermission": "The app needs access to your camera to take a new profile picture."
         }
-      ]
+      ],
+      "expo-font",
+      "expo-secure-store",
+      "expo-status-bar"
     ],
     "updates": {
       "url": "https://u.expo.dev/60c88f1d-8d58-4a90-8a29-c7444e8c1f37",

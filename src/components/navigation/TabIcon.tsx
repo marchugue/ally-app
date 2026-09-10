@@ -1,5 +1,5 @@
 import React from "react";
-import { View } from "react-native";
+import { View, ColorValue } from "react-native";
 import Animated, {
   useAnimatedStyle,
   withSpring,
@@ -10,7 +10,7 @@ import Animated, {
 type TabIconProps = {
   Icon: React.ComponentType<any>;
   label: string;
-  color: string;
+  color: ColorValue | string;
   size: number;
   focused?: boolean;
 };
