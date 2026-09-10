@@ -335,7 +335,7 @@ export default function ConversationScreen() {
     Boolean(matchInfo?.ended);
 
   const handleEndMatch = useCallback(async () => {
-    const id = matchInfo?.id;
+    const id = matchInfo?.matchId || matchInfo?.id || conversationId;
     if (!id || !accessToken) return;
     setShowEndMatchConfirm(false);
     try {
@@ -345,7 +345,7 @@ export default function ConversationScreen() {
     } catch (err) {
       console.warn("Failed to end match", err);
     }
-  }, [matchInfo, accessToken]);
+  }, [matchInfo, conversationId, accessToken]);
 
   // ── Long press handler ────────────────────────────────────────────────
   const handleLongPress = (message: Message) => {
@@ -830,7 +830,7 @@ export default function ConversationScreen() {
         <MatchRevealSheet
           visible={showRevealSheet}
           onClose={() => setShowRevealSheet(false)}
-          matchId={matchInfo?.id || conversationId}
+          matchId={matchInfo?.matchId || matchInfo?.id || conversationId}
           stage={matchInfo?.stage ?? 0}
           dayStreak={matchInfo?.dayStreak ?? 0}
           partnerAlias={matchInfo?.partnerAlias || prefillName || "Anonymous Ally"}
