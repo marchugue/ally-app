@@ -28,6 +28,7 @@ import { getSocket } from "@/lib/socket";
 import { SwipeableChatBubble } from "@/components/SwipeableChatBubble";
 import { ChatInput } from "@/components/ChatInput";
 import { UserAvatar } from "@/components/UserAvatar";
+import { useKeyboard } from "@/hooks/useKeyboard";
 import { ConfirmModal } from "@/components/ConfirmModal";
 import type { Message, Conversation } from "@/types/conversation";
 import type { Profile } from "@/types/profile";
@@ -63,28 +64,15 @@ export default function ConversationScreen() {
   const [showBlockConfirm, setShowBlockConfirm] = useState(false);
   const [showReportConfirm, setShowReportConfirm] = useState(false);
 
-  // keyboardHeight tracks the real keyboard height from OS events.
-  // Works in Expo Go AND production because it reads the actual event, not app.json config.
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
+  const { isKeyboardVisible } = useKeyboard();
   const flatListRef = useRef<FlatList>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   useEffect(() => {
-    if (Platform.OS === "android") {
-      const showSub = Keyboard.addListener("keyboardDidShow", (e) => {
-        setKeyboardHeight(e.endCoordinates.height);
-        setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
-      });
-      const hideSub = Keyboard.addListener("keyboardDidHide", () => setKeyboardHeight(0));
-      return () => { showSub.remove(); hideSub.remove(); };
-    } else {
-      // iOS: KAV behavior="padding" handles the push; just scroll to end.
-      const showSub = Keyboard.addListener("keyboardWillShow", () => {
-        setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 50);
-      });
-      return () => showSub.remove();
+    if (isKeyboardVisible) {
+      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
     }
-  }, []);
+  }, [isKeyboardVisible]);
 
   // ── Load messages & profile ───────────────────────────────────────────
   const loadMessages = useCallback(async (_silent = false) => {
@@ -278,11 +266,9 @@ export default function ConversationScreen() {
       style={{
         flex: 1,
         backgroundColor: "#FFFFFF",
-        // Android: manually push content up by exact keyboard height from OS events.
-        // Works in Expo Go (which ignores app.json softwareKeyboardLayoutMode).
-        paddingBottom: Platform.OS === "android" ? keyboardHeight : 0,
       }}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
+      keyboardVerticalOffset={0}
     >
       {/* ── Header ──────────────────────────────────────────────────────── */}
       <View
@@ -364,14 +350,11 @@ export default function ConversationScreen() {
       {/* ── Input ────────────────────────────────────────────────────────── */}
       <View
         style={{
-          // Android: 0 always (paddingBottom on KAV handles spacing).
-          // iOS: insets.bottom for home indicator when keyboard is closed;
-          //      KAV behavior=padding already lifts content when keyboard is open.
           paddingBottom:
-            Platform.OS === "android"
-              ? 0
-              : insets.bottom > 0
-              ? insets.bottom
+            Platform.OS === "ios"
+              ? isKeyboardVisible
+                ? 6
+                : Math.max(insets.bottom, 8)
               : 8,
           backgroundColor: "#FFFFFF",
         }}

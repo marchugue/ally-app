@@ -13,6 +13,7 @@ import {
 import { router, useLocalSearchParams } from "expo-router";
 import { ArrowLeft, Send, Heart } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useKeyboard } from "@/hooks/useKeyboard";
 import { useAuth } from "@/lib/auth/AuthContext";
 import {
   getPost,
@@ -51,17 +52,7 @@ export default function PostDetailScreen() {
   const [loading, setLoading] = useState(true);
   const [commentText, setCommentText] = useState("");
   const [submitting, setSubmitting] = useState(false);
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
-
-  useEffect(() => {
-    if (Platform.OS === "android") {
-      const showSub = Keyboard.addListener("keyboardDidShow", (e) =>
-        setKeyboardHeight(e.endCoordinates.height)
-      );
-      const hideSub = Keyboard.addListener("keyboardDidHide", () => setKeyboardHeight(0));
-      return () => { showSub.remove(); hideSub.remove(); };
-    }
-  }, []);
+  const { isKeyboardVisible } = useKeyboard();
 
   const loadData = useCallback(async () => {
     if (!postId || !accessToken) return;
@@ -200,9 +191,9 @@ export default function PostDetailScreen() {
       style={{
         flex: 1,
         backgroundColor: "#F7F4EF",
-        paddingBottom: Platform.OS === "android" ? keyboardHeight : 0,
       }}
       behavior={Platform.OS === "ios" ? "padding" : undefined}
+      keyboardVerticalOffset={0}
     >
       {/* Header */}
       <View
@@ -341,11 +332,11 @@ export default function PostDetailScreen() {
           borderTopColor: "#E2DED7",
           backgroundColor: "#FFFFFF",
           paddingBottom:
-            Platform.OS === "android"
-              ? 0
-              : insets.bottom > 0
-              ? insets.bottom + 4
-              : 12,
+            Platform.OS === "ios"
+              ? isKeyboardVisible
+                ? 8
+                : Math.max(insets.bottom + 4, 12)
+              : 10,
           gap: 8,
         }}
       >

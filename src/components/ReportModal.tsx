@@ -8,6 +8,8 @@ import {
   TextInput,
   ActivityIndicator,
   Alert,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { X, ChevronLeft, ChevronRight, ShieldAlert, CheckCircle2 } from "lucide-react-native";
 import { COMMUNITY_STANDARDS, ReportCategory, ReportViolation } from "@/constants/communityStandards";
@@ -66,8 +68,13 @@ export function ReportModal({
       transparent
       animationType="slide"
       onRequestClose={handleClose}
+      statusBarTranslucent
     >
-      <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" }}>
+      <KeyboardAvoidingView
+        style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      >
+        <Pressable style={{ flex: 1 }} onPress={handleClose} />
         <View
           style={{
             backgroundColor: "#FFFFFF",
@@ -125,7 +132,12 @@ export function ReportModal({
           </View>
 
           {/* Content Body */}
-          <ScrollView contentContainerStyle={{ padding: 20 }}>
+          <ScrollView
+            contentContainerStyle={{ padding: 20 }}
+            keyboardShouldPersistTaps="handled"
+            automaticallyAdjustKeyboardInsets={true}
+            keyboardDismissMode="on-drag"
+          >
             {submitted ? (
               /* Success State */
               <View style={{ alignItems: "center", paddingVertical: 24 }}>
@@ -281,7 +293,7 @@ export function ReportModal({
             )}
           </ScrollView>
         </View>
-      </View>
+      </KeyboardAvoidingView>
     </Modal>
   );
 }

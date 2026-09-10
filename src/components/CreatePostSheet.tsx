@@ -9,8 +9,11 @@ import {
   ScrollView,
   Alert,
   ActivityIndicator,
+  KeyboardAvoidingView,
+  Platform,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useKeyboard } from "@/hooks/useKeyboard";
 import { X, Image as ImageIcon, Globe, Users } from "lucide-react-native";
 import * as ImagePicker from "expo-image-picker";
 import { Button } from "./Button";
@@ -34,6 +37,7 @@ export function CreatePostSheet({
 }: CreatePostSheetProps) {
   const insets = useSafeAreaInsets();
   const { accessToken } = useAuth();
+  const { isKeyboardVisible } = useKeyboard();
   const [content, setContent] = useState("");
   const [audience, setAudience] = useState<PostAudience>("public");
   const [selectedImages, setSelectedImages] = useState<LocalFile[]>([]);
@@ -117,13 +121,17 @@ export function CreatePostSheet({
       presentationStyle="pageSheet"
       onRequestClose={onClose}
     >
-      <View
-        style={{
-          flex: 1,
-          backgroundColor: "#FDFCFB",
-          paddingTop: insets.top + 8,
-        }}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
+        <View
+          style={{
+            flex: 1,
+            backgroundColor: "#FDFCFB",
+            paddingTop: insets.top + 8,
+          }}
+        >
         {/* Header */}
         <View
           style={{
@@ -245,7 +253,12 @@ export function CreatePostSheet({
             paddingVertical: 12,
             borderTopWidth: 1,
             borderTopColor: "#E2DED7",
-            paddingBottom: insets.bottom + 12,
+            paddingBottom:
+              Platform.OS === "ios"
+                ? isKeyboardVisible
+                  ? 10
+                  : Math.max(insets.bottom + 8, 12)
+                : 12,
           }}
         >
           <View style={{ flexDirection: "row", alignItems: "center", gap: 16 }}>
@@ -307,6 +320,7 @@ export function CreatePostSheet({
           </Text>
         </View>
       </View>
-    </Modal>
+    </KeyboardAvoidingView>
+  </Modal>
   );
 }

@@ -273,6 +273,8 @@ export default function EditProfileScreen() {
           paddingBottom: insets.bottom + 40,
         }}
         keyboardShouldPersistTaps="handled"
+        automaticallyAdjustKeyboardInsets={true}
+        keyboardDismissMode="on-drag"
         showsVerticalScrollIndicator={false}
       >
         {error ? (

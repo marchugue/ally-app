@@ -6,7 +6,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  KeyboardAvoidingView, Platform, ActivityIndicator, Alert,
+  KeyboardAvoidingView, Platform, ActivityIndicator, Alert, ScrollView,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { ArrowLeft, Mail, AlertCircle } from 'lucide-react-native';
@@ -142,92 +142,98 @@ export default function VerifyOtpPage() {
   const resendsLeft = resendLimit - resendCount;
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.root}>
-      {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
-          <ArrowLeft size={22} color="#fff" />
-        </TouchableOpacity>
-        <View style={styles.iconWrap}>
-          <Mail size={28} color="#fff" />
-        </View>
-        <Text style={styles.title}>Verify your email</Text>
-        <Text style={styles.subtitle}>
-          We sent a 6-digit code to{'\n'}
-          <Text style={styles.emailText}>{email}</Text>
-        </Text>
-      </View>
-
-      {/* Card */}
-      <View style={styles.card}>
-        <Text style={styles.instruction}>
-          Enter the code below. It expires in <Text style={{ fontWeight: '700' }}>10 minutes</Text>.
-        </Text>
-
-        {/* OTP boxes */}
-        <View style={styles.otpRow}>
-          {digits.map((d, i) => (
-            <TextInput
-              key={i}
-              ref={(el) => { inputsRef.current[i] = el; }}
-              style={[
-                styles.otpBox,
-                d ? styles.otpBoxFilled : null,
-                error ? styles.otpBoxError : null,
-              ]}
-              value={d}
-              onChangeText={(v) => handleDigitChange(i, v)}
-              onKeyPress={({ nativeEvent }) => handleKeyPress(i, nativeEvent.key)}
-              keyboardType="number-pad"
-              maxLength={1}
-              textAlign="center"
-              editable={!isVerifying}
-              selectTextOnFocus
-            />
-          ))}
-        </View>
-
-        {error ? (
-          <View style={styles.errorBanner}>
-            <AlertCircle size={14} color="#DC2626" style={{ marginRight: 6 }} />
-            <Text style={styles.errorBannerText}>{error}</Text>
+    <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={styles.root}>
+      <ScrollView
+        contentContainerStyle={{ flexGrow: 1 }}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backBtn}>
+            <ArrowLeft size={22} color="#fff" />
+          </TouchableOpacity>
+          <View style={styles.iconWrap}>
+            <Mail size={28} color="#fff" />
           </View>
-        ) : null}
-
-        {/* Verify button */}
-        <TouchableOpacity
-          onPress={() => submitCode(fullCode)}
-          disabled={!canVerify}
-          style={[styles.verifyBtn, !canVerify && styles.verifyBtnDisabled]}
-          activeOpacity={0.85}
-        >
-          {isVerifying ? (
-            <ActivityIndicator color="#fff" size="small" />
-          ) : (
-            <Text style={styles.verifyBtnText}>Verify Email</Text>
-          )}
-        </TouchableOpacity>
-
-        {/* Resend */}
-        <View style={styles.resendSection}>
-          {resendCount >= resendLimit ? (
-            <Text style={styles.resendLimitText}>Maximum resends reached. Contact support.</Text>
-          ) : (
-            <>
-              <Text style={styles.resendHint}>
-                {resendsLeft} resend{resendsLeft !== 1 ? 's' : ''} remaining
-              </Text>
-              <TouchableOpacity onPress={handleResend} disabled={!canResend}>
-                <Text style={[styles.resendBtn, !canResend && styles.resendBtnDisabled]}>
-                  {cooldown > 0 ? `Resend in ${cooldown}s` : 'Resend code'}
-                </Text>
-              </TouchableOpacity>
-            </>
-          )}
+          <Text style={styles.title}>Verify your email</Text>
+          <Text style={styles.subtitle}>
+            We sent a 6-digit code to{'\n'}
+            <Text style={styles.emailText}>{email}</Text>
+          </Text>
         </View>
-      </View>
 
-      <Text style={styles.spamHint}>Check your spam folder if you don't see the email.</Text>
+        {/* Card */}
+        <View style={styles.card}>
+          <Text style={styles.instruction}>
+            Enter the code below. It expires in <Text style={{ fontWeight: '700' }}>10 minutes</Text>.
+          </Text>
+
+          {/* OTP boxes */}
+          <View style={styles.otpRow}>
+            {digits.map((d, i) => (
+              <TextInput
+                key={i}
+                ref={(el) => { inputsRef.current[i] = el; }}
+                style={[
+                  styles.otpBox,
+                  d ? styles.otpBoxFilled : null,
+                  error ? styles.otpBoxError : null,
+                ]}
+                value={d}
+                onChangeText={(v) => handleDigitChange(i, v)}
+                onKeyPress={({ nativeEvent }) => handleKeyPress(i, nativeEvent.key)}
+                keyboardType="number-pad"
+                maxLength={1}
+                textAlign="center"
+                editable={!isVerifying}
+                selectTextOnFocus
+              />
+            ))}
+          </View>
+
+          {error ? (
+            <View style={styles.errorBanner}>
+              <AlertCircle size={14} color="#DC2626" style={{ marginRight: 6 }} />
+              <Text style={styles.errorBannerText}>{error}</Text>
+            </View>
+          ) : null}
+
+          {/* Verify button */}
+          <TouchableOpacity
+            onPress={() => submitCode(fullCode)}
+            disabled={!canVerify}
+            style={[styles.verifyBtn, !canVerify && styles.verifyBtnDisabled]}
+            activeOpacity={0.85}
+          >
+            {isVerifying ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <Text style={styles.verifyBtnText}>Verify Email</Text>
+            )}
+          </TouchableOpacity>
+
+          {/* Resend */}
+          <View style={styles.resendSection}>
+            {resendCount >= resendLimit ? (
+              <Text style={styles.resendLimitText}>Maximum resends reached. Contact support.</Text>
+            ) : (
+              <>
+                <Text style={styles.resendHint}>
+                  {resendsLeft} resend{resendsLeft !== 1 ? 's' : ''} remaining
+                </Text>
+                <TouchableOpacity onPress={handleResend} disabled={!canResend}>
+                  <Text style={[styles.resendBtn, !canResend && styles.resendBtnDisabled]}>
+                    {cooldown > 0 ? `Resend in ${cooldown}s` : 'Resend code'}
+                  </Text>
+                </TouchableOpacity>
+              </>
+            )}
+          </View>
+        </View>
+
+        <Text style={styles.spamHint}>Check your spam folder if you don't see the email.</Text>
+      </ScrollView>
     </KeyboardAvoidingView>
   );
 }

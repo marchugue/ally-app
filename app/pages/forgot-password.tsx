@@ -109,6 +109,8 @@ export default function ForgotPasswordScreen() {
           paddingBottom: 32,
         }}
         keyboardShouldPersistTaps="handled"
+        automaticallyAdjustKeyboardInsets={true}
+        keyboardDismissMode="on-drag"
         showsVerticalScrollIndicator={false}
       >
         {/* Back button */}

@@ -134,8 +134,8 @@ export default function LoginScreen() {
         </SlideIn>
       </View>
 
-      <KeyboardAvoidingView style={{ flex: 1, marginTop: -60,  }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
-        <SlideIn delay={120} distance={30} style={{ flex: 1 }}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+        <SlideIn delay={120} distance={30} style={{ flex: 1, marginTop: -60 }}>
           <ScrollView
             contentContainerStyle={{
               flexGrow: 1,
@@ -147,6 +147,8 @@ export default function LoginScreen() {
               paddingBottom: insets.bottom + 32,
             }}
             keyboardShouldPersistTaps="handled"
+            automaticallyAdjustKeyboardInsets={true}
+            keyboardDismissMode="on-drag"
             showsVerticalScrollIndicator={false}
           >
             <Text style={{ fontSize: 26, fontWeight: "800", color: "#1A6B3C", letterSpacing: -0.5, marginBottom: 4 }}>

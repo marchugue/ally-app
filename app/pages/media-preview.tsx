@@ -32,6 +32,7 @@ import {
   Trash2,
 } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useKeyboard } from "@/hooks/useKeyboard";
 import { resolveImageUri, UserAvatar } from "@/components/UserAvatar";
 import { useAuth } from "@/lib/auth/AuthContext";
 import {
@@ -134,20 +135,7 @@ export default function MediaPreviewScreen() {
   const [commentInput, setCommentInput] = useState("");
   const [replyingToComment, setReplyingToComment] = useState<Comment | null>(null);
   const [submittingComment, setSubmittingComment] = useState(false);
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
-
-  useEffect(() => {
-    if (Platform.OS === "android") {
-      const showSub = Keyboard.addListener("keyboardDidShow", (e) =>
-        setKeyboardHeight(e.endCoordinates.height)
-      );
-      const hideSub = Keyboard.addListener("keyboardDidHide", () => setKeyboardHeight(0));
-      return () => {
-        showSub.remove();
-        hideSub.remove();
-      };
-    }
-  }, []);
+  const { isKeyboardVisible } = useKeyboard();
 
   const fetchComments = useCallback(async (): Promise<Comment[]> => {
     if (!postId || !accessToken) return [];
@@ -481,6 +469,7 @@ export default function MediaPreviewScreen() {
         transparent
         animationType="slide"
         onRequestClose={() => setShowCommentModal(false)}
+        statusBarTranslucent
       >
         <KeyboardAvoidingView
           style={{ flex: 1 }}
@@ -494,7 +483,14 @@ export default function MediaPreviewScreen() {
               style={[
                 styles.bottomSheetContainer,
                 styles.commentModalContainer,
-                { paddingBottom: Platform.OS === "android" ? keyboardHeight + 16 : insets.bottom + 12 },
+                {
+                  paddingBottom:
+                    Platform.OS === "ios"
+                      ? isKeyboardVisible
+                        ? 12
+                        : Math.max(insets.bottom + 8, 16)
+                      : 16,
+                },
               ]}
               onPress={(e) => e.stopPropagation()}
             >

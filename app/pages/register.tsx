@@ -687,6 +687,8 @@ export default function RegisterScreen() {
             showsVerticalScrollIndicator={false}
             contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 24 }}
             keyboardShouldPersistTaps="handled"
+            automaticallyAdjustKeyboardInsets={true}
+            keyboardDismissMode="on-drag"
           >
             {/* ── STEP 1: Basic Info & Email Type & Inline OTP ── */}
             {step === 1 && (
