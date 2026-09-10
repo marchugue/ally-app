@@ -9,6 +9,7 @@ import * as SplashScreen from "expo-splash-screen";
 import { View, ActivityIndicator, Platform } from "react-native";
 import Constants from "expo-constants";
 import { AuthProvider, useAuth } from "@/lib/auth/AuthContext";
+import { PresenceProvider } from "@/context/PresenceContext";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -172,7 +173,9 @@ export default function RootLayout() {
         <StatusBar style="auto" />
         <NetworkProvider>
           <AuthProvider>
-            <RootLayoutNav />
+            <PresenceProvider>
+              <RootLayoutNav />
+            </PresenceProvider>
           </AuthProvider>
         </NetworkProvider>
       </SafeAreaProvider>

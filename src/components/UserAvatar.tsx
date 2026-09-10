@@ -4,10 +4,10 @@ type AvatarSize = "xs" | "sm" | "md" | "lg" | "xl";
 
 const SIZE_MAP: Record<AvatarSize, { container: number; fontSize: number; statusDot: number }> = {
   xs: { container: 24, fontSize: 12, statusDot: 8 },
-  sm: { container: 32, fontSize: 16, statusDot: 9 },
-  md: { container: 40, fontSize: 20, statusDot: 10 },
-  lg: { container: 56, fontSize: 28, statusDot: 12 },
-  xl: { container: 80, fontSize: 40, statusDot: 14 },
+  sm: { container: 32, fontSize: 16, statusDot: 10 },
+  md: { container: 40, fontSize: 20, statusDot: 12 },
+  lg: { container: 56, fontSize: 28, statusDot: 15 },
+  xl: { container: 80, fontSize: 40, statusDot: 20 },
 };
 
 interface UserAvatarProps {
@@ -95,7 +95,7 @@ export function UserAvatar({
         </View>
       )}
 
-      {online && (
+      {online ? (
         <View
           style={{
             position: "absolute",
@@ -104,12 +104,13 @@ export function UserAvatar({
             width: statusDot,
             height: statusDot,
             borderRadius: statusDot / 2,
-            backgroundColor: "#16A34A",
+            backgroundColor: "#22C55E",
             borderWidth: 2,
             borderColor: "#FFFFFF",
+            zIndex: 10,
           }}
         />
-      )}
+      ) : null}
     </View>
   );
 }

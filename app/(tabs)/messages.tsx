@@ -20,7 +20,7 @@ import { FilterChip } from "@/components/FilterChip";
 import { EmptyState } from "@/components/EmptyState";
 import { useAuth } from "@/lib/auth/AuthContext";
 import { listConversations, clearConversation, createConversation } from "@/lib/api/conversation";
-import { getOnlinePresence } from "@/lib/api/presense";
+import { usePresence } from "@/context/PresenceContext";
 import { getSocket } from "@/lib/socket";
 import { useChatBrowseUsers } from "@/hooks/useChatBrowseUsers";
 import {
@@ -267,6 +267,7 @@ function SwipeableRow({
               conversationId: item.id,
               prefillName: info.participantName,
               prefillAvatar: info.participantAvatar || "",
+              prefillUserId: info.isAnonymous ? "" : (info.participantId || ""),
               isAnonymous: info.isAnonymous ? "true" : "false",
             },
           })
@@ -376,7 +377,7 @@ function SwipeableRow({
 export default function MessagesScreen() {
   const { user, accessToken } = useAuth();
   const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [onlineUsers, setOnlineUsers] = useState<Set<string>>(new Set());
+  const { isOnline: checkIsOnline, refreshOnlineUsers } = usePresence();
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
@@ -423,20 +424,10 @@ export default function MessagesScreen() {
     }
   }, [accessToken, user?.id]);
 
-  const loadOnlineStatus = useCallback(async () => {
-    if (!accessToken) return;
-    try {
-      const { online } = await getOnlinePresence(accessToken);
-      setOnlineUsers(new Set(online.map((e) => e.user_id)));
-    } catch {
-      // Best-effort
-    }
-  }, [accessToken]);
-
   useEffect(() => {
     async function init() {
       setLoading(true);
-      await Promise.all([loadConversations(), loadOnlineStatus()]);
+      await Promise.all([loadConversations(), refreshOnlineUsers()]);
       setLoading(false);
     }
     init();
@@ -444,17 +435,17 @@ export default function MessagesScreen() {
     // Passive fallback poll (60s instead of 15s; focusEffect + sockets handle active updates)
     const interval = setInterval(() => {
       loadConversations(true);
-      loadOnlineStatus();
+      refreshOnlineUsers();
     }, 60000);
     return () => clearInterval(interval);
-  }, [loadConversations, loadOnlineStatus]);
+  }, [loadConversations, refreshOnlineUsers]);
 
   // Re-fetch when navigating back to the Messages tab to instantly reflect read status changes
   useFocusEffect(
     useCallback(() => {
       void loadConversations(true);
-      void loadOnlineStatus();
-    }, [loadConversations, loadOnlineStatus])
+      void refreshOnlineUsers();
+    }, [loadConversations, refreshOnlineUsers])
   );
 
   // Real-time update on socket message
@@ -466,11 +457,11 @@ export default function MessagesScreen() {
 
     const onMessageNew = () => {
       void loadConversations(true);
-      void loadOnlineStatus();
+      void refreshOnlineUsers();
     };
     const onConnect = () => {
       void loadConversations(true);
-      void loadOnlineStatus();
+      void refreshOnlineUsers();
     };
 
     socket.on("conversation:message_new", onMessageNew);
@@ -480,13 +471,13 @@ export default function MessagesScreen() {
       socket.off("conversation:message_new", onMessageNew);
       socket.off("connect", onConnect);
     };
-  }, [accessToken, loadConversations, loadOnlineStatus]);
+  }, [accessToken, loadConversations, refreshOnlineUsers]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([loadConversations(), loadOnlineStatus()]);
+    await Promise.all([loadConversations(), refreshOnlineUsers()]);
     setRefreshing(false);
-  }, [loadConversations, loadOnlineStatus]);
+  }, [loadConversations, refreshOnlineUsers]);
 
   const handleHide = useCallback(
     async (id: string) => {
@@ -557,6 +548,7 @@ export default function MessagesScreen() {
             conversationId,
             prefillName: browseUser.name,
             prefillAvatar: browseUser.avatar || "",
+            prefillUserId: browseUser.id,
           },
         });
       } catch (err) {
@@ -638,7 +630,7 @@ export default function MessagesScreen() {
                   browseUser={browseUser}
                   onSelect={handleBrowseSelect}
                   starting={startingUserId === browseUser.id}
-                  isOnline={onlineUsers.has(browseUser.id)}
+                  isOnline={checkIsOnline(browseUser.id)}
                 />
               ))}
             </View>
@@ -880,7 +872,7 @@ export default function MessagesScreen() {
         renderItem={({ item }) => {
           const info = getParticipantInfo(item, user?.id || "");
           const lastMsg = getLastMessage(item);
-          const isOnline = !info.isAnonymous && onlineUsers.has(info.participantId);
+          const isOnline = !info.isAnonymous && checkIsOnline(info.participantId);
           const isMine = lastMsg?.sender_id === user?.id;
           const unreadInfo = getUnreadInfo(item, user?.id || "");
 

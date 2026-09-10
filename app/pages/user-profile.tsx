@@ -25,6 +25,7 @@ import {
   Layers,
 } from "lucide-react-native";
 import { UserAvatar, resolveImageUri } from "@/components/UserAvatar";
+import { usePresence } from "@/context/PresenceContext";
 import { ResponsiveContainer } from "@/components/ResponsiveContainer";
 import { PostCard } from "@/components/PostCard";
 import { useAuth } from "@/lib/auth/AuthContext";
@@ -62,6 +63,7 @@ const FALLBACK_SUGGESTED: ProfileSummary[] = [
 export default function UserProfileScreen() {
   const { userId } = useLocalSearchParams<{ userId?: string }>();
   const { user, accessToken } = useAuth();
+  const { isOnline } = usePresence();
 
   const viewedUserId = userId || user?.id || null;
   const isOwnProfile = !userId || userId === user?.id;
@@ -349,7 +351,7 @@ export default function UserProfileScreen() {
                       shadowRadius: 4,
                     }}
                   >
-                    <UserAvatar avatar={profile.avatar_url} size="xl" />
+                    <UserAvatar avatar={profile.avatar_url} size="xl" online={isOwnProfile ? true : isOnline(profile?.id)} />
                   </View>
 
                   {/* Followers, Following, Allies NEXT to avatar — shifted 25px left */}
@@ -1035,6 +1037,8 @@ function SuggestedAllyCard({
   onToggleFollow: () => void;
   isFollowing?: boolean;
 }) {
+  const { isOnline } = usePresence();
+
   return (
     <Pressable
       onPress={onPressProfile}
@@ -1071,7 +1075,7 @@ function SuggestedAllyCard({
         <X size={14} color="#9CA3AF" />
       </Pressable>
 
-      <UserAvatar avatar={item.avatar_url} size="lg" />
+      <UserAvatar avatar={item.avatar_url} size="lg" online={isOnline(item.id)} />
 
       <Text
         style={{

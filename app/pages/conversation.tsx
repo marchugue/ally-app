@@ -33,7 +33,7 @@ import {
   setMessageReaction,
 } from "@/lib/api/conversation";
 import { getProfilesBatch } from "@/lib/api/profiles";
-import { getOnlinePresence } from "@/lib/api/presense";
+import { usePresence } from "@/context/PresenceContext";
 import { blockUser, reportUser } from "@/lib/api/moderation";
 import { endMatch as apiEndMatch } from "@/lib/api/matchmaking";
 import { stageName } from "@/constants/matchOptions";
@@ -54,10 +54,17 @@ const POLL_INTERVAL_MS = 3000;
 export default function ConversationScreen() {
   const insets = useSafeAreaInsets();
   const { user, accessToken } = useAuth();
-  const { conversationId, prefillName, prefillAvatar, isAnonymous: isAnonymousParam } = useLocalSearchParams<{
+  const {
+    conversationId,
+    prefillName,
+    prefillAvatar,
+    prefillUserId,
+    isAnonymous: isAnonymousParam,
+  } = useLocalSearchParams<{
     conversationId: string;
     prefillName?: string;
     prefillAvatar?: string;
+    prefillUserId?: string;
     isAnonymous?: string;
   }>();
 
@@ -66,13 +73,17 @@ export default function ConversationScreen() {
   const [loading, setLoading] = useState(!prefillName);
   const [sending, setSending] = useState(false);
   const [otherProfile, setOtherProfile] = useState<Profile | null>(
-    prefillName ? ({ full_name: prefillName, avatar_url: prefillAvatar || null } as any) : null
+    prefillName
+      ? ({ id: prefillUserId, full_name: prefillName, avatar_url: prefillAvatar || null } as any)
+      : null
   );
-  const [isOnline, setIsOnline] = useState(false);
+  const { isOnline: checkIsOnline } = usePresence();
   const [replyTo, setReplyTo] = useState<Message | null>(null);
 
   // Anonymous Matchmaking State
   const [isAnonymous, setIsAnonymous] = useState(isAnonymousParam === "true");
+
+  const isOnline = !isAnonymous && Boolean(otherProfile?.id && checkIsOnline(otherProfile.id));
   const [matchInfo, setMatchInfo] = useState<any>(null);
   const [conversationVariant, setConversationVariant] = useState<string | null>(
     isAnonymousParam === "true" ? "anonymous" : null
@@ -143,7 +154,6 @@ export default function ConversationScreen() {
           full_name: conv.matchInfo?.partnerAlias || prefillName || "Anonymous Ally",
           avatar_url: conv.matchInfo?.partnerAvatar || prefillAvatar || "fox",
         } as any);
-        setIsOnline(false);
         return;
       }
 
@@ -155,12 +165,8 @@ export default function ConversationScreen() {
       if (otherMember) {
         const otherId = otherMember.profiles?.id || otherMember.id || otherMember.user_id;
         if (otherId) {
-          const [profiles, presence] = await Promise.all([
-            getProfilesBatch([otherId], accessToken),
-            getOnlinePresence(accessToken),
-          ]);
+          const profiles = await getProfilesBatch([otherId], accessToken);
           if (profiles.length > 0) setOtherProfile(profiles[0]);
-          setIsOnline(Boolean(presence?.online?.some((e) => e.user_id === otherId)));
         }
       }
     } catch (err) {

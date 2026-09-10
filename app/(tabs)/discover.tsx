@@ -31,6 +31,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { UserAvatar } from "@/components/UserAvatar";
+import { usePresence } from "@/context/PresenceContext";
 import { EmptyState } from "@/components/EmptyState";
 import { MatchmakingOverlayModal } from "@/components/MatchmakingOverlayModal";
 import { useAuth } from "@/lib/auth/AuthContext";
@@ -149,6 +150,7 @@ function ShinyFindMatchButton({
 export default function DiscoverScreen() {
   const insets = useSafeAreaInsets();
   const { user, accessToken } = useAuth();
+  const { isOnline } = usePresence();
 
   const [currentUserProfile, setCurrentUserProfile] = useState<Profile | null>(null);
   const [people, setPeople] = useState<any[]>([]);
@@ -553,7 +555,7 @@ export default function DiscoverScreen() {
                     onPress={() => handleNavigateProfile(p.id)}
                     style={{ flexDirection: "row", alignItems: "center", gap: 12, flex: 1 }}
                   >
-                    <UserAvatar avatar={p.avatar_url} size="lg" />
+                    <UserAvatar avatar={p.avatar_url} size="lg" online={isOnline(p.id)} />
                     <View style={{ flex: 1 }}>
                       <Text style={{ fontSize: 16, fontWeight: "700", color: "#111827" }} numberOfLines={1}>
                         {p.full_name || `@${p.username}`}
@@ -881,7 +883,7 @@ export default function DiscoverScreen() {
               <View style={{ backgroundColor: "#1A6B3C", borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20 }}>
                 <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
                   <View style={{ flexDirection: "row", gap: 14, flex: 1 }}>
-                    <UserAvatar avatar={selectedMatch.profile.avatar_url} size="xl" />
+                    <UserAvatar avatar={selectedMatch.profile.avatar_url} size="xl" online={isOnline(selectedMatch.profile.id)} />
                     <View style={{ flex: 1 }}>
                       <Text style={{ fontSize: 20, fontWeight: "700", color: "#FFFFFF" }}>{selectedMatch.profile.full_name || `@${selectedMatch.profile.username}`}</Text>
                       <Text style={{ fontSize: 13, color: "rgba(255,255,255,0.8)" }}>@{selectedMatch.profile.username}</Text>

@@ -1,7 +1,10 @@
 import { apiRequest } from "./client";
 
-export interface PresenceEntry { user_id: string; last_seen: string; }
-export interface OnlinePresenceResponse { online: PresenceEntry[]; }
+export interface PresenceEntry { user_id: string; last_seen?: string; }
+export interface OnlinePresenceResponse {
+  userIds?: string[];
+  online?: PresenceEntry[];
+}
 
 export function sendHeartbeat(accessToken: string): Promise<void> {
   return apiRequest<void>("/presence/heartbeat", { method: "POST", accessToken, noContent: true });
