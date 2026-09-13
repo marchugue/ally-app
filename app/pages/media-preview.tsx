@@ -473,7 +473,7 @@ export default function MediaPreviewScreen() {
       >
         <KeyboardAvoidingView
           style={{ flex: 1 }}
-          behavior={Platform.OS === "ios" ? "padding" : undefined}
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
         >
           <Pressable
             style={styles.modalOverlay}
@@ -484,12 +484,9 @@ export default function MediaPreviewScreen() {
                 styles.bottomSheetContainer,
                 styles.commentModalContainer,
                 {
-                  paddingBottom:
-                    Platform.OS === "ios"
-                      ? isKeyboardVisible
-                        ? 12
-                        : Math.max(insets.bottom + 8, 16)
-                      : 16,
+                  paddingBottom: isKeyboardVisible
+                    ? (Platform.OS === "ios" ? 12 : 10)
+                    : Math.max(insets.bottom + 8, 16),
                 },
               ]}
               onPress={(e) => e.stopPropagation()}

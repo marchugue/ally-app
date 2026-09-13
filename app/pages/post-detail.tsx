@@ -192,7 +192,7 @@ export default function PostDetailScreen() {
         flex: 1,
         backgroundColor: "#F7F4EF",
       }}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
       keyboardVerticalOffset={0}
     >
       {/* Header */}
@@ -331,12 +331,9 @@ export default function PostDetailScreen() {
           borderTopWidth: 1,
           borderTopColor: "#E2DED7",
           backgroundColor: "#FFFFFF",
-          paddingBottom:
-            Platform.OS === "ios"
-              ? isKeyboardVisible
-                ? 8
-                : Math.max(insets.bottom + 4, 12)
-              : 10,
+          paddingBottom: isKeyboardVisible
+            ? 8
+            : Math.max(insets.bottom + 4, 12),
           gap: 8,
         }}
       >

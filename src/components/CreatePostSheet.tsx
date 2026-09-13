@@ -123,7 +123,7 @@ export function CreatePostSheet({
     >
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
       >
         <View
           style={{
@@ -253,12 +253,9 @@ export function CreatePostSheet({
             paddingVertical: 12,
             borderTopWidth: 1,
             borderTopColor: "#E2DED7",
-            paddingBottom:
-              Platform.OS === "ios"
-                ? isKeyboardVisible
-                  ? 10
-                  : Math.max(insets.bottom + 8, 12)
-                : 12,
+            paddingBottom: isKeyboardVisible
+              ? (Platform.OS === "ios" ? 10 : 8)
+              : Math.max(insets.bottom + 8, 12),
           }}
         >
           <View style={{ flexDirection: "row", alignItems: "center", gap: 16 }}>

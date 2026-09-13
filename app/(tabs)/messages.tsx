@@ -277,8 +277,8 @@ function SwipeableRow({
           backgroundColor: pressed
             ? "#F9FAFB"
             : unreadInfo.isUnread
-            ? "#F0FDF4"
-            : "#FFFFFF",
+              ? "#F0FDF4"
+              : "#FFFFFF",
         })}
       >
         <View
@@ -486,7 +486,7 @@ export default function MessagesScreen() {
       closeAllSwipeables();
       setConversations((prev) => prev.filter((c) => c.id !== id));
       if (accessToken) {
-        clearConversation(id, accessToken).catch(() => {});
+        clearConversation(id, accessToken).catch(() => { });
       }
     },
     [accessToken, closeAllSwipeables]
@@ -613,9 +613,9 @@ export default function MessagesScreen() {
     const showSections = Boolean(searchQuery.trim());
     const rows = showSections
       ? [
-          { title: "Allies", users: browseResults.allies },
-          { title: "Others", users: browseResults.others },
-        ]
+        { title: "Allies", users: browseResults.allies },
+        { title: "Others", users: browseResults.others },
+      ]
       : [{ title: searchQuery.trim() ? "Start a chat" : "Allies to message", users: [...browseResults.allies, ...browseResults.others] }];
 
     return (
@@ -827,7 +827,7 @@ export default function MessagesScreen() {
           contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}
         >
           {([
-            { key: "all", label: "All chats" },
+            { key: "all", label: "AllSS chats" },
             { key: "regular", label: "Chatmates" },
             { key: "anonymous", label: "Anonymous" },
           ] as const).map((opt) => (

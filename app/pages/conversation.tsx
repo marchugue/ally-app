@@ -761,7 +761,7 @@ export default function ConversationScreen() {
       {/* ── Scrollable chat area — lifts with keyboard, header stays put ── */}
       <KeyboardAvoidingView
         style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
         keyboardVerticalOffset={0}
       >
         {/* ── Anonymous Progression Banner ─────────────────────────────────── */}
