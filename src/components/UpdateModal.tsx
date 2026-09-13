@@ -42,38 +42,50 @@ export function UpdateModal({
 
   const downloadUrl = versionInfo.downloadUrl || 'https://ally-jis.xyz/download';
 
-  // Handle OTA In-App Update download & reload
+  // Target URL: prefer direct Cloudflare R2 APK link if available, fallback to download page
+  const targetApkUrl = versionInfo.apkUrl || downloadUrl;
+
+  // Handle OTA In-App Update download & reload or direct APK download
   const handleStartInAppUpdate = async () => {
+    // 1. If running in a standalone APK build without EAS OTA updates enabled, download the APK directly
+    if (!Updates.isEnabled) {
+      try {
+        const canOpen = await Linking.canOpenURL(targetApkUrl);
+        if (canOpen) {
+          await Linking.openURL(targetApkUrl);
+        } else {
+          await Linking.openURL('https://ally-jis.xyz/download');
+        }
+      } catch (err) {
+        console.warn('Failed to open download URL:', err);
+      }
+      onClose();
+      return;
+    }
+
+    // 2. If OTA updates are enabled in the runtime, perform the bundle download
     try {
       setProgressState('downloading');
       setProgressPercent(15);
 
-      // Simulate smooth progress steps for user feedback
       const progressTimer = setInterval(() => {
         setProgressPercent(prev => (prev < 85 ? prev + 15 : prev));
       }, 300);
 
-      // Check if expo-updates is enabled in current runtime
-      if (Updates.isEnabled) {
-        const updateResult = await Updates.fetchUpdateAsync();
-        clearInterval(progressTimer);
-        setProgressPercent(100);
+      const updateResult = await Updates.fetchUpdateAsync();
+      clearInterval(progressTimer);
 
-        if (updateResult.isNew) {
-          setProgressState('ready');
-        } else {
-          // No OTA patch, open web download fallback
-          await handleWebFallback();
-        }
-      } else {
-        // Running in dev or standalone without OTA enabled, use web download
-        clearInterval(progressTimer);
+      if (updateResult.isNew) {
         setProgressPercent(100);
+        setProgressState('ready');
+      } else {
+        // No OTA bundle patch, open external APK download
+        setProgressState('idle');
         await handleWebFallback();
+        onClose();
       }
     } catch (err: any) {
       console.warn('In-app update error:', err);
-      // Fallback gracefully
       setProgressState('error');
       setErrorMessage(err?.message || 'In-app update failed. You can download the latest APK directly.');
     }
@@ -85,17 +97,19 @@ export function UpdateModal({
         await Updates.reloadAsync();
       } else {
         await handleWebFallback();
+        onClose();
       }
     } catch (err) {
       await handleWebFallback();
+      onClose();
     }
   };
 
   const handleWebFallback = async () => {
     try {
-      const canOpen = await Linking.canOpenURL(downloadUrl);
+      const canOpen = await Linking.canOpenURL(targetApkUrl);
       if (canOpen) {
-        await Linking.openURL(downloadUrl);
+        await Linking.openURL(targetApkUrl);
       } else {
         await Linking.openURL('https://ally-jis.xyz/download');
       }
@@ -261,7 +275,9 @@ export function UpdateModal({
                   }}
                 >
                   <Download size={18} color="#FFFFFF" />
-                  <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 15 }}>Update Now (In-App)</Text>
+                  <Text style={{ color: '#FFFFFF', fontWeight: '700', fontSize: 15 }}>
+                    {Updates.isEnabled ? 'Update Now (In-App)' : `Download APK Update (v${versionInfo.version})`}
+                  </Text>
                 </Pressable>
 
                 <Pressable
