@@ -158,7 +158,7 @@ export default function VerifyOtpPage() {
 
   return (
     <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       style={styles.root}
     >
       <ScrollView

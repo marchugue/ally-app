@@ -5,7 +5,6 @@ import {
   FlatList,
   Pressable,
   ActivityIndicator,
-  KeyboardAvoidingView,
   Platform,
   Modal,
   Keyboard,
@@ -48,6 +47,7 @@ import { UserAvatar } from "@/components/UserAvatar";
 import { AnonymousAvatar } from "@/components/AnonymousAvatar";
 import { MatchRevealSheet } from "@/components/MatchRevealSheet";
 import { useKeyboard } from "@/hooks/useKeyboard";
+import { KeyboardHugView } from "@/components/KeyboardHugView";
 import { ConfirmModal } from "@/components/ConfirmModal";
 import type { Message, Conversation, MessageGroupPosition } from "@/types/conversation";
 import type { Profile } from "@/types/profile";
@@ -759,11 +759,7 @@ export default function ConversationScreen() {
       </View>
 
       {/* ── Scrollable chat area — lifts with keyboard, header stays put ── */}
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-        keyboardVerticalOffset={0}
-      >
+      <KeyboardHugView style={{ flex: 1 }} keyboardVerticalOffset={0}>
         {/* ── Anonymous Progression Banner ─────────────────────────────────── */}
         {isAnonymous && !isEnded && (
           <Pressable
@@ -916,7 +912,7 @@ export default function ConversationScreen() {
             />
           )}
         </View>
-      </KeyboardAvoidingView>
+      </KeyboardHugView>
 
       {/* ── Reaction picker modal ────────────────────────────────────────── */}
       <Modal

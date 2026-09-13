@@ -28,6 +28,7 @@
         "backgroundColor": "#1f663c"
       },
       "package": "xyz.allyjis.app",
+      "googleServicesFile": "./google-services.json",
       "intentFilters": [
         {
           "action": "VIEW",

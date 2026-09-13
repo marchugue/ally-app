@@ -72,7 +72,7 @@ export function ReportModal({
     >
       <KeyboardAvoidingView
         style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" }}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
         <Pressable style={{ flex: 1 }} onPress={handleClose} />
         <View

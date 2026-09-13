@@ -9,11 +9,11 @@ import {
   ScrollView,
   Alert,
   ActivityIndicator,
-  KeyboardAvoidingView,
   Platform,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useKeyboard } from "@/hooks/useKeyboard";
+import { KeyboardHugView } from "@/components/KeyboardHugView";
 import { X, Image as ImageIcon, Globe, Users } from "lucide-react-native";
 import * as ImagePicker from "expo-image-picker";
 import { Button } from "./Button";
@@ -121,10 +121,7 @@ export function CreatePostSheet({
       presentationStyle="pageSheet"
       onRequestClose={onClose}
     >
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
-      >
+      <KeyboardHugView style={{ flex: 1 }}>
         <View
           style={{
             flex: 1,
@@ -317,7 +314,7 @@ export function CreatePostSheet({
           </Text>
         </View>
       </View>
-    </KeyboardAvoidingView>
+    </KeyboardHugView>
   </Modal>
   );
 }

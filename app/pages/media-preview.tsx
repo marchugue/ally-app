@@ -12,7 +12,6 @@ import {
   ActivityIndicator,
   NativeSyntheticEvent,
   NativeScrollEvent,
-  KeyboardAvoidingView,
   Platform,
   Keyboard,
   Alert,
@@ -33,6 +32,7 @@ import {
 } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useKeyboard } from "@/hooks/useKeyboard";
+import { KeyboardHugView } from "@/components/KeyboardHugView";
 import { resolveImageUri, UserAvatar } from "@/components/UserAvatar";
 import { useAuth } from "@/lib/auth/AuthContext";
 import {
@@ -471,10 +471,7 @@ export default function MediaPreviewScreen() {
         onRequestClose={() => setShowCommentModal(false)}
         statusBarTranslucent
       >
-        <KeyboardAvoidingView
-          style={{ flex: 1 }}
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-        >
+        <KeyboardHugView style={{ flex: 1 }}>
           <Pressable
             style={styles.modalOverlay}
             onPress={() => setShowCommentModal(false)}
@@ -630,7 +627,7 @@ export default function MediaPreviewScreen() {
               </View>
             </Pressable>
           </Pressable>
-        </KeyboardAvoidingView>
+        </KeyboardHugView>
       </Modal>
     </View>
   );

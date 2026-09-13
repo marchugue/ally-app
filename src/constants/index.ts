@@ -33,12 +33,16 @@ function getApiBaseUrl(): string {
     return process.env.EXPO_PUBLIC_API_URL;
   }
 
-  // 2. Explicit environment variable if specified (supports http://localhost:3001 for Android USB via ADB reverse)
-  if (process.env.EXPO_PUBLIC_API_URL) {
+  // 2. Explicit LAN / remote IP if specified in .env (e.g. http://192.168.x.x:3001)
+  if (
+    process.env.EXPO_PUBLIC_API_URL &&
+    !process.env.EXPO_PUBLIC_API_URL.includes("localhost") &&
+    !process.env.EXPO_PUBLIC_API_URL.includes("127.0.0.1")
+  ) {
     return process.env.EXPO_PUBLIC_API_URL;
   }
 
-  // 3. Auto-detect host IP address from Expo bundler connection (Expo Go / Dev Server)
+  // 3. Auto-detect host IP address from Expo bundler connection (Expo Go / Dev Client over Wi-Fi)
   const hostUri =
     Constants.expoConfig?.hostUri ||
     (Constants as any).manifest2?.extra?.expoGo?.debuggerHost ||
@@ -50,7 +54,12 @@ function getApiBaseUrl(): string {
     }
   }
 
-  // 4. Default: localhost on port 3001 (works directly with adb reverse tcp:3001 tcp:3001 over USB)
+  // 4. If EXPO_PUBLIC_API_URL was explicitly specified as localhost
+  if (process.env.EXPO_PUBLIC_API_URL) {
+    return process.env.EXPO_PUBLIC_API_URL;
+  }
+
+  // 5. Default: localhost on port 3001 (works directly with adb reverse tcp:3001 tcp:3001 over USB)
   return "http://localhost:3001";
 }
 

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1008506516432",
+    "project_id": "ally-app-android",
+    "storage_bucket": "ally-app-android.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1008506516432:android:3d128f5e1b34db38d97fd5",
+        "android_client_info": {
+          "package_name": "xyz.allyjis.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBCNoelQis6zA0Fub8PUKUTV_9N7PRgyOw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

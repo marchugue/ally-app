@@ -6,7 +6,6 @@ import {
   TextInput,
   Pressable,
   ActivityIndicator,
-  KeyboardAvoidingView,
   Platform,
   Keyboard,
 } from "react-native";
@@ -14,6 +13,7 @@ import { router, useLocalSearchParams } from "expo-router";
 import { ArrowLeft, Send, Heart } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useKeyboard } from "@/hooks/useKeyboard";
+import { KeyboardHugView } from "@/components/KeyboardHugView";
 import { useAuth } from "@/lib/auth/AuthContext";
 import {
   getPost,
@@ -187,12 +187,11 @@ export default function PostDetailScreen() {
   }
 
   return (
-    <KeyboardAvoidingView
+    <KeyboardHugView
       style={{
         flex: 1,
         backgroundColor: "#F7F4EF",
       }}
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
       keyboardVerticalOffset={0}
     >
       {/* Header */}
@@ -385,6 +384,6 @@ export default function PostDetailScreen() {
           )}
         </Pressable>
       </View>
-    </KeyboardAvoidingView>
+    </KeyboardHugView>
   );
 }

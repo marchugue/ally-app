@@ -98,7 +98,7 @@ export default function ForgotPasswordScreen() {
   return (
     <KeyboardAvoidingView
       className="flex-1 bg-background"
-      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <StatusBar barStyle="dark-content" />
       <ScrollView

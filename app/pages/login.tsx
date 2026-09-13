@@ -119,7 +119,7 @@ export default function LoginScreen() {
         </SlideIn>
       </View>
 
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : "height"}>
+      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <SlideIn delay={120} distance={30} style={{ flex: 1, marginTop: -60 }}>
           <ScrollView
             contentContainerStyle={{

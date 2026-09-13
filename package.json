@@ -4,9 +4,9 @@
   "version": "1.0.0",
   "scripts": {
     "start": "expo start --dev-client",
-    "dev:fast": "EXPO_PUBLIC_API_URL=http://localhost:3001 expo start --go --localhost",
-    "dev:local": "EXPO_PUBLIC_API_URL=http://localhost:3001 expo start --dev-client --localhost",
-    "dev:usb": "EXPO_PUBLIC_API_URL=http://localhost:3001 expo start --dev-client --localhost",
+    "dev:fast": "adb reverse tcp:8081 tcp:8081 2>/dev/null || true; adb reverse tcp:3001 tcp:3001 2>/dev/null || true; EXPO_PUBLIC_API_URL=http://localhost:3001 expo start --go --localhost",
+    "dev:local": "adb reverse tcp:8081 tcp:8081 2>/dev/null || true; adb reverse tcp:3001 tcp:3001 2>/dev/null || true; EXPO_PUBLIC_API_URL=http://localhost:3001 expo start --dev-client --localhost",
+    "dev:usb": "adb reverse tcp:8081 tcp:8081 2>/dev/null || true; adb reverse tcp:3001 tcp:3001 2>/dev/null || true; EXPO_PUBLIC_API_URL=http://localhost:3001 expo start --dev-client --localhost",
     "dev:lan": "expo start --dev-client",
     "dev:prod": "EXPO_PUBLIC_API_URL=https://ally-jisbackend-production.up.railway.app expo start --dev-client",
     "prod": "EXPO_PUBLIC_API_URL=https://ally-jisbackend-production.up.railway.app expo start --dev-client",
@@ -14,7 +14,8 @@
     "ios": "expo run:ios",
     "web": "expo start --web",
     "lint": "eslint .",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "postinstall": "patch-package"
   },
   "dependencies": {
     "@expo-google-fonts/fraunces": "^0.4.1",
@@ -54,6 +55,7 @@
     "@babel/core": "^7.25.2",
     "@types/react": "~19.2.4",
     "babel-preset-expo": "~57.0.0",
+    "patch-package": "^8.0.0",
     "react-refresh": "^0.18.0",
     "typescript": "~6.0.3"
   },

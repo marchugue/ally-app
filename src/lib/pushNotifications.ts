@@ -123,7 +123,17 @@ export async function registerForPushNotificationsAsync(accessToken: string): Pr
 
     return token;
   } catch (error: any) {
-    console.warn("[PushNotifications] Failed to get push token:", error?.message || error);
+    const errorMsg = error?.message || String(error);
+    if (
+      errorMsg.includes("Default FirebaseApp is not initialized") ||
+      errorMsg.includes("googleServicesFile")
+    ) {
+      console.log(
+        "[PushNotifications] Firebase (google-services.json) not configured for Android dev build. Push notifications will be disabled in local dev."
+      );
+    } else {
+      console.warn("[PushNotifications] Failed to get push token:", errorMsg);
+    }
     return null;
   }
 }
