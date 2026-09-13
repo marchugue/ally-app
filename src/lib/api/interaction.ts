@@ -1,5 +1,6 @@
 import { apiRequest } from "./client";
 import type {
+  AllyFilterParams,
   Interaction,
   InteractionStatusResponse,
   PaginatedAllyList,
@@ -50,8 +51,21 @@ export function getInteractionStatus(targetUserId: string, accessToken: string):
 export function listAllies(
   userId: string,
   accessToken: string,
-  cursor?: string | null
+  cursorOrParams?: string | null | AllyFilterParams
 ): Promise<PaginatedAllyList> {
-  const qs = cursor ? `?cursor=${encodeURIComponent(cursor)}` : "";
-  return apiRequest<PaginatedAllyList>(`/interactions/allies/${userId}${qs}`, { accessToken });
+  const params: AllyFilterParams =
+    typeof cursorOrParams === "string"
+      ? { cursor: cursorOrParams }
+      : cursorOrParams || {};
+
+  const query = new URLSearchParams();
+  if (params.cursor) query.set("cursor", params.cursor);
+  if (params.search) query.set("search", params.search);
+  if (params.department) query.set("department", params.department);
+  if (params.course) query.set("course", params.course);
+  if (params.year_level) query.set("year_level", params.year_level);
+  if (params.sortBy) query.set("sortBy", params.sortBy);
+
+  const qs = query.toString();
+  return apiRequest<PaginatedAllyList>(`/interactions/allies/${userId}${qs ? `?${qs}` : ""}`, { accessToken });
 }

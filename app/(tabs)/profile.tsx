@@ -31,6 +31,8 @@ import { UserAvatar, resolveImageUri } from "@/components/UserAvatar";
 import { PostCard } from "@/components/PostCard";
 import { ResponsiveContainer } from "@/components/ResponsiveContainer";
 import { CreatePostSheet } from "@/components/CreatePostSheet";
+import { RelationshipListModal } from "@/components/RelationshipListModal";
+import { usePresence } from "@/context/PresenceContext";
 import { useAuth } from "@/lib/auth/AuthContext";
 import {
   getMyProfile,
@@ -65,6 +67,7 @@ const FALLBACK_SUGGESTED: ProfileSummary[] = [
 
 export default function ProfileScreen() {
   const { user, accessToken, signOut } = useAuth();
+  const { isOnline } = usePresence();
 
   const [profile, setProfile] = useState<Profile | null>(null);
   const [relationship, setRelationship] = useState<ProfileRelationshipSummary | null>(null);
@@ -84,6 +87,8 @@ export default function ProfileScreen() {
   const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
 
   const [menuOpen, setMenuOpen] = useState(false);
+  const [relationModalOpen, setRelationModalOpen] = useState(false);
+  const [relationModalKind, setRelationModalKind] = useState<"followers" | "following" | "allies">("allies");
 
   const loadProfileData = useCallback(async () => {
     if (!accessToken || !user) return;
@@ -292,26 +297,44 @@ export default function ProfileScreen() {
                       justifyContent: "center",
                     }}
                   >
-                    <View style={{ alignItems: "center", minWidth: 54 }}>
+                    <Pressable
+                      onPress={() => {
+                        setRelationModalKind("followers");
+                        setRelationModalOpen(true);
+                      }}
+                      style={{ alignItems: "center", minWidth: 54 }}
+                    >
                       <Text style={{ fontSize: 16, fontWeight: "700", color: "#111827" }}>
                         {relationship?.followersCount ?? 0}
                       </Text>
                       <Text style={{ fontSize: 11, color: "#6B7280", marginTop: 2 }}>Followers</Text>
-                    </View>
+                    </Pressable>
 
-                    <View style={{ alignItems: "center", minWidth: 54 }}>
+                    <Pressable
+                      onPress={() => {
+                        setRelationModalKind("following");
+                        setRelationModalOpen(true);
+                      }}
+                      style={{ alignItems: "center", minWidth: 54 }}
+                    >
                       <Text style={{ fontSize: 16, fontWeight: "700", color: "#111827" }}>
                         {relationship?.followingCount ?? 0}
                       </Text>
                       <Text style={{ fontSize: 11, color: "#6B7280", marginTop: 2 }}>Following</Text>
-                    </View>
+                    </Pressable>
 
-                    <View style={{ alignItems: "center", minWidth: 54 }}>
+                    <Pressable
+                      onPress={() => {
+                        setRelationModalKind("allies");
+                        setRelationModalOpen(true);
+                      }}
+                      style={{ alignItems: "center", minWidth: 54 }}
+                    >
                       <Text style={{ fontSize: 16, fontWeight: "700", color: "#111827" }}>
                         {relationship?.alliesCount ?? 0}
                       </Text>
                       <Text style={{ fontSize: 11, color: "#6B7280", marginTop: 2 }}>Allies</Text>
-                    </View>
+                    </Pressable>
                   </View>
                 </View>
               </View>
@@ -487,6 +510,85 @@ export default function ProfileScreen() {
               {/* Tab View Contents */}
               {activeTab === "about" ? (
                 <AboutTabSection profile={profile} />
+              ) : activeTab === "feed" && suggested && suggested.length > 0 ? (
+                <View style={{ marginTop: 14, marginBottom: 4 }}>
+                  {/* Suggested Allies Section Header */}
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      paddingHorizontal: 16,
+                      marginBottom: 10,
+                    }}
+                  >
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                      <Text style={{ fontSize: 14, fontWeight: "700", color: "#111827" }}>
+                        Suggested Allies
+                      </Text>
+                      <View
+                        style={{
+                          backgroundColor: "#F0FDF4",
+                          paddingHorizontal: 6,
+                          paddingVertical: 1.5,
+                          borderRadius: 6,
+                          borderWidth: 1,
+                          borderColor: "#BBF7D0",
+                        }}
+                      >
+                        <Text style={{ fontSize: 9.5, fontWeight: "700", color: "#15803D" }}>
+                          Campus
+                        </Text>
+                      </View>
+                    </View>
+
+                    <Pressable
+                      onPress={() => router.push("/(tabs)/discover" as any)}
+                      hitSlop={6}
+                      style={{ flexDirection: "row", alignItems: "center", gap: 2 }}
+                    >
+                      <Text style={{ fontSize: 12, fontWeight: "700", color: COLORS.forest }}>
+                        See All
+                      </Text>
+                      <ChevronRight size={14} color={COLORS.forest} strokeWidth={2.4} />
+                    </Pressable>
+                  </View>
+
+                  {/* Horizontal Carousel */}
+                  <FlatList
+                    data={suggested}
+                    keyExtractor={(item) => item.id}
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    contentContainerStyle={{ paddingHorizontal: 16, gap: 10 }}
+                    renderItem={({ item }) => (
+                      <SuggestedAllyCard
+                        item={item}
+                        isFollowing={followingIds.has(item.id)}
+                        onPressProfile={() =>
+                          router.push({
+                            pathname: "/pages/user-profile",
+                            params: { userId: item.id },
+                          } as any)
+                        }
+                        onToggleFollow={() => toggleFollowSuggested(item.id)}
+                        onDismiss={() => {
+                          setSuggested((prev) => prev.filter((p) => p.id !== item.id));
+                        }}
+                      />
+                    )}
+                  />
+
+                  {/* Subtle divider before posts */}
+                  <View
+                    style={{
+                      height: 8,
+                      backgroundColor: "#F3F4F6",
+                      marginTop: 14,
+                      marginBottom: 4,
+                    }}
+                  />
+                </View>
               ) : null}
             </View>
           }
@@ -643,6 +745,16 @@ export default function ProfileScreen() {
           router.push("/pages/settings" as any);
         }}
       />
+
+      {profile && (
+        <RelationshipListModal
+          visible={relationModalOpen}
+          onClose={() => setRelationModalOpen(false)}
+          userId={profile.id}
+          initialKind={relationModalKind}
+          userName={profile.username || undefined}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -881,17 +993,21 @@ function SuggestedAllyCard({
   onPressProfile,
   onToggleFollow,
   isFollowing,
+  onDismiss,
 }: {
   item: ProfileSummary;
   onPressProfile: () => void;
   onToggleFollow: () => void;
   isFollowing?: boolean;
+  onDismiss?: () => void;
 }) {
+  const { isOnline } = usePresence();
+
   return (
     <Pressable
       onPress={onPressProfile}
       style={{
-        width: 140,
+        width: 142,
         backgroundColor: "#FFFFFF",
         borderRadius: 16,
         borderWidth: 1,
@@ -906,24 +1022,31 @@ function SuggestedAllyCard({
         position: "relative",
       }}
     >
-      {/* Upper Right X Icon (no action yet) */}
-      <Pressable
-        onPress={(e) => {
-          e.stopPropagation();
-        }}
-        hitSlop={6}
-        style={{
-          position: "absolute",
-          top: 8,
-          right: 8,
-          zIndex: 10,
-          padding: 2,
-        }}
-      >
-        <X size={14} color="#9CA3AF" />
-      </Pressable>
+      {/* Upper Right X Icon */}
+      {onDismiss && (
+        <Pressable
+          onPress={(e) => {
+            e.stopPropagation();
+            onDismiss();
+          }}
+          hitSlop={6}
+          style={{
+            position: "absolute",
+            top: 8,
+            right: 8,
+            zIndex: 10,
+            padding: 2,
+          }}
+        >
+          <X size={14} color="#9CA3AF" />
+        </Pressable>
+      )}
 
-      <UserAvatar avatar={item.avatar_url} size="lg" />
+      <UserAvatar
+        avatar={item.avatar_url}
+        size="lg"
+        online={isOnline ? isOnline(item.id) : false}
+      />
 
       <Text
         style={{

@@ -11,10 +11,10 @@ import {
   Image,
   Keyboard,
   TouchableOpacity,
+  Dimensions,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
-import { router } from "expo-router";
-import * as ImagePicker from "expo-image-picker";
+import { router, useLocalSearchParams } from "expo-router";
 import {
   ArrowLeft,
   ArrowRight,
@@ -45,6 +45,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth, ApiError } from "@/lib/auth/AuthContext";
 import * as authApi from "@/lib/api/auth";
 import { updateMyProfile } from "@/lib/api/profiles";
+import { uploadStudentIdFile } from "@/lib/api/media";
 import { DiagonalStripes } from "@/components/DiagonalStripes";
 import { SlideIn } from "@/components/SlideIn";
 import { Button } from "@/components/Button";
@@ -53,6 +54,15 @@ import EmailInput from "@/components/buttons/email";
 import PasswordInput from "@/components/buttons/password";
 import AlertMessage from "@/components/AlertMessage";
 import LoadingOverlay from "@/components/LoadingOverlay";
+import {
+  BasicInfoIllustration,
+  AcademicIllustration,
+  InterestsIllustration,
+  AvatarIllustration,
+} from "@/components/OnboardingIllustrations";
+
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
+
 
 // ── Lookup Data ──────────────────────────────────────────────────────────────
 
@@ -163,12 +173,33 @@ function FieldError({ msg }: { msg?: string }) {
   return <Text style={{ color: "#EF4444", fontSize: 11, marginTop: 6, marginLeft: 4 }}>{msg}</Text>;
 }
 
+// ── Step illustration selector ────────────────────────────────────────────────
+
+const STEP_BLOB_COLORS = ["#EDE9FE", "#D1FAE5", "#FEF3C7", "#FCE7F3"];
+
+function StepIllustration({ step }: { step: number }) {
+  const size = Math.min(SCREEN_WIDTH * 0.42, 170);
+  switch (step) {
+    case 1: return <BasicInfoIllustration size={size} />;
+    case 2: return <AcademicIllustration size={size} />;
+    case 3: return <InterestsIllustration size={size} />;
+    case 4: return <AvatarIllustration size={size} />;
+    default: return <BasicInfoIllustration size={size} />;
+  }
+}
+
+
 // ── Main Component ───────────────────────────────────────────────────────────
 
 export default function RegisterScreen() {
   const insets = useSafeAreaInsets();
+  const params = useLocalSearchParams();
   const { signUp, completeLogin, accessToken } = useAuth();
-  const [step, setStep] = useState(1);
+  const [step, setStep] = useState(() => {
+    // If redirected from the incomplete-profile guard, start at the specified step.
+    const startStep = Number(params.startStep);
+    return startStep >= 2 && startStep <= 4 ? startStep : 1;
+  });
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDone, setIsDone] = useState(false);
   const [submitError, setSubmitError] = useState("");
@@ -178,9 +209,35 @@ export default function RegisterScreen() {
   const [termsError, setTermsError] = useState("");
   const [Touched, setTouched] = useState(false);
   
-  // Email type & Student ID state (Step 1)
-  const [emailType, setEmailType] = useState<"chmsu" | "external">("chmsu");
-  const [studentIdUri, setStudentIdUri] = useState<string | null>(null);
+  // Email type & Student ID state (from params or default)
+  const [emailType, setEmailType] = useState<"chmsu" | "external">(
+    (params.emailType as "chmsu" | "external") || "chmsu"
+  );
+  const [studentIdUri, setStudentIdUri] = useState<string | null>(
+    (params.studentIdFrontUri as string) || null
+  );
+  const [studentIdBackUri, setStudentIdBackUri] = useState<string | null>(
+    (params.studentIdBackUri as string) || null
+  );
+
+  useEffect(() => {
+    if (params.emailType) {
+      setEmailType(params.emailType as "chmsu" | "external");
+    }
+    if (params.studentIdFrontUri) {
+      setStudentIdUri(params.studentIdFrontUri as string);
+    }
+    if (params.studentIdBackUri) {
+      setStudentIdBackUri(params.studentIdBackUri as string);
+    }
+    if (params.email || params.username) {
+      setForm((prev) => ({
+        ...prev,
+        email: (params.email as string) || prev.email,
+        username: (params.username as string) || prev.username,
+      }));
+    }
+  }, [params.emailType, params.studentIdFrontUri, params.studentIdBackUri, params.email, params.username]);
 
   // custom interests
   const [customInterest, setCustomInterest] = useState("");
@@ -250,21 +307,6 @@ export default function RegisterScreen() {
 
   const set = (key: keyof FormData, val: any) => setForm(prev => ({ ...prev, [key]: val }));
 
-  const pickStudentIdImage = async () => {
-    try {
-      const result = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
-        allowsEditing: true,
-        quality: 0.8,
-      });
-      if (!result.canceled && result.assets?.[0]?.uri) {
-        setStudentIdUri(result.assets[0].uri);
-        setSubmitError("");
-      }
-    } catch (err: any) {
-      console.warn("Image picker error:", err);
-    }
-  };
 
   const knownCategories = Object.values(INTERESTS_BY_CATEGORY).flat();
   const customInterests = form.interests.filter(i => !knownCategories.includes(i));
@@ -316,11 +358,6 @@ export default function RegisterScreen() {
 
       const pErr = validatePass(form.password);
       if (pErr) errs.password = pErr;
-
-      if (emailType === "external" && !studentIdUri) {
-        setSubmitError("Please upload a photo of your Student ID or COR.");
-        return false;
-      }
     }
 
     if (step === 2) {
@@ -359,6 +396,22 @@ export default function RegisterScreen() {
         return;
       }
 
+      // External email: navigate to Student Verification page (id-upload).
+      // Account creation happens in id-upload-success after both scans.
+      if (emailType === "external") {
+        router.push({
+          pathname: "/pages/id-upload" as any,
+          params: {
+            emailType,
+            email: form.email,
+            username: form.username,
+            password: form.password,
+          },
+        });
+        return;
+      }
+
+      // CHMSU email: create account immediately and show OTP inline
       setIsSubmitting(true);
       try {
         const result = await signUp({
@@ -436,10 +489,18 @@ export default function RegisterScreen() {
       return;
     }
     if (step > 1) {
-      setStep(s => s - 1);
-      setSubmitError("");
+      // If user was redirected here to complete an incomplete profile,
+      // don't go below the step they started at.
+      const minStep = Number(params.startStep) >= 2 ? Number(params.startStep) : 1;
+      if (step > minStep) {
+        setStep(s => s - 1);
+        setSubmitError("");
+      }
+      // If already at the minimum step (e.g. step 2 for resume flow), do nothing —
+      // the user can't go back to Step 1 since their account already exists.
     } else {
-      router.back();
+      // Step 1 back returns to email type selection
+      router.replace("/pages/select-email" as any);
     }
   };
 
@@ -588,104 +649,97 @@ export default function RegisterScreen() {
   // ── Form view ──────────────────────────────────────────────────────────────
 
   return (
-    <View style={{ flex: 1, backgroundColor: "#FAF8F5" }}>
+    <View style={{ flex: 1, backgroundColor: "#FFFFFF" }}>
       <StatusBar barStyle="dark-content" />
-
-      {/* Decorative background accent */}
-      <View
-        style={{
-          position: "absolute",
-          top: -80,
-          right: -60,
-          width: 240,
-          height: 240,
-          borderRadius: 120,
-          backgroundColor: "#1A6B3C08",
-        }}
-      />
 
       <KeyboardAvoidingView
         style={{ flex: 1 }}
         behavior={Platform.OS === "ios" ? "padding" : undefined}
       >
-        <View style={{ flex: 1, paddingTop: Math.max(insets.top, 12) }}>
+        <View style={{ flex: 1 }}>
 
-          {/* ── Fixed Header ── */}
-          <View style={{ paddingHorizontal: 24, paddingBottom: 8 }}>
-            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
+          {/* ── Illustrated Step Header ── */}
+          <View style={{
+            alignItems: "center",
+            paddingTop: Math.max(insets.top, 12),
+            paddingBottom: 12,
+            backgroundColor: "#FFFFFF",
+          }}>
+            {/* Back button row */}
+            <View style={{
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "space-between",
+              width: "100%",
+              paddingHorizontal: 20,
+              marginBottom: 8,
+            }}>
               <Pressable
                 onPress={handleBack}
                 style={{
                   width: 38,
                   height: 38,
                   borderRadius: 12,
-                  backgroundColor: "#FFFFFF",
+                  backgroundColor: "#F9FAFB",
                   borderWidth: 1,
-                  borderColor: "#E2DED7",
+                  borderColor: "#E5E7EB",
                   alignItems: "center",
                   justifyContent: "center",
                 }}
               >
-                <ArrowLeft size={18} color="#374151" />
+                <ArrowLeft size={20} color="#1A6B3C" />
               </Pressable>
-
-              <Text style={{ fontSize: 13, fontWeight: "700", color: "#1A6B3C", letterSpacing: 0.5 }}>
+              <Text style={{ fontSize: 12, fontWeight: "700", color: "#9CA3AF", letterSpacing: 0.8 }}>
                 STEP {step} OF {STEPS.length}
               </Text>
-
               <View style={{ width: 38 }} />
             </View>
 
-            {/* Step progress pills */}
-            <View style={{ gap: 6, marginBottom: 16 }}>
-              <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-                {STEPS.map(({ num }) => (
-                  <View
-                    key={num}
-                    style={{
-                      width: 28,
-                      height: 28,
-                      borderRadius: 14,
-                      alignItems: "center",
-                      justifyContent: "center",
-                      backgroundColor: step >= num ? "#1A6B3C" : "#F0EDE8",
-                    }}
-                  >
-                    {step > num ? (
-                      <Check size={12} color="#fff" />
-                    ) : (
-                      <Text style={{ fontSize: 11, fontWeight: "700", color: step === num ? "#fff" : "#9CA3AF" }}>
-                        {num}
-                      </Text>
-                    )}
-                  </View>
-                ))}
-              </View>
+            {/* Illustration blob */}
+            <StepIllustration step={step} />
+
+            {/* Title + subtitle */}
+            <Text style={{
+              fontSize: 22,
+              fontWeight: "800",
+              color: "#111827",
+              textAlign: "center",
+              marginTop: 14,
+              letterSpacing: -0.5,
+            }}>
+              {STEPS[step - 1].label}
+            </Text>
+            <Text style={{ fontSize: 13, color: "#6B7280", textAlign: "center", marginTop: 4 }}>
+              {STEPS[step - 1].hint}
+            </Text>
+
+            {/* Progress dots */}
+            <View style={{ flexDirection: "row", gap: 8, marginTop: 12, alignItems: "center" }}>
+              {STEPS.map(({ num }) => (
+                <View
+                  key={num}
+                  style={{
+                    height: 8,
+                    borderRadius: 4,
+                    width: num === step ? 22 : 8,
+                    backgroundColor: step >= num ? "#1A6B3C" : "#E5E7EB",
+                  }}
+                />
+              ))}
             </View>
 
             {submitError ? (
-              <View style={{ marginBottom: 16 }}>
+              <View style={{ marginTop: 10, width: "100%", paddingHorizontal: 20 }}>
                 <AlertMessage message={submitError} type="error" />
               </View>
             ) : null}
-
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 4 }}>
-              <View style={{ width: 32, height: 32, borderRadius: 10, backgroundColor: "#1A6B3C12", alignItems: "center", justifyContent: "center" }}>
-                <StepIcon size={16} color="#1A6B3C" />
-              </View>
-              <Text style={{ fontSize: 22, fontWeight: "800", color: "#1A6B3C", letterSpacing: -0.5 }}>
-                {STEPS[step - 1].label}
-              </Text>
-            </View>
-            <Text style={{ color: "#6B7280", fontSize: 14, marginBottom: 16 }}>
-              {STEPS[step - 1].hint}
-            </Text>
           </View>
 
           {/* ── Scrollable Content ── */}
           <ScrollView
             showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 24 }}
+            style={{ backgroundColor: "#F9FAFB" }}
+            contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 24, paddingTop: 16 }}
             keyboardShouldPersistTaps="handled"
             automaticallyAdjustKeyboardInsets={true}
             keyboardDismissMode="on-drag"
@@ -758,45 +812,9 @@ export default function RegisterScreen() {
                 </View>
               ) : (
                 <View>
-                  {/* Email Type Pills */}
-                  <Text style={{ fontSize: 12, fontWeight: "600", color: "#374151", marginBottom: 8 }}>
-                    Email Type
-                  </Text>
-                  <View style={{ flexDirection: "row", gap: 8, marginBottom: 14 }}>
-                    <Pressable
-                      onPress={() => setEmailType("chmsu")}
-                      style={{
-                        flex: 1, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 14, borderWidth: 1.5,
-                        borderColor: emailType === "chmsu" ? "#1A6B3C" : "#E5E7EB",
-                        backgroundColor: emailType === "chmsu" ? "#1A6B3C0D" : "#FFFFFF",
-                        alignItems: "center"
-                      }}
-                    >
-                      <Text style={{ fontSize: 12, fontWeight: "700", color: emailType === "chmsu" ? "#1A6B3C" : "#4B5563" }}>
-                        CHMSU Email
-                      </Text>
-                      <Text style={{ fontSize: 10, color: "#9CA3AF" }}>@chmsu.edu.ph</Text>
-                    </Pressable>
-
-                    <Pressable
-                      onPress={() => setEmailType("external")}
-                      style={{
-                        flex: 1, paddingVertical: 10, paddingHorizontal: 12, borderRadius: 14, borderWidth: 1.5,
-                        borderColor: emailType === "external" ? "#1A6B3C" : "#E5E7EB",
-                        backgroundColor: emailType === "external" ? "#1A6B3C0D" : "#FFFFFF",
-                        alignItems: "center"
-                      }}
-                    >
-                      <Text style={{ fontSize: 12, fontWeight: "700", color: emailType === "external" ? "#1A6B3C" : "#4B5563" }}>
-                        Personal Email
-                      </Text>
-                      <Text style={{ fontSize: 10, color: "#9CA3AF" }}>ID Upload Required</Text>
-                    </Pressable>
-                  </View>
-
                   <Input
                     value={form.username}
-                    onChangeText={(text) => setForm((prev) => ({...prev,username: text,}))}
+                    onChangeText={(text) => setForm((prev) => ({ ...prev, username: text }))}
                     onBlur={() => setTouched(true)}
                     error={usernameError}
                     placeholder="Username"
@@ -804,45 +822,17 @@ export default function RegisterScreen() {
 
                   <EmailInput
                     value={form.email}
-                    onChangeText={(text) => setForm((prev) => ({...prev,email: text,}))}
+                    onChangeText={(text) => setForm((prev) => ({ ...prev, email: text }))}
                     onBlur={() => setTouched(true)}
                     error={emailError}
                     placeholder={emailType === "chmsu" ? "Your@chmsu.edu.ph" : "yourname@gmail.com"}
                   />
 
-                  {emailType === "external" && (
-                    <View style={{ marginBottom: 14 }}>
-                      <Text style={{ fontSize: 12, fontWeight: "600", color: "#374151", marginBottom: 6 }}>
-                        Student ID / COR Photo <Text style={{ color: "#EF4444" }}>*</Text>
-                      </Text>
-                      <Pressable
-                        onPress={pickStudentIdImage}
-                        style={{
-                          borderWidth: 1.5, borderStyle: "dashed", borderColor: studentIdUri ? "#1A6B3C" : "#D1D5DB",
-                          borderRadius: 14, padding: 14, alignItems: "center", backgroundColor: "#FFFFFF"
-                        }}
-                      >
-                        {studentIdUri ? (
-                          <View style={{ alignItems: "center", gap: 6 }}>
-                            <Image source={{ uri: studentIdUri }} style={{ width: 120, height: 80, borderRadius: 8 }} />
-                            <Text style={{ fontSize: 11, color: "#1A6B3C", fontWeight: "600" }}>✓ Photo selected (Tap to change)</Text>
-                          </View>
-                        ) : (
-                          <View style={{ alignItems: "center", gap: 4 }}>
-                            <Sparkles size={20} color="#1A6B3C" />
-                            <Text style={{ fontSize: 13, fontWeight: "600", color: "#374151" }}>Upload Student ID or COR</Text>
-                            <Text style={{ fontSize: 11, color: "#9CA3AF" }}>Tap to select an image from gallery</Text>
-                          </View>
-                        )}
-                      </Pressable>
-                    </View>
-                  )}
-
                   <PasswordInput
                     value={form.password}
-                    onChangeText={(text) => setForm((prev) => ({...prev,password: text,}))}
+                    onChangeText={(text) => setForm((prev) => ({ ...prev, password: text }))}
                     onBlur={() => setTouched(true)}
-                    error={passwordError} 
+                    error={passwordError}
                   />
                 </View>
               )

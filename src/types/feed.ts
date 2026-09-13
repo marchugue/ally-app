@@ -5,6 +5,7 @@ export interface PostAuthor {
   username: string;
   full_name: string;
   avatar_url: string | null;
+  is_following?: boolean;
 }
 
 export interface FeedPost {

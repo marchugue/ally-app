@@ -54,18 +54,19 @@ export default function RequestsScreen() {
   }, [loadRequests]);
 
   const handleAccept = useCallback(
-    async (requesterId: string) => {
-      if (!accessToken) return;
-      setProcessing((prev) => new Set(prev).add(requesterId));
+    async (item: NotificationItem) => {
+      const requesterId = item.from_user_id || item.fromUserId;
+      if (!accessToken || !requesterId) return;
+      setProcessing((prev) => new Set(prev).add(item.id));
       try {
         await acceptConnection(requesterId, accessToken);
-        setRequests((prev) => prev.filter((r) => r.id !== requesterId));
+        setRequests((prev) => prev.filter((r) => r.id !== item.id));
       } catch (err) {
         console.warn("Failed to accept", err);
       } finally {
         setProcessing((prev) => {
           const next = new Set(prev);
-          next.delete(requesterId);
+          next.delete(item.id);
           return next;
         });
       }
@@ -74,18 +75,19 @@ export default function RequestsScreen() {
   );
 
   const handleReject = useCallback(
-    async (requesterId: string) => {
-      if (!accessToken) return;
-      setProcessing((prev) => new Set(prev).add(requesterId));
+    async (item: NotificationItem) => {
+      const requesterId = item.from_user_id || item.fromUserId;
+      if (!accessToken || !requesterId) return;
+      setProcessing((prev) => new Set(prev).add(item.id));
       try {
         await rejectConnection(requesterId, accessToken);
-        setRequests((prev) => prev.filter((r) => r.id !== requesterId));
+        setRequests((prev) => prev.filter((r) => r.id !== item.id));
       } catch (err) {
         console.warn("Failed to reject", err);
       } finally {
         setProcessing((prev) => {
           const next = new Set(prev);
-          next.delete(requesterId);
+          next.delete(item.id);
           return next;
         });
       }
@@ -140,6 +142,11 @@ export default function RequestsScreen() {
         }
         renderItem={({ item }) => {
           const isProcessing = processing.has(item.id);
+          const fromUser = Array.isArray(item.from_user) ? item.from_user[0] : item.from_user;
+          const avatarUrl = item.avatar_url || fromUser?.avatar_url || item.user_avatar;
+          const name = item.author_name || item.username || fromUser?.full_name || fromUser?.username || "Student";
+          const message = item.message || item.description || "Sent you a connection request";
+
           return (
             <View
               style={{
@@ -151,23 +158,33 @@ export default function RequestsScreen() {
                 opacity: isProcessing ? 0.5 : 1,
               }}
             >
-              <UserAvatar avatar={null} size="lg" />
+              <UserAvatar avatar={avatarUrl} fallback="👤" size="md" />
               <View style={{ flex: 1, minWidth: 0 }}>
                 <Text
                   style={{
                     fontSize: 14,
-                    fontWeight: "600",
+                    fontWeight: "700",
                     color: "#111827",
                   }}
                   numberOfLines={1}
                 >
-                  {item.message}
+                  {name}
+                </Text>
+                <Text
+                  style={{
+                    fontSize: 12,
+                    color: "#6B7280",
+                    marginTop: 2,
+                  }}
+                  numberOfLines={1}
+                >
+                  {message}
                 </Text>
               </View>
 
               <View style={{ flexDirection: "row", gap: 6 }}>
                 <Pressable
-                  onPress={() => handleAccept(item.id)}
+                  onPress={() => handleAccept(item)}
                   disabled={isProcessing}
                   style={{
                     width: 36,
@@ -181,7 +198,7 @@ export default function RequestsScreen() {
                   <Check size={18} color="#FFFFFF" />
                 </Pressable>
                 <Pressable
-                  onPress={() => handleReject(item.id)}
+                  onPress={() => handleReject(item)}
                   disabled={isProcessing}
                   style={{
                     width: 36,

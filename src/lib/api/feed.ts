@@ -8,8 +8,38 @@ import type {
   CreateCommentPayload,
 } from "@/types/feed";
 
-export function listFeed(accessToken: string): Promise<FeedPost[]> {
-  return apiRequest<FeedPost[]>("/feed", { accessToken });
+export interface FeedFilterParams {
+  filter?: 'all' | 'allies' | 'following' | 'discover' | 'popular';
+  department?: string;
+  course?: string;
+  interest?: string;
+  search?: string;
+  mediaOnly?: boolean;
+}
+
+export function listFeed(accessToken: string, params?: FeedFilterParams): Promise<FeedPost[]> {
+  const query = new URLSearchParams();
+  if (params?.filter) query.set('filter', params.filter);
+  if (params?.department) query.set('department', params.department);
+  if (params?.course) query.set('course', params.course);
+  if (params?.interest) query.set('interest', params.interest);
+  if (params?.search) query.set('search', params.search);
+  if (params?.mediaOnly !== undefined) query.set('mediaOnly', String(params.mediaOnly));
+
+  const qs = query.toString();
+  return apiRequest<FeedPost[]>(`/feed${qs ? `?${qs}` : ''}`, { accessToken });
+}
+
+export function listDiscoverFeed(accessToken: string, params?: Omit<FeedFilterParams, 'filter'>): Promise<FeedPost[]> {
+  const query = new URLSearchParams();
+  if (params?.department) query.set('department', params.department);
+  if (params?.course) query.set('course', params.course);
+  if (params?.interest) query.set('interest', params.interest);
+  if (params?.search) query.set('search', params.search);
+  if (params?.mediaOnly !== undefined) query.set('mediaOnly', String(params.mediaOnly));
+
+  const qs = query.toString();
+  return apiRequest<FeedPost[]>(`/feed/discover${qs ? `?${qs}` : ''}`, { accessToken });
 }
 
 export function listFeedByUser(userId: string, accessToken: string): Promise<FeedPost[]> {

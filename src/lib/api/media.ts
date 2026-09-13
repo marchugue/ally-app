@@ -62,3 +62,45 @@ export function uploadPostFiles(files: LocalFile[], accessToken: string): Promis
   files.forEach((file) => formData.append("files", file as unknown as Blob));
   return uploadRequest<PostMediaUploadResult>("/media/posts", formData, accessToken);
 }
+
+/** POST /api/auth/student-id/upload — field name "file", params "userId", "side" */
+export async function uploadStudentIdFile(
+  userId: string,
+  localUri: string,
+  side: "front" | "back" = "front"
+): Promise<{ url: string; side: string }> {
+  const formData = new FormData();
+  formData.append("userId", userId);
+  formData.append("side", side);
+
+  const filename = localUri.split("/").pop() || `id-${side}.jpg`;
+  const match = /\.(\w+)$/.exec(filename);
+  const type = match ? `image/${match[1].toLowerCase()}` : `image/jpeg`;
+
+  formData.append("file", {
+    uri: localUri,
+    name: filename,
+    type,
+  } as any);
+
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}/api/auth/student-id/upload`, {
+      method: "POST",
+      body: formData,
+    });
+  } catch {
+    throw new ApiError("Unable to reach the server. Check your connection.", 0);
+  }
+
+  const data = await response.json().catch(() => null);
+  if (!response.ok) {
+    const message =
+      data && typeof data === "object" && "message" in data
+        ? String((data as { message: unknown }).message)
+        : "Student ID upload failed";
+    throw new ApiError(message, response.status);
+  }
+
+  return data;
+}

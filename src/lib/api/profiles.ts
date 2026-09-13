@@ -24,9 +24,52 @@ export function checkUsernameAvailable(username: string, excludeId?: string): Pr
   return apiRequest<{ available: boolean }>(`/profiles/check-username?${query}`);
 }
 
-export function listProfiles(accessToken: string, excludeId?: string): Promise<ProfileSummary[]> {
-  const query = excludeId ? `?excludeId=${excludeId}` : "";
-  return apiRequest<ProfileSummary[]>(`/profiles${query}`, { accessToken });
+export interface ProfileFilterParams {
+  excludeId?: string;
+  search?: string;
+  department?: string;
+  course?: string;
+  year_level?: string;
+  interest?: string;
+  sortBy?: "match" | "popular" | "name" | "recent";
+}
+
+export function listProfiles(
+  accessToken: string,
+  excludeIdOrParams?: string | ProfileFilterParams
+): Promise<ProfileSummary[]> {
+  const params: ProfileFilterParams =
+    typeof excludeIdOrParams === "string"
+      ? { excludeId: excludeIdOrParams }
+      : excludeIdOrParams || {};
+
+  const query = new URLSearchParams();
+  if (params.excludeId) query.set("excludeId", params.excludeId);
+  if (params.search) query.set("search", params.search);
+  if (params.department) query.set("department", params.department);
+  if (params.course) query.set("course", params.course);
+  if (params.year_level) query.set("year_level", params.year_level);
+  if (params.interest) query.set("interest", params.interest);
+  if (params.sortBy) query.set("sortBy", params.sortBy);
+
+  const qs = query.toString();
+  return apiRequest<ProfileSummary[]>(`/profiles${qs ? `?${qs}` : ""}`, { accessToken });
+}
+
+export function listDiscoverProfiles(
+  accessToken: string,
+  params?: Omit<ProfileFilterParams, "sortBy">
+): Promise<ProfileSummary[]> {
+  const query = new URLSearchParams();
+  if (params?.excludeId) query.set("excludeId", params.excludeId);
+  if (params?.search) query.set("search", params.search);
+  if (params?.department) query.set("department", params.department);
+  if (params?.course) query.set("course", params.course);
+  if (params?.year_level) query.set("year_level", params.year_level);
+  if (params?.interest) query.set("interest", params.interest);
+
+  const qs = query.toString();
+  return apiRequest<ProfileSummary[]>(`/profiles/discover${qs ? `?${qs}` : ""}`, { accessToken });
 }
 
 export function getProfileById(userId: string, accessToken: string): Promise<Profile> {
@@ -48,13 +91,7 @@ export function getProfileRelationship(userId: string, accessToken: string): Pro
   return apiRequest<ProfileRelationshipSummary>(`/profiles/${userId}/relationship`, { accessToken });
 }
 
-export function followUser(userId: string, accessToken: string): Promise<{ following: boolean }> {
-  return apiRequest<{ following: boolean }>(`/follow/${userId}`, { method: "POST", accessToken });
-}
-
-export function unfollowUser(userId: string, accessToken: string): Promise<{ following: boolean }> {
-  return apiRequest<{ following: boolean }>(`/follow/${userId}`, { method: "DELETE", accessToken });
-}
+export { followUser, unfollowUser } from "./follow";
 
 export function updatePushToken(expoPushToken: string | null, accessToken: string): Promise<{ ok: boolean }> {
   return apiRequest<{ ok: boolean }>("/profiles/push-token", {

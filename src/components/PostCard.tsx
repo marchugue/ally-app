@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { View, Text, Pressable, Image, Modal, Alert } from "react-native";
 import {
   Heart,
@@ -16,7 +16,7 @@ import { ReportModal } from "./ReportModal";
 import type { FeedPost } from "@/types/feed";
 import { router } from "expo-router";
 import { useAuth } from "@/lib/auth/AuthContext";
-import { followUser, unfollowUser } from "@/lib/api/profiles";
+import { followUser, unfollowUser } from "@/lib/api/follow";
 import { deletePost } from "@/lib/api/feed";
 import { reportUser } from "@/lib/api/moderation";
 
@@ -57,9 +57,14 @@ export function PostCard({
 }: PostCardProps) {
   const { user, accessToken } = useAuth();
   const [isFollowing, setIsFollowing] = useState<boolean>(
-    Boolean((post.author as any)?.is_following)
+    Boolean(post.author?.is_following)
   );
   const [followLoading, setFollowLoading] = useState(false);
+
+  useEffect(() => {
+    setIsFollowing(Boolean(post.author?.is_following));
+  }, [post.author?.is_following]);
+
   const [optionsVisible, setOptionsVisible] = useState(false);
   const [reportVisible, setReportVisible] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -102,6 +107,9 @@ export function PostCard({
     } catch (err) {
       console.warn("Failed to update follow state", err);
       setIsFollowing(!nextState);
+      if (onToggleFollow) {
+        onToggleFollow(post.author.id, !nextState);
+      }
     } finally {
       setFollowLoading(false);
     }
@@ -197,9 +205,9 @@ export function PostCard({
           <Pressable
             onPress={handleToggleFollow}
             disabled={followLoading}
-            style={{
-              paddingHorizontal: 10,
-              paddingVertical: 4,
+            style={({ pressed }) => ({
+              paddingHorizontal: 11,
+              paddingVertical: 4.5,
               borderRadius: 14,
               backgroundColor: isFollowing
                 ? "#F3F4F6"
@@ -209,7 +217,8 @@ export function PostCard({
                 ? "#E5E7EB"
                 : "rgba(26, 107, 60, 0.25)",
               marginRight: 2,
-            }}
+              opacity: followLoading ? 0.6 : pressed ? 0.75 : 1,
+            })}
             hitSlop={6}
           >
             <Text

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, useRef } from "react";
+import { useCallback, useEffect, useState, useRef, useMemo } from "react";
 import {
   View,
   Text,
@@ -9,12 +9,14 @@ import {
   Platform,
   Modal,
   Keyboard,
+  Alert,
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import {
   ArrowLeft,
   MoreVertical,
   Shield,
+  ShieldCheck,
   Flag,
   Ban,
   Drama,
@@ -38,6 +40,8 @@ import { blockUser, reportUser } from "@/lib/api/moderation";
 import { endMatch as apiEndMatch } from "@/lib/api/matchmaking";
 import { stageName } from "@/constants/matchOptions";
 import { getSocket } from "@/lib/socket";
+import * as ImagePicker from "expo-image-picker";
+import { uploadChatFile } from "@/lib/api/media";
 import { SwipeableChatBubble } from "@/components/SwipeableChatBubble";
 import { ChatInput } from "@/components/ChatInput";
 import { UserAvatar } from "@/components/UserAvatar";
@@ -45,33 +49,48 @@ import { AnonymousAvatar } from "@/components/AnonymousAvatar";
 import { MatchRevealSheet } from "@/components/MatchRevealSheet";
 import { useKeyboard } from "@/hooks/useKeyboard";
 import { ConfirmModal } from "@/components/ConfirmModal";
-import type { Message, Conversation } from "@/types/conversation";
+import type { Message, Conversation, MessageGroupPosition } from "@/types/conversation";
 import type { Profile } from "@/types/profile";
 
 const REACTION_EMOJIS = ["❤️", "😂", "😮", "😢", "👍", "👎"];
+const GROUPING_MAX_GAP_MS = 5 * 60 * 1000;
+
+function canGroupMessages(current: Message, adjacent: Message | null | undefined): boolean {
+  if (!adjacent) return false;
+  if (current.sender_id !== adjacent.sender_id) return false;
+  if (current.status === "failed" || adjacent.status === "failed") return false;
+
+  const curTime = new Date(current.created_at).getTime();
+  const adjTime = new Date(adjacent.created_at).getTime();
+  if (isNaN(curTime) || isNaN(adjTime)) return true;
+  return Math.abs(curTime - adjTime) <= GROUPING_MAX_GAP_MS;
+}
 const POLL_INTERVAL_MS = 3000;
 
 export default function ConversationScreen() {
   const insets = useSafeAreaInsets();
   const { user, accessToken } = useAuth();
   const {
-    conversationId,
+    conversationId: rawConvId,
+    id: rawId,
     prefillName,
     prefillAvatar,
     prefillUserId,
     isAnonymous: isAnonymousParam,
   } = useLocalSearchParams<{
-    conversationId: string;
+    conversationId?: string;
+    id?: string;
     prefillName?: string;
     prefillAvatar?: string;
     prefillUserId?: string;
     isAnonymous?: string;
   }>();
 
+  const conversationId = rawConvId || rawId || "";
+
   const [messages, setMessages] = useState<Message[]>([]);
   // If prefill data is passed from messages list, skip loading screen entirely
   const [loading, setLoading] = useState(!prefillName);
-  const [sending, setSending] = useState(false);
   const [otherProfile, setOtherProfile] = useState<Profile | null>(
     prefillName
       ? ({ id: prefillUserId, full_name: prefillName, avatar_url: prefillAvatar || null } as any)
@@ -82,8 +101,12 @@ export default function ConversationScreen() {
 
   // Anonymous Matchmaking State
   const [isAnonymous, setIsAnonymous] = useState(isAnonymousParam === "true");
+  const [partnerUserId, setPartnerUserId] = useState<string | null>(null);
 
-  const isOnline = !isAnonymous && Boolean(otherProfile?.id && checkIsOnline(otherProfile.id));
+  const isOnline = Boolean(
+    (otherProfile?.id && otherProfile.id !== "anonymous" && checkIsOnline(otherProfile.id)) ||
+    (partnerUserId && checkIsOnline(partnerUserId))
+  );
   const [matchInfo, setMatchInfo] = useState<any>(null);
   const [conversationVariant, setConversationVariant] = useState<string | null>(
     isAnonymousParam === "true" ? "anonymous" : null
@@ -95,6 +118,40 @@ export default function ConversationScreen() {
   // Context menu
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
   const [showReactions, setShowReactions] = useState(false);
+
+  // Check if streak was activated today (both participants sent at least 1 message today)
+  const isStreakActiveToday = useMemo(() => {
+    if (Boolean(matchInfo?.streakActiveToday)) return true;
+    if (!messages.length || !user?.id) return false;
+
+    // Evaluate in both PHT (UTC+8) and device local date
+    const phtToday = new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10);
+    const localToday = new Date().toISOString().slice(0, 10);
+
+    const hasBothOnDate = (targetDate: string) => {
+      let myMsg = false;
+      let partnerMsg = false;
+      for (const msg of messages) {
+        if (!msg.created_at) continue;
+        const msgPht = new Date(new Date(msg.created_at).getTime() + 8 * 3600_000)
+          .toISOString()
+          .slice(0, 10);
+        const msgLocal = new Date(msg.created_at).toISOString().slice(0, 10);
+
+        if (msgPht === targetDate || msgLocal === targetDate) {
+          if (msg.sender_id === user.id) {
+            myMsg = true;
+          } else if (msg.sender_id) {
+            partnerMsg = true;
+          }
+        }
+        if (myMsg && partnerMsg) return true;
+      }
+      return myMsg && partnerMsg;
+    };
+
+    return hasBothOnDate(phtToday) || hasBothOnDate(localToday);
+  }, [messages, user?.id, matchInfo?.streakActiveToday]);
 
   // Overflow menu
   const [showOverflow, setShowOverflow] = useState(false);
@@ -116,7 +173,28 @@ export default function ConversationScreen() {
     if (!conversationId || !accessToken) return;
     try {
       const msgs = await listMessages(conversationId, accessToken);
-      setMessages(msgs);
+      setMessages((prev) => {
+        const pending = prev.filter(
+          (m) => m.id.startsWith("temp-") || m.status === "sending" || m.status === "failed"
+        );
+        if (pending.length === 0) return msgs;
+
+        // Retain any pending/sending/failed messages that haven't been reconciled into msgs yet
+        const result = [...msgs];
+        for (const p of pending) {
+          const alreadyInList = result.some(
+            (m) =>
+              m.id === p.id ||
+              (m.content === p.content &&
+                m.sender_id === p.sender_id &&
+                Math.abs(new Date(m.created_at).getTime() - new Date(p.created_at).getTime()) < 15000)
+          );
+          if (!alreadyInList) {
+            result.push(p);
+          }
+        }
+        return result;
+      });
 
       // Mark as read
       if (msgs.length > 0) {
@@ -124,7 +202,7 @@ export default function ConversationScreen() {
           conversationId,
           new Date().toISOString(),
           accessToken
-        ).catch(() => {});
+        ).catch(() => { });
       }
     } catch (err) {
       console.warn("Failed to load messages", err);
@@ -148,6 +226,14 @@ export default function ConversationScreen() {
         );
         if (conv.matchInfo) {
           setMatchInfo(conv.matchInfo);
+        }
+        const members = (conv.conversation_members as any[]) || [];
+        const otherMember = members.find((m: any) => {
+          const uid = m.user_id || m.profiles?.id || m.id;
+          return uid && uid !== user.id;
+        });
+        if (otherMember?.user_id) {
+          setPartnerUserId(otherMember.user_id);
         }
         setOtherProfile({
           id: conv.matchInfo?.id || "anonymous",
@@ -200,13 +286,29 @@ export default function ConversationScreen() {
 
     const onMessageNew = (payload: { conversationId: string; message: Message }) => {
       if (payload.conversationId !== conversationId) return;
-      setMessages((prev) =>
-        prev.some((m) => m.id === payload.message.id) ? prev : [...prev, payload.message]
-      );
-      markConversationRead(conversationId, new Date().toISOString(), accessToken).catch(() => {});
+      const incomingMsg: Message = { ...payload.message, status: "sent" };
+      setMessages((prev) => {
+        if (prev.some((m) => m.id === incomingMsg.id)) return prev;
+
+        // Reconcile optimistic temp message if already present
+        const pendingIndex = prev.findIndex(
+          (m) =>
+            m.id.startsWith("temp-") &&
+            m.sender_id === incomingMsg.sender_id &&
+            m.content === incomingMsg.content
+        );
+        if (pendingIndex !== -1) {
+          const next = [...prev];
+          next[pendingIndex] = incomingMsg;
+          return next;
+        }
+
+        return [...prev, incomingMsg];
+      });
+      markConversationRead(conversationId, new Date().toISOString(), accessToken).catch(() => { });
       setTimeout(() => {
         flatListRef.current?.scrollToEnd({ animated: true });
-      }, 100);
+      }, 50);
     };
 
     const onConnect = () => void loadMessages(true);
@@ -217,15 +319,17 @@ export default function ConversationScreen() {
           ...prev,
           stage: payload.stage ?? prev?.stage,
           dayStreak: payload.dayStreak ?? prev?.dayStreak,
+          streakActiveToday: true,
         }));
       }
     };
 
     const onStreakUpdate = (payload: any) => {
-      if (payload?.matchId === matchInfo?.id) {
+      if (payload?.matchId === matchInfo?.id || payload?.conversationId === conversationId) {
         setMatchInfo((prev: any) => ({
           ...prev,
           dayStreak: payload.dayStreak ?? prev?.dayStreak,
+          streakActiveToday: true,
         }));
       }
     };
@@ -238,6 +342,7 @@ export default function ConversationScreen() {
     };
 
     socket.on("conversation:message_new", onMessageNew);
+    socket.on("conversation:streak_updated", onStreakUpdate);
     socket.on("matchmaking:stage_updated", onStageUpdated);
     socket.on("matchmaking:streak_update", onStreakUpdate);
     socket.on("matchmaking:match_ended", onMatchEnded);
@@ -250,6 +355,7 @@ export default function ConversationScreen() {
 
     return () => {
       socket.off("conversation:message_new", onMessageNew);
+      socket.off("conversation:streak_updated", onStreakUpdate);
       socket.off("matchmaking:stage_updated", onStageUpdated);
       socket.off("matchmaking:streak_update", onStreakUpdate);
       socket.off("matchmaking:match_ended", onMatchEnded);
@@ -258,33 +364,165 @@ export default function ConversationScreen() {
     };
   }, [conversationId, accessToken, loadMessages, matchInfo?.id]);
 
-  // ── Send message ──────────────────────────────────────────────────────
+  // ── Send message (Optimistic UI — 0ms instant display) ───────────────
   const handleSend = useCallback(
-    async (content: string) => {
-      if (!conversationId || !accessToken) return;
-      setSending(true);
+    async (content: string, imageUrl?: string | null) => {
+      if (!conversationId || !accessToken || !user) return;
+
+      const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const activeReply = replyTo;
+      setReplyTo(null);
+
+      const optimisticMsg: Message = {
+        id: tempId,
+        conversation_id: conversationId,
+        sender_id: user.id,
+        content,
+        image_url: imageUrl || null,
+        created_at: new Date().toISOString(),
+        reply_to_message_id: activeReply?.id || null,
+        replied_message: activeReply || null,
+        reactions: [],
+        status: "sending",
+      };
+
+      // 1. Immediately display message on screen (0ms delay)
+      setMessages((prev) => [...prev, optimisticMsg]);
+
+      // 2. Immediately scroll to bottom
+      requestAnimationFrame(() => {
+        flatListRef.current?.scrollToEnd({ animated: true });
+      });
+
+      // 3. Send to server in background
       try {
-        const newMsg = await sendMessage(
+        const savedMsg = await sendMessage(
           conversationId,
           {
             content,
-            replyToMessageId: replyTo?.id || null,
+            imageUrl: imageUrl || null,
+            replyToMessageId: activeReply?.id || null,
           },
           accessToken
         );
-        setMessages((prev) => [...prev, newMsg]);
-        setReplyTo(null);
-        // Scroll to bottom
-        setTimeout(() => {
-          flatListRef.current?.scrollToEnd({ animated: true });
-        }, 100);
+
+        // Replace temp optimistic message with real saved message and mark sent
+        setMessages((prev) => {
+          if (prev.some((m) => m.id === savedMsg.id)) {
+            return prev.filter((m) => m.id !== tempId);
+          }
+          return prev.map((m) => (m.id === tempId ? { ...savedMsg, status: "sent" } : m));
+        });
       } catch (err) {
         console.warn("Failed to send message", err);
-      } finally {
-        setSending(false);
+        // Retain message and mark as failed so user can tap to retry
+        setMessages((prev) =>
+          prev.map((m) => (m.id === tempId ? { ...m, status: "failed" } : m))
+        );
       }
     },
-    [conversationId, accessToken, replyTo]
+    [conversationId, accessToken, user, replyTo]
+  );
+
+  // ── Pick media & take photo handlers ─────────────────────────────────
+  const handlePickMedia = useCallback(async () => {
+    if (!conversationId || !accessToken) return;
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert("Permission Required", "Photo library permission is required to send photos.");
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        quality: 0.8,
+      });
+      if (result.canceled || !result.assets?.[0]?.uri) return;
+
+      const asset = result.assets[0];
+      const filename = asset.uri.split("/").pop() || `photo_${Date.now()}.jpg`;
+      const match = /\.(\w+)$/.exec(filename);
+      const type = match ? `image/${match[1]}` : "image/jpeg";
+
+      const uploadRes = await uploadChatFile(
+        { uri: asset.uri, name: filename, type },
+        accessToken
+      );
+      if (uploadRes?.url) {
+        await handleSend("", uploadRes.url);
+      }
+    } catch (err) {
+      console.warn("Failed to pick and send image", err);
+      Alert.alert("Upload Failed", "Could not upload image. Please try again.");
+    }
+  }, [conversationId, accessToken, handleSend]);
+
+  const handleTakePhoto = useCallback(async () => {
+    if (!conversationId || !accessToken) return;
+    try {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert("Permission Required", "Camera permission is required to take photos.");
+        return;
+      }
+      const result = await ImagePicker.launchCameraAsync({
+        quality: 0.8,
+      });
+      if (result.canceled || !result.assets?.[0]?.uri) return;
+
+      const asset = result.assets[0];
+      const filename = asset.uri.split("/").pop() || `camera_${Date.now()}.jpg`;
+      const match = /\.(\w+)$/.exec(filename);
+      const type = match ? `image/${match[1]}` : "image/jpeg";
+
+      const uploadRes = await uploadChatFile(
+        { uri: asset.uri, name: filename, type },
+        accessToken
+      );
+      if (uploadRes?.url) {
+        await handleSend("", uploadRes.url);
+      }
+    } catch (err) {
+      console.warn("Failed to take photo and send", err);
+      Alert.alert("Camera Failed", "Could not upload photo. Please try again.");
+    }
+  }, [conversationId, accessToken, handleSend]);
+
+  // ── Retry failed message ─────────────────────────────────────────────
+  const handleRetry = useCallback(
+    async (failedMsg: Message) => {
+      if (!conversationId || !accessToken || !user) return;
+      const targetId = failedMsg.id;
+
+      // Set status back to sending
+      setMessages((prev) =>
+        prev.map((m) => (m.id === targetId ? { ...m, status: "sending" } : m))
+      );
+
+      try {
+        const savedMsg = await sendMessage(
+          conversationId,
+          {
+            content: failedMsg.content,
+            replyToMessageId: failedMsg.reply_to_message_id,
+          },
+          accessToken
+        );
+
+        setMessages((prev) => {
+          if (prev.some((m) => m.id === savedMsg.id)) {
+            return prev.filter((m) => m.id !== targetId);
+          }
+          return prev.map((m) => (m.id === targetId ? { ...savedMsg, status: "sent" } : m));
+        });
+      } catch (err) {
+        console.warn("Failed to retry message", err);
+        setMessages((prev) =>
+          prev.map((m) => (m.id === targetId ? { ...m, status: "failed" } : m))
+        );
+      }
+    },
+    [conversationId, accessToken, user]
   );
 
   // ── Reactions ─────────────────────────────────────────────────────────
@@ -368,15 +606,8 @@ export default function ConversationScreen() {
   }
 
   return (
-    <KeyboardAvoidingView
-      style={{
-        flex: 1,
-        backgroundColor: "#FFFFFF",
-      }}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
-      keyboardVerticalOffset={0}
-    >
-      {/* ── Header ──────────────────────────────────────────────────────── */}
+    <View style={{ flex: 1, backgroundColor: "#FFFFFF" }}>
+      {/* ── Header (fixed — stays above keyboard) ───────────────────────── */}
       <View
         style={{
           paddingTop: insets.top + 8,
@@ -404,26 +635,63 @@ export default function ConversationScreen() {
               size={40}
             />
             <View style={{ flex: 1 }}>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "nowrap" }}>
                 <Text
-                  style={{ fontSize: 16, fontWeight: "700", color: "#111827" }}
+                  style={{ fontSize: 16, fontWeight: "700", color: "#111827", maxWidth: 160 }}
                   numberOfLines={1}
                 >
                   {matchInfo?.partnerAlias || prefillName || "Anonymous Ally"}
                 </Text>
                 <Drama size={15} color="#1A6B3C" />
+
+
+                {/* Streak badge placed right next to active ally badge */}
+                {(matchInfo?.dayStreak ?? 0) > 0 && (
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 2,
+                      backgroundColor: isStreakActiveToday ? "rgba(235, 86, 0, 0.1)" : "#F3F4F6",
+                      paddingHorizontal: 6,
+                      paddingVertical: 1.5,
+                      borderRadius: 8,
+                    }}
+                  >
+                    <Flame size={12} color={isStreakActiveToday ? "#eb5600" : "#9CA3AF"} />
+                    <Text
+                      style={{
+                        fontSize: 11,
+                        fontWeight: "700",
+                        color: isStreakActiveToday ? "#eb5600" : "#9CA3AF",
+                      }}
+                    >
+                      {matchInfo?.dayStreak}
+                    </Text>
+                  </View>
+                )}
               </View>
-              <Text
-                style={{
-                  fontSize: 11,
-                  color: isEnded ? "#EF4444" : "#1A6B3C",
-                  fontWeight: "600",
-                }}
-              >
-                {isEnded
-                  ? "Chat Ended"
-                  : `${stageName(matchInfo?.stage ?? 0)} • 🔥 ${matchInfo?.dayStreak ?? 0}d streak`}
-              </Text>
+
+              {/* Online / Offline status right on the bottom of the anonymous name */}
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 1 }}>
+                <View
+                  style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: 3,
+                    backgroundColor: isEnded ? "#EF4444" : isOnline ? "#16A34A" : "#9CA3AF",
+                  }}
+                />
+                <Text
+                  style={{
+                    fontSize: 11,
+                    color: isEnded ? "#EF4444" : isOnline ? "#16A34A" : "#9CA3AF",
+                    fontWeight: "500",
+                  }}
+                >
+                  {isEnded ? "Chat Ended" : isOnline ? "Online" : "Offline"}
+                </Text>
+              </View>
             </View>
           </Pressable>
         ) : (
@@ -434,15 +702,53 @@ export default function ConversationScreen() {
               online={isOnline}
             />
             <View style={{ flex: 1 }}>
-              <Text
-                style={{ fontSize: 16, fontWeight: "700", color: "#111827" }}
-                numberOfLines={1}
-              >
-                {otherProfile?.full_name || otherProfile?.username || "User"}
-              </Text>
-              <Text style={{ fontSize: 11, color: isOnline ? "#16A34A" : "#9CA3AF" }}>
-                {isOnline ? "Online" : "Offline"}
-              </Text>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "nowrap" }}>
+                <Text
+                  style={{ fontSize: 16, fontWeight: "700", color: "#111827", maxWidth: 160 }}
+                  numberOfLines={1}
+                >
+                  {otherProfile?.full_name || otherProfile?.username || "User"}
+                </Text>
+
+
+                {(matchInfo?.dayStreak ?? 0) > 0 && (
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 2,
+                      backgroundColor: isStreakActiveToday ? "rgba(235, 86, 0, 0.1)" : "#F3F4F6",
+                      paddingHorizontal: 6,
+                      paddingVertical: 1.5,
+                      borderRadius: 8,
+                    }}
+                  >
+                    <Flame size={12} color={isStreakActiveToday ? "#eb5600" : "#9CA3AF"} />
+                    <Text
+                      style={{
+                        fontSize: 11,
+                        fontWeight: "700",
+                        color: isStreakActiveToday ? "#eb5600" : "#9CA3AF",
+                      }}
+                    >
+                      {matchInfo?.dayStreak}
+                    </Text>
+                  </View>
+                )}
+              </View>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 1 }}>
+                <View
+                  style={{
+                    width: 6,
+                    height: 6,
+                    borderRadius: 3,
+                    backgroundColor: isOnline ? "#16A34A" : "#9CA3AF",
+                  }}
+                />
+                <Text style={{ fontSize: 11, color: isOnline ? "#16A34A" : "#9CA3AF", fontWeight: "500" }}>
+                  {isOnline ? "Online" : "Offline"}
+                </Text>
+              </View>
             </View>
           </>
         )}
@@ -452,132 +758,165 @@ export default function ConversationScreen() {
         </Pressable>
       </View>
 
-      {/* ── Anonymous Progression Banner ─────────────────────────────────── */}
-      {isAnonymous && !isEnded && (
-        <Pressable
-          onPress={() => setShowRevealSheet(true)}
-          style={{
-            backgroundColor: "rgba(26, 107, 60, 0.08)",
-            paddingVertical: 8,
-            paddingHorizontal: 16,
-            flexDirection: "row",
-            alignItems: "center",
-            justifyContent: "space-between",
-            borderBottomWidth: 1,
-            borderBottomColor: "rgba(26, 107, 60, 0.12)",
-          }}
-        >
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-            <Flame size={14} color="#EA580C" />
-            <Text style={{ fontSize: 12, fontWeight: "700", color: "#1A6B3C" }}>
-              Stage {matchInfo?.stage ?? 0}: {stageName(matchInfo?.stage ?? 0)}
-            </Text>
-            <Text style={{ fontSize: 11, color: "#64748B" }}>
-              • {matchInfo?.dayStreak ?? 0}d streak
-            </Text>
-          </View>
-
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
-            <Sparkles size={12} color="#1A6B3C" />
-            <Text style={{ fontSize: 11, fontWeight: "700", color: "#1A6B3C" }}>
-              View Clues
-            </Text>
-            <ChevronRight size={13} color="#1A6B3C" />
-          </View>
-        </Pressable>
-      )}
-
-      {/* ── Chat Ended Banner ────────────────────────────────────────────── */}
-      {isEnded && (
-        <View
-          style={{
-            backgroundColor: "#FEF2F2",
-            paddingVertical: 8,
-            paddingHorizontal: 16,
-            alignItems: "center",
-            borderBottomWidth: 1,
-            borderBottomColor: "#FEE2E2",
-          }}
-        >
-          <Text style={{ fontSize: 12, fontWeight: "700", color: "#DC2626" }}>
-            This anonymous conversation has ended. Messages are read-only.
-          </Text>
-        </View>
-      )}
-
-      {/* ── Messages list ────────────────────────────────────────────────── */}
-      <FlatList
-        ref={flatListRef}
-        data={messages}
-        keyExtractor={(item, index) => (item.id ? `${item.id}-${index}` : `msg-${index}`)}
-        initialNumToRender={15}
-        maxToRenderPerBatch={10}
-        windowSize={10}
-        removeClippedSubviews={Platform.OS === "android"}
-        contentContainerStyle={{
-          paddingVertical: 12,
-          flexGrow: 1,
-          justifyContent: messages.length === 0 ? "center" : "flex-end",
-        }}
-        renderItem={({ item }) => (
-          <SwipeableChatBubble
-            message={item}
-            isMine={item.sender_id === user?.id}
-            onLongPress={handleLongPress}
-            onReply={(msg) => setReplyTo(msg)}
-          />
-        )}
-        ListEmptyComponent={
-          <View style={{ alignItems: "center", padding: 32 }}>
-            <Text style={{ fontSize: 14, color: "#9CA3AF", textAlign: "center" }}>
-              Say hello! 👋{"\n"}Start the conversation.
-            </Text>
-          </View>
-        }
-        onContentSizeChange={() => {
-          if (messages.length > 0) {
-            flatListRef.current?.scrollToEnd({ animated: false });
-          }
-        }}
-      />
-
-      {/* ── Input ────────────────────────────────────────────────────────── */}
-      <View
-        style={{
-          paddingBottom:
-            Platform.OS === "ios"
-              ? isKeyboardVisible
-                ? 6
-                : Math.max(insets.bottom, 8)
-              : 8,
-          backgroundColor: "#FFFFFF",
-        }}
+      {/* ── Scrollable chat area — lifts with keyboard, header stays put ── */}
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        keyboardVerticalOffset={0}
       >
-        {isEnded ? (
-          <View
+        {/* ── Anonymous Progression Banner ─────────────────────────────────── */}
+        {isAnonymous && !isEnded && (
+          <Pressable
+            onPress={() => setShowRevealSheet(true)}
             style={{
-              paddingVertical: 14,
-              paddingHorizontal: 20,
+              backgroundColor: "rgba(26, 107, 60, 0.08)",
+              paddingVertical: 8,
+              paddingHorizontal: 16,
+              flexDirection: "row",
               alignItems: "center",
-              backgroundColor: "#F8FAFC",
-              borderTopWidth: 1,
-              borderTopColor: "#E2E8F0",
+              justifyContent: "space-between",
+              borderBottomWidth: 1,
+              borderBottomColor: "rgba(26, 107, 60, 0.12)",
             }}
           >
-            <Text style={{ fontSize: 13, color: "#94A3B8", fontStyle: "italic" }}>
-              Conversation ended • Read-only mode
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+              <Flame size={14} color="#EA580C" />
+              <Text style={{ fontSize: 12, fontWeight: "700", color: "#1A6B3C" }}>
+                Stage {matchInfo?.stage ?? 0}: {stageName(matchInfo?.stage ?? 0)}
+              </Text>
+              <Text style={{ fontSize: 11, color: "#64748B" }}>
+                • {matchInfo?.dayStreak ?? 0}d streak
+              </Text>
+            </View>
+
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
+              <Sparkles size={12} color="#1A6B3C" />
+              <Text style={{ fontSize: 11, fontWeight: "700", color: "#1A6B3C" }}>
+                View Clues
+              </Text>
+              <ChevronRight size={13} color="#1A6B3C" />
+            </View>
+          </Pressable>
+        )}
+
+        {/* ── Chat Ended Banner ────────────────────────────────────────────── */}
+        {isEnded && (
+          <View
+            style={{
+              backgroundColor: "#FEF2F2",
+              paddingVertical: 8,
+              paddingHorizontal: 16,
+              alignItems: "center",
+              borderBottomWidth: 1,
+              borderBottomColor: "#FEE2E2",
+            }}
+          >
+            <Text style={{ fontSize: 12, fontWeight: "700", color: "#DC2626" }}>
+              This anonymous conversation has ended. Messages are read-only.
             </Text>
           </View>
-        ) : (
-          <ChatInput
-            onSend={handleSend}
-            sending={sending}
-            replyTo={replyTo}
-            onCancelReply={() => setReplyTo(null)}
-            draftText={draftText}
-          />
         )}
-      </View>
+
+        {/* ── Messages list ────────────────────────────────────────────────── */}
+        <FlatList
+          ref={flatListRef}
+          data={messages}
+          style={{ flex: 1 }}
+          keyExtractor={(item, index) => (item.id ? `${item.id}-${index}` : `msg-${index}`)}
+          initialNumToRender={15}
+          maxToRenderPerBatch={10}
+          windowSize={10}
+          removeClippedSubviews={Platform.OS === "android"}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
+          contentContainerStyle={{
+            paddingVertical: 12,
+            flexGrow: 1,
+            justifyContent: messages.length === 0 ? "center" : "flex-end",
+          }}
+          extraData={messages}
+          renderItem={({ item, index }) => {
+            const prev = index > 0 ? messages[index - 1] : null;
+            const next = index < messages.length - 1 ? messages[index + 1] : null;
+            const hasPrev = canGroupMessages(item, prev);
+            const hasNext = canGroupMessages(item, next);
+
+            let groupPosition: MessageGroupPosition = "single";
+            if (!hasPrev && hasNext) {
+              groupPosition = "first";
+            } else if (hasPrev && hasNext) {
+              groupPosition = "middle";
+            } else if (hasPrev && !hasNext) {
+              groupPosition = "last";
+            }
+
+            const isMine = item.sender_id === user?.id;
+            const partnerDisplayName = isAnonymous
+              ? (matchInfo?.partnerAlias || prefillName || "Anonymous Ally")
+              : (otherProfile?.username || otherProfile?.full_name || prefillName || "User");
+            const senderName = isMine ? "Me" : partnerDisplayName;
+
+            return (
+              <SwipeableChatBubble
+                message={item}
+                isMine={isMine}
+                groupPosition={groupPosition}
+                senderName={senderName}
+                onLongPress={handleLongPress}
+                onReply={(msg) => setReplyTo(msg)}
+                onRetry={handleRetry}
+              />
+            );
+          }}
+          ListEmptyComponent={
+            <View style={{ alignItems: "center", padding: 32 }}>
+              <Text style={{ fontSize: 14, color: "#9CA3AF", textAlign: "center" }}>
+                Say hello! 👋{"\n"}Start the conversation.
+              </Text>
+            </View>
+          }
+          onContentSizeChange={() => {
+            if (messages.length > 0) {
+              flatListRef.current?.scrollToEnd({ animated: false });
+            }
+          }}
+        />
+
+        {/* ── Input ────────────────────────────────────────────────────────── */}
+        <View
+          style={{
+            paddingBottom: isKeyboardVisible ? 0 : Math.max(insets.bottom, 8),
+            backgroundColor: "#FFFFFF",
+            zIndex: 20,
+          }}
+        >
+          {isEnded ? (
+            <View
+              style={{
+                paddingVertical: 14,
+                paddingHorizontal: 20,
+                alignItems: "center",
+                backgroundColor: "#F8FAFC",
+                borderTopWidth: 1,
+                borderTopColor: "#E2E8F0",
+              }}
+            >
+              <Text style={{ fontSize: 13, color: "#94A3B8", fontStyle: "italic" }}>
+                Conversation ended • Read-only mode
+              </Text>
+            </View>
+          ) : (
+            <ChatInput
+              onSend={handleSend}
+              onPickMedia={handlePickMedia}
+              onTakePhoto={handleTakePhoto}
+              replyTo={replyTo}
+              onCancelReply={() => setReplyTo(null)}
+              draftText={draftText}
+            />
+          )}
+        </View>
+      </KeyboardAvoidingView>
 
       {/* ── Reaction picker modal ────────────────────────────────────────── */}
       <Modal
@@ -757,20 +1096,12 @@ export default function ConversationScreen() {
               />
             )}
 
-            {!isAnonymous && (
-              <OverflowRow
-                icon={Shield}
-                label="View profile"
-                onPress={() => {
-                  setShowOverflow(false);
-                }}
-              />
-            )}
+
 
             {isAnonymous && !isEnded && (
               <OverflowRow
                 icon={LogOut}
-                label="End Anonymous Chat"
+                label="End Match"
                 onPress={() => {
                   setShowOverflow(false);
                   setShowEndMatchConfirm(true);
@@ -823,7 +1154,7 @@ export default function ConversationScreen() {
 
       <ConfirmModal
         visible={showEndMatchConfirm}
-        title="End Anonymous Chat?"
+        title="End Match?"
         description="This will lock the conversation into read-only mode for both of you. You will not be able to send further messages."
         confirmLabel="End Chat"
         destructive
@@ -849,7 +1180,7 @@ export default function ConversationScreen() {
           ended={isEnded}
         />
       )}
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 

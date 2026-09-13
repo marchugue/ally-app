@@ -3,13 +3,16 @@ import { View, Text } from "react-native";
 import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
 import { Reply } from "lucide-react-native";
 import { ChatBubble } from "./ChatBubble";
-import type { Message } from "@/types/conversation";
+import type { Message, MessageGroupPosition } from "@/types/conversation";
 
 interface SwipeableChatBubbleProps {
   message: Message;
   isMine: boolean;
+  groupPosition?: MessageGroupPosition;
+  senderName?: string;
   onLongPress?: (message: Message) => void;
   onReply?: (message: Message) => void;
+  onRetry?: (message: Message) => void;
 }
 
 /** Reply arrow indicator shown during swipe */
@@ -34,8 +37,11 @@ function ReplyIndicator() {
 export function SwipeableChatBubble({
   message,
   isMine,
+  groupPosition,
+  senderName,
   onLongPress,
   onReply,
+  onRetry,
 }: SwipeableChatBubbleProps) {
   const swipeRef = useRef<any>(null);
 
@@ -71,8 +77,11 @@ export function SwipeableChatBubble({
         <ChatBubble
           message={message}
           isMine={isMine}
+          groupPosition={groupPosition}
+          senderName={senderName}
           onLongPress={onLongPress}
           onReply={onReply}
+          onRetry={onRetry}
         />
       </ReanimatedSwipeable>
     );
@@ -101,8 +110,11 @@ export function SwipeableChatBubble({
       <ChatBubble
         message={message}
         isMine={isMine}
+        groupPosition={groupPosition}
+        senderName={senderName}
         onLongPress={onLongPress}
         onReply={onReply}
+        onRetry={onRetry}
       />
     </ReanimatedSwipeable>
   );

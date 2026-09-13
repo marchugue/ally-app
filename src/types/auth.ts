@@ -44,6 +44,7 @@ export interface RegisterPayload {
   avatar_url?: string | null;
   email_type?: 'chmsu' | 'external';
   student_id_url?: string | null;
+  student_id_back_url?: string | null;
 }
 
 /** Returned by POST /auth/register — no session until OTP is verified */

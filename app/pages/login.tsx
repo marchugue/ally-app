@@ -11,7 +11,7 @@ import {
   Animated
 } from "react-native";
 import { router } from "expo-router";
-import { ArrowLeft, ArrowRight } from "lucide-react-native";
+import { ArrowRight } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth, ApiError } from "@/lib/auth/AuthContext";
 import { DiagonalStripes } from "@/components/DiagonalStripes";
@@ -103,22 +103,7 @@ export default function LoginScreen() {
       <View style={{ paddingTop: insets.top + 12, paddingHorizontal: 24, paddingBottom: 90, overflow: "hidden" }}>
         <DiagonalStripes />
 
-        <Pressable
-          onPress={() => router.back()}
-          disabled={isSubmitting}
-          style={{ 
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 6,
-            alignSelf: "flex-start",
-            paddingVertical: 8,
-            opacity: isSubmitting ? 0.6 : 1,
-            marginBottom: 24,
-          }}
-        >
-          <ArrowLeft size={18} color="#FFFFFF" />
-            <Text style={{ color: "#FFFFFF", fontSize: 14, fontWeight: "500" }}>Back</Text>
-        </Pressable>
+
 
         <SlideIn delay={0} style={{ alignItems: "center" }}>
           <View style={{ width: 60, height: 60, borderRadius: 16, overflow: "hidden", marginBottom: 12 }}>
@@ -200,7 +185,7 @@ export default function LoginScreen() {
                     Don't have an account?
                   </Text>
 
-                  <Pressable onPress={() => router.push("/pages/register" as any)}>
+                  <Pressable onPress={() => router.push("/pages/select-email" as any)}>
                     <Text
                       style={{
                         fontSize: 13,

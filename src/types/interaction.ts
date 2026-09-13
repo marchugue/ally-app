@@ -24,3 +24,12 @@ export interface PaginatedAllyList {
   items: AllyListItem[];
   nextCursor: string | null;
 }
+
+export interface AllyFilterParams {
+  search?: string;
+  department?: string;
+  course?: string;
+  year_level?: string;
+  sortBy?: "recent" | "name";
+  cursor?: string | null;
+}

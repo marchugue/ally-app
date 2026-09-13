@@ -8,6 +8,37 @@ const isExpoGo =
   Constants.appOwnership === "expo" ||
   Constants.executionEnvironment === "storeClient";
 
+export async function registerMessageNotificationCategory(): Promise<void> {
+  if (Platform.OS === "web") return;
+  try {
+    if (Notifications && typeof Notifications.setNotificationCategoryAsync === "function") {
+      await Notifications.setNotificationCategoryAsync("message_actions", [
+        {
+          identifier: "reply",
+          buttonTitle: "Reply",
+          textInput: {
+            submitButtonTitle: "Send",
+            placeholder: "Type a reply...",
+          },
+          options: {
+            opensAppToForeground: false,
+          },
+        },
+        {
+          identifier: "mark_as_read",
+          buttonTitle: "Mark as Read",
+          options: {
+            opensAppToForeground: false,
+          },
+        },
+      ]);
+      console.log("[PushNotifications] Notification category 'message_actions' registered with Reply button.");
+    }
+  } catch (e) {
+    console.warn("[PushNotifications] Could not set notification category:", e);
+  }
+}
+
 // Configure notification handler & actions category safely
 function initNotificationHandler() {
   if (Platform.OS === "web") return;
@@ -22,28 +53,7 @@ function initNotificationHandler() {
         }),
       });
 
-      if (!isExpoGo && typeof Notifications.setNotificationCategoryAsync === "function") {
-        Notifications.setNotificationCategoryAsync("message_actions", [
-          {
-            identifier: "mark_as_read",
-            buttonTitle: "Mark as Read",
-            options: {
-              opensAppToForeground: false,
-            },
-          },
-          {
-            identifier: "reply",
-            buttonTitle: "Reply",
-            textInput: {
-              submitButtonTitle: "Send",
-              placeholder: "Type a reply...",
-            },
-            options: {
-              opensAppToForeground: false,
-            },
-          },
-        ]).catch(() => null);
-      }
+      registerMessageNotificationCategory().catch(() => null);
     }
   } catch (e) {
     console.warn("[PushNotifications] Could not set notification handler or category:", e);
@@ -94,6 +104,8 @@ export async function registerForPushNotificationsAsync(accessToken: string): Pr
       }).catch(() => null);
     }
 
+    await registerMessageNotificationCategory().catch(() => null);
+
     const projectId =
       Constants.expoConfig?.extra?.eas?.projectId ??
       Constants.easConfig?.projectId;
@@ -132,6 +144,8 @@ export function setupNotificationListeners(
   }
 
   try {
+    registerMessageNotificationCategory().catch(() => null);
+
     const defaultActionId = Notifications.DEFAULT_ACTION_IDENTIFIER;
     const responseSubscription = Notifications.addNotificationResponseReceivedListener(
       async (response) => {
@@ -156,7 +170,11 @@ export function setupNotificationListeners(
 
         // 2. "Reply" action with inline text input directly on notification banner
         if (actionIdentifier === "reply") {
-          const userText = (response as any)?.userText;
+          const userText =
+            (response as any)?.userText ||
+            (response as any)?.text ||
+            (response as any)?.notification?.request?.content?.data?.userText;
+
           if (userText && typeof userText === "string" && userText.trim() && accessToken) {
             try {
               await sendMessage(conversationId, { content: userText.trim() }, accessToken);
@@ -164,6 +182,14 @@ export function setupNotificationListeners(
               console.log(`[PushNotifications] Sent quick reply & marked conversation ${conversationId} as read.`);
             } catch (err) {
               console.warn("[PushNotifications] Failed to send quick reply from notification:", err);
+            }
+          } else {
+            // Action tapped to reply without inline text or opened to foreground
+            if (accessToken) {
+              markConversationRead(conversationId, new Date().toISOString(), accessToken).catch(() => null);
+            }
+            if (onNavigateToConversation) {
+              onNavigateToConversation(conversationId);
             }
           }
           return;

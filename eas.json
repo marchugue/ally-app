@@ -15,7 +15,7 @@
       },
       "env": {
         "EXPO_PUBLIC_API_URL": "https://ally-jisbackend-production.up.railway.app",
-        "APK_FILENAME": "ally-jis-app-beta-test-1.0.apk"
+        "APK_FILENAME": "ally-jis-app-v1.0.apk"
       }
     },
     "production": {
@@ -24,7 +24,7 @@
       },
       "env": {
         "EXPO_PUBLIC_API_URL": "https://ally-jisbackend-production.up.railway.app",
-        "APK_FILENAME": "ally-jis-app-beta-test-1.0.apk"
+        "APK_FILENAME": "ally-jis-app-v1.0.apk"
       }
     }
   },

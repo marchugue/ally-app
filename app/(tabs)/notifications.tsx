@@ -20,6 +20,8 @@ import {
   ChevronRight,
   Sparkles,
   Trash2,
+  Flame,
+  Reply,
 } from "lucide-react-native";
 import { useAuth } from "@/lib/auth/AuthContext";
 import { UserAvatar } from "@/components/UserAvatar";
@@ -57,7 +59,11 @@ function isTodayDate(dateStr?: string): boolean {
   const d = new Date(dateStr);
   if (isNaN(d.getTime())) return true;
   const now = new Date();
-  return d.toDateString() === now.toDateString();
+  return (
+    d.getFullYear() === now.getFullYear() &&
+    d.getMonth() === now.getMonth() &&
+    d.getDate() === now.getDate()
+  );
 }
 
 const EXCLUDED_NOTIFICATION_TYPES = ["message"];
@@ -71,40 +77,50 @@ export default function NotificationsScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [activeFilter, setActiveFilter] = useState<FilterCategory>("all");
 
-  const loadNotifications = useCallback(async (isInitial = false) => {
-    if (!accessToken) {
-      setNotifications([]);
-      if (isInitial) setLoading(false);
-      return;
-    }
-    if (isInitial) setLoading(true);
-    try {
-      const items = await listNotifications(accessToken);
-      if (!items || items.length === 0) {
+  const loadNotifications = useCallback(
+    async (showSkeleton = false) => {
+      if (!accessToken) {
         setNotifications([]);
-      } else {
-        const filtered = items.filter(
-          (n) => !EXCLUDED_NOTIFICATION_TYPES.includes(n.type)
-        );
-        setNotifications(filtered);
+        setLoading(false);
+        return;
       }
-    } catch (err) {
-      console.warn("Failed to load notifications", err);
-    } finally {
-      if (isInitial) setLoading(false);
+      if (showSkeleton) setLoading(true);
+      try {
+        const items = await listNotifications(accessToken);
+        if (!items || items.length === 0) {
+          setNotifications([]);
+        } else {
+          const filtered = items.filter(
+            (n) => !EXCLUDED_NOTIFICATION_TYPES.includes(n.type)
+          );
+          setNotifications(filtered);
+        }
+      } catch (err) {
+        console.warn("Failed to load notifications", err);
+      } finally {
+        setLoading(false);
+      }
+    },
+    [accessToken]
+  );
+
+  // Initial load when accessToken becomes available
+  useEffect(() => {
+    if (accessToken) {
+      void loadNotifications(true);
     }
-  }, [accessToken]);
+  }, [accessToken, loadNotifications]);
 
   // Screen Focus + Real-time socket events (relaxed 60s fallback matching web)
   useFocusEffect(
     useCallback(() => {
-      void loadNotifications(false);
+      void loadNotifications(notifications.length === 0);
       const interval = setInterval(() => {
         void loadNotifications(false);
       }, 60000);
 
       return () => clearInterval(interval);
-    }, [loadNotifications])
+    }, [loadNotifications, notifications.length])
   );
 
   // Real-time socket events for notifications
@@ -179,11 +195,38 @@ export default function NotificationsScreen() {
         markNotificationRead(item.id, accessToken).catch(() => {});
       }
 
-      // Navigate by type
+      // 1. Direct Redirection from Backend (if provided)
+      if (item.redirection?.route) {
+        router.push({
+          pathname: item.redirection.route as any,
+          params: item.redirection.params || {},
+        });
+        return;
+      }
+
+      // 2. Fallback navigate by type
       if (item.type === "friend_request" || item.type === "connection_request") {
         router.push("/pages/requests" as any);
+      } else if (item.type === "streak_reminder") {
+        const targetConvId = item.target_id || item.post_id;
+        if (targetConvId) {
+          router.push({
+            pathname: "/pages/conversation" as any,
+            params: { conversationId: targetConvId },
+          });
+        } else {
+          router.push("/(tabs)/messages" as any);
+        }
       } else if (item.type === "message" || item.type === "accepted" || item.type === "anon_match") {
-        router.push("/(tabs)/messages" as any);
+        const targetConvId = item.target_id || item.post_id;
+        if (targetConvId) {
+          router.push({
+            pathname: "/pages/conversation" as any,
+            params: { conversationId: targetConvId },
+          });
+        } else {
+          router.push("/(tabs)/messages" as any);
+        }
       } else if (item.type === "match") {
         router.push("/(tabs)/discover" as any);
       } else if (item.type === "comment_reply") {
@@ -226,13 +269,13 @@ export default function NotificationsScreen() {
   );
 
   const unreadCount = useMemo(() => {
-    return notifications.filter((n) => !n.isRead && !n.read).length;
+    return notifications.filter((n) => !(n.is_read ?? n.isRead ?? n.read ?? false)).length;
   }, [notifications]);
 
   const filteredNotifications = useMemo(() => {
     return notifications.filter((n) => {
       if (EXCLUDED_NOTIFICATION_TYPES.includes(n.type)) return false;
-      const isUnread = !n.isRead && !n.read;
+      const isUnread = !(n.is_read ?? n.isRead ?? n.read ?? false);
       if (activeFilter === "unread") return isUnread;
       if (activeFilter === "requests") return n.type === "friend_request" || n.type === "accepted" || n.type === "connection_request";
       if (activeFilter === "matches") return n.type === "match" || n.type === "anon_match";
@@ -244,7 +287,7 @@ export default function NotificationsScreen() {
     const today: NotificationItem[] = [];
     const earlier: NotificationItem[] = [];
     for (const item of filteredNotifications) {
-      if (isTodayDate(item.timestamp || item.created_at)) {
+      if (isTodayDate(item.created_at || item.timestamp)) {
         today.push(item);
       } else {
         earlier.push(item);
@@ -254,7 +297,8 @@ export default function NotificationsScreen() {
   }, [filteredNotifications]);
 
   const renderNotificationAvatar = (item: NotificationItem) => {
-    const avatarUri = item.avatar_url || item.from_user?.avatar_url || item.user_avatar;
+    const fromUser = Array.isArray(item.from_user) ? item.from_user[0] : item.from_user;
+    const avatarUri = item.avatar_url || fromUser?.avatar_url || item.user_avatar;
     let badgeIcon: React.ReactNode = null;
     let badgeBg = "#1A6B3C";
 
@@ -295,10 +339,50 @@ export default function NotificationsScreen() {
         badgeIcon = <Drama size={10} color="#FFFFFF" />;
         badgeBg = "#3B8C7E";
         break;
+      case "streak_reminder":
+        badgeIcon = <Flame size={10} color="#FFFFFF" />;
+        badgeBg = "#EB5600";
+        break;
       default:
         badgeIcon = <Bell size={10} color="#FFFFFF" />;
         badgeBg = "#4B5563";
         break;
+    }
+
+    if (item.type === "streak_reminder") {
+      return (
+        <View style={{ width: 44, height: 44, position: "relative" }}>
+          <View
+            style={{
+              width: 40,
+              height: 40,
+              borderRadius: 20,
+              backgroundColor: "rgba(235, 86, 0, 0.12)",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Flame size={22} color="#EB5600" />
+          </View>
+          <View
+            style={{
+              position: "absolute",
+              bottom: -2,
+              right: -2,
+              width: 18,
+              height: 18,
+              borderRadius: 9,
+              backgroundColor: "#EB5600",
+              alignItems: "center",
+              justifyContent: "center",
+              borderWidth: 1.5,
+              borderColor: "#FFFFFF",
+            }}
+          >
+            <Flame size={10} color="#FFFFFF" />
+          </View>
+        </View>
+      );
     }
 
     return (
@@ -329,9 +413,27 @@ export default function NotificationsScreen() {
     );
   };
 
-  const renderRow = (item: NotificationItem) => {
-    const isUnread = !item.isRead && !item.read;
-    const name = item.username || item.author_name || item.from_user?.username || item.from_user?.full_name || "Someone";
+  const renderRow = (item: NotificationItem, key?: string) => {
+    const isUnread = !(item.is_read ?? item.isRead ?? item.read ?? false);
+    const fromUser = Array.isArray(item.from_user) ? item.from_user[0] : item.from_user;
+    const isAnon = item.type === "anon_match";
+    const anonName = isAnon
+      ? item.author_name ||
+        item.username ||
+        (item.title && item.title.includes("messaged you")
+          ? item.title.replace(/\s*messaged you.*$/i, "").trim()
+          : null) ||
+        (item.title && item.title.includes("sent an anonymous")
+          ? item.title.replace(/\s*sent an anonymous.*$/i, "").trim()
+          : null) ||
+        "Anonymous Ally"
+      : null;
+
+    const name = isAnon
+      ? anonName!
+      : item.type === "streak_reminder"
+      ? "Streak Reminder"
+      : item.username || item.author_name || fromUser?.username || fromUser?.full_name || "Someone";
 
     // 1. Build Action Headline (e.g., "charlotte commented on your post")
     let actionText = "";
@@ -350,35 +452,41 @@ export default function NotificationsScreen() {
     } else if (item.type === "match") {
       actionText = "matched with you!";
     } else if (item.type === "anon_match") {
-      actionText = "sent an anonymous match invitation";
+      actionText = "messaged you";
+    } else if (item.type === "streak_reminder") {
+      actionText = "🔥";
     } else {
       actionText = item.title || "interacted with your post";
     }
 
     // 2. Extract Subtitle / Description content (e.g. comment text "asd")
     let subtext = "";
-    const rawDesc = (item.description || item.message || "").trim();
-    if (rawDesc) {
-      if (rawDesc.includes('commented: "')) {
-        subtext = rawDesc.replace(/^commented:\s*"/i, "").replace(/"$/, "");
-      } else if (rawDesc.includes('replied: "')) {
-        subtext = rawDesc.replace(/^replied:\s*"/i, "").replace(/"$/, "");
-      } else if (
-        rawDesc !== "liked your post." &&
-        rawDesc !== "liked your comment." &&
-        rawDesc !== "Someone commented on your post." &&
-        rawDesc !== "Someone liked your post." &&
-        rawDesc !== "Someone replied to your comment." &&
-        !rawDesc.startsWith("Someone ") &&
-        rawDesc !== item.title
-      ) {
-        subtext = rawDesc;
+    if (item.type === "streak_reminder") {
+      subtext = (item.description || item.message || "Your streak is not yet activated! Send a message to activate.").trim();
+    } else {
+      const rawDesc = (item.description || item.message || "").trim();
+      if (rawDesc) {
+        if (rawDesc.includes('commented: "')) {
+          subtext = rawDesc.replace(/^commented:\s*"/i, "").replace(/"$/, "");
+        } else if (rawDesc.includes('replied: "')) {
+          subtext = rawDesc.replace(/^replied:\s*"/i, "").replace(/"$/, "");
+        } else if (
+          rawDesc !== "liked your post." &&
+          rawDesc !== "liked your comment." &&
+          rawDesc !== "Someone commented on your post." &&
+          rawDesc !== "Someone liked your post." &&
+          rawDesc !== "Someone replied to your comment." &&
+          !rawDesc.startsWith("Someone ") &&
+          rawDesc !== item.title
+        ) {
+          subtext = rawDesc;
+        }
       }
     }
 
     return (
       <Pressable
-        key={item.id}
+        key={key || item.id}
         onPress={() => handleTapNotification(item)}
         android_ripple={{ color: "rgba(0,0,0,0.04)" }}
         style={{
@@ -403,17 +511,17 @@ export default function NotificationsScreen() {
                 lineHeight: 18,
                 flex: 1,
               }}
-              numberOfLines={1}
+              numberOfLines={2}
             >
               <Text style={{ fontWeight: "700", color: "#111827" }}>
-                {item.type === "anon_match" ? "Anonymous Ally" : name}
+                {name}
               </Text>
               <Text style={{ fontWeight: isUnread ? "600" : "400", color: isUnread ? "#111827" : "#374151" }}>
                 {` ${actionText}`}
               </Text>
             </Text>
             <Text style={{ fontSize: 11, color: "#9CA3AF", fontWeight: "500" }}>
-              {formatTimestamp(item.timestamp || item.created_at)}
+              {formatTimestamp(item.created_at || item.timestamp)}
             </Text>
           </View>
 
@@ -433,7 +541,28 @@ export default function NotificationsScreen() {
           )}
         </View>
 
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+          {(item.type === "message" || item.type === "anon_match") && (
+            <Pressable
+              onPress={() => handleTapNotification(item)}
+              hitSlop={8}
+              style={{
+                backgroundColor: "rgba(26, 107, 60, 0.08)",
+                paddingHorizontal: 9,
+                paddingVertical: 4.5,
+                borderRadius: 12,
+                flexDirection: "row",
+                alignItems: "center",
+                gap: 4,
+              }}
+            >
+              <Reply size={12} color="#1A6B3C" />
+              <Text style={{ fontSize: 11.5, fontWeight: "700", color: "#1A6B3C" }}>
+                Reply
+              </Text>
+            </Pressable>
+          )}
+
           {isUnread && (
             <View
               style={{
@@ -697,7 +826,7 @@ export default function NotificationsScreen() {
                   </Text>
                 </View>
                 <View style={{ backgroundColor: "#FFFFFF" }}>
-                  {todayList.map((item) => renderRow(item))}
+                  {todayList.map((item, idx) => renderRow(item, `today-${item.id || idx}`))}
                 </View>
               </View>
             )}
@@ -727,8 +856,15 @@ export default function NotificationsScreen() {
                   </Text>
                 </View>
                 <View style={{ backgroundColor: "#FFFFFF" }}>
-                  {earlierList.map((item) => renderRow(item))}
+                  {earlierList.map((item, idx) => renderRow(item, `earlier-${item.id || idx}`))}
                 </View>
+              </View>
+            )}
+
+            {/* Fallback Section if date categorization produces empty lists */}
+            {todayList.length === 0 && earlierList.length === 0 && filteredNotifications.length > 0 && (
+              <View style={{ backgroundColor: "#FFFFFF" }}>
+                {filteredNotifications.map((item, idx) => renderRow(item, `all-${item.id || idx}`))}
               </View>
             )}
           </View>

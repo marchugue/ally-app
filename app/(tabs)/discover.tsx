@@ -51,7 +51,7 @@ import type { Profile, ProfileSummary } from "@/types/profile";
 
 type ConnectionStatus = "none" | "pending" | "accepted";
 type FilterTab = "all" | "suggested" | "allies";
-type SortOption = "match" | "newest" | "name";
+type SortOption = "match" | "popular" | "newest" | "name";
 
 interface StudentMatchCard {
   profile: ProfileSummary & {
@@ -277,7 +277,7 @@ export default function DiscoverScreen() {
       .map((p) => {
         const theirInterests = p.interests || [];
         const shared = theirInterests.filter((i: string) => myInterests.has(i));
-        
+
         let score = 50; // base score
         if (myInterests.size > 0) {
           score += Math.round((shared.length / Math.max(myInterests.size, 1)) * 40);
@@ -315,6 +315,11 @@ export default function DiscoverScreen() {
       })
       .sort((a, b) => {
         if (sortBy === "match") return b.matchPercentage - a.matchPercentage;
+        if (sortBy === "popular") {
+          const popA = (a.profile as any).followers_count ?? (a.profile as any).followersCount ?? 0;
+          const popB = (b.profile as any).followers_count ?? (b.profile as any).followersCount ?? 0;
+          return popB - popA;
+        }
         if (sortBy === "newest") return (b.profile.id || "").localeCompare(a.profile.id || "");
         return (a.profile.full_name || "").localeCompare(b.profile.full_name || "");
       });
@@ -676,8 +681,8 @@ export default function DiscoverScreen() {
                       status === "accepted"
                         ? "#F0FDF4"
                         : status === "pending"
-                        ? "#FEF3C7"
-                        : "#1A6B3C",
+                          ? "#FEF3C7"
+                          : "#1A6B3C",
                     paddingVertical: 9,
                     borderRadius: 10,
                     alignItems: "center",
@@ -689,8 +694,8 @@ export default function DiscoverScreen() {
                       status === "accepted"
                         ? "#86EFAC"
                         : status === "pending"
-                        ? "#FDE68A"
-                        : "transparent",
+                          ? "#FDE68A"
+                          : "transparent",
                   }}
                 >
                   {status === "accepted" ? (
@@ -708,15 +713,15 @@ export default function DiscoverScreen() {
                         status === "accepted"
                           ? "#16A34A"
                           : status === "pending"
-                          ? "#D97706"
-                          : "#FFFFFF",
+                            ? "#D97706"
+                            : "#FFFFFF",
                     }}
                   >
                     {status === "none"
                       ? "Connect"
                       : status === "pending"
-                      ? "Request Sent"
-                      : "Connected"}
+                        ? "Request Sent"
+                        : "Connected"}
                   </Text>
                 </Pressable>
 
@@ -748,15 +753,15 @@ export default function DiscoverScreen() {
               searchQuery
                 ? "No matching students"
                 : activeTab === "allies"
-                ? "No Allies yet"
-                : "No students found"
+                  ? "No Allies yet"
+                  : "No students found"
             }
             description={
               searchQuery
                 ? `No student matching "${searchQuery}" was found.`
                 : activeTab === "allies"
-                ? "Connect with fellow students to build your campus network."
-                : "Try expanding your filter parameters or check back later."
+                  ? "Connect with fellow students to build your campus network."
+                  : "Try expanding your filter parameters or check back later."
             }
           />
         }
@@ -837,9 +842,10 @@ export default function DiscoverScreen() {
 
             {/* Sort Option */}
             <Text style={{ fontSize: 13, fontWeight: "600", color: "#374151", marginBottom: 8 }}>Sort By</Text>
-            <View style={{ flexDirection: "row", gap: 8, marginBottom: 24 }}>
+            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 24 }}>
               {[
                 { id: "match", label: "Highest Match %" },
+                { id: "popular", label: "🔥 Most Popular" },
                 { id: "newest", label: "Newest Members" },
                 { id: "name", label: "Name A-Z" },
               ].map((opt) => (
@@ -847,8 +853,8 @@ export default function DiscoverScreen() {
                   key={opt.id}
                   onPress={() => setSortBy(opt.id as SortOption)}
                   style={{
-                    flex: 1,
-                    paddingVertical: 10,
+                    paddingVertical: 9,
+                    paddingHorizontal: 12,
                     borderRadius: 12,
                     backgroundColor: sortBy === opt.id ? "#1A6B3C" : "#F3F4F6",
                     alignItems: "center",

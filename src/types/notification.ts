@@ -15,16 +15,25 @@ export type NotificationType =
   | "system"
   | string;
 
+export interface NotificationRedirection {
+  entityType: 'post' | 'comment' | 'conversation' | 'profile' | 'requests' | 'discover';
+  targetId: string;
+  route: string;
+  params?: Record<string, string>;
+  webUrl?: string;
+}
+
 export interface NotificationItem {
   id: string;
   type: NotificationType;
-  message: string;
+  message?: string;
   title?: string;
   description?: string;
   timestamp?: string;
   created_at?: string;
   isRead?: boolean;
   read?: boolean;
+  is_read?: boolean;
   fromUserId?: string;
   from_user_id?: string;
   post_id?: string;
@@ -36,10 +45,18 @@ export interface NotificationItem {
   author_name?: string;
   user_name?: string;
   username?: string;
-  from_user?: {
-    id?: string;
-    username?: string;
-    full_name?: string;
-    avatar_url?: string;
-  };
+  redirection?: NotificationRedirection;
+  from_user?:
+    | {
+        id?: string;
+        username?: string;
+        full_name?: string;
+        avatar_url?: string;
+      }
+    | Array<{
+        id?: string;
+        username?: string;
+        full_name?: string;
+        avatar_url?: string;
+      }>;
 }

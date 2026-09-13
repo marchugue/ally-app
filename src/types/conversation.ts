@@ -28,6 +28,8 @@ export interface MessageReaction {
   emoji: string;
 }
 
+export type MessageGroupPosition = "single" | "first" | "middle" | "last";
+
 export interface Message {
   id: string;
   conversation_id: string;
@@ -38,6 +40,7 @@ export interface Message {
   reply_to_message_id: string | null;
   replied_message: Message | null;
   reactions: MessageReaction[];
+  status?: "sending" | "sent" | "failed";
 }
 
 export interface Conversation {

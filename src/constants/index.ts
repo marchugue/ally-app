@@ -28,13 +28,16 @@ export const COLORS = {
 } as const;
 
 function getApiBaseUrl(): string {
-  // 1. Explicit environment variable if specified
-  if (process.env.EXPO_PUBLIC_API_URL && process.env.EXPO_PUBLIC_API_URL !== "http://localhost:3001") {
+  // 1. Remote production or staging URL (https://)
+  if (process.env.EXPO_PUBLIC_API_URL && process.env.EXPO_PUBLIC_API_URL.startsWith("https://")) {
     return process.env.EXPO_PUBLIC_API_URL;
   }
 
   // 2. Auto-detect host IP address from Expo bundler connection (Expo Go / Dev Server)
-  const hostUri = Constants.expoConfig?.hostUri || (Constants as any).manifest2?.extra?.expoGo?.debuggerHost || (Constants as any).debuggerHost;
+  const hostUri =
+    Constants.expoConfig?.hostUri ||
+    (Constants as any).manifest2?.extra?.expoGo?.debuggerHost ||
+    (Constants as any).debuggerHost;
   if (hostUri && typeof hostUri === "string") {
     const hostIp = hostUri.split(":")[0];
     if (hostIp && hostIp !== "localhost" && hostIp !== "127.0.0.1") {
@@ -42,13 +45,21 @@ function getApiBaseUrl(): string {
     }
   }
 
-  // 3. Android Emulator fallback
+  // 3. Explicit environment variable if specified (and not localhost)
+  if (
+    process.env.EXPO_PUBLIC_API_URL &&
+    process.env.EXPO_PUBLIC_API_URL !== "http://localhost:3001"
+  ) {
+    return process.env.EXPO_PUBLIC_API_URL;
+  }
+
+  // 4. Android Emulator fallback
   if (Platform.OS === "android") {
     return "http://10.0.2.2:3001";
   }
 
-  // 4. Default fallback
-  return "http://192.168.254.105:3001";
+  // 5. Default fallback to current local machine IP
+  return "http://192.168.254.109:3001";
 }
 
 export const API_BASE_URL = getApiBaseUrl();
