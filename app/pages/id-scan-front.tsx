@@ -87,7 +87,7 @@ export default function IdScanFrontScreen() {
   const handleUploadFromGallery = async () => {
     try {
       const res = await ImagePicker.launchImageLibraryAsync({
-        mediaTypes: ImagePicker.MediaTypeOptions.Images,
+        mediaTypes: ["images"],
         allowsEditing: true,
         aspect: [1586, 1000],
         quality: 0.88,

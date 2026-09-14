@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -25,7 +25,13 @@ import LoadingOverlay from "@/components/LoadingOverlay";
 
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
-  const { signIn } = useAuth();
+  const { signIn, user, isLoading } = useAuth();
+
+  useEffect(() => {
+    if (!isLoading && user) {
+      router.replace("/(tabs)");
+    }
+  }, [user, isLoading]);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");

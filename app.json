@@ -13,7 +13,9 @@
       "infoPlist": {
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": true
-        }
+        },
+        "NSCameraUsageDescription": "The app needs access to your camera to take photos and scan student IDs.",
+        "NSPhotoLibraryUsageDescription": "The app needs access to your photo library to share photos and select profile pictures."
       },
       "associatedDomains": [
         "applinks:ally-jis.xyz",
@@ -21,6 +23,13 @@
       ]
     },
     "android": {
+      "permissions": [
+        "CAMERA",
+        "READ_EXTERNAL_STORAGE",
+        "WRITE_EXTERNAL_STORAGE",
+        "READ_MEDIA_IMAGES",
+        "READ_MEDIA_VIDEO"
+      ],
       "softwareKeyboardLayoutMode": "resize",
       "versionCode": 1,
       "adaptiveIcon": {

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -13,9 +13,18 @@ import {
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ArrowRight, Sparkles, X, CheckCircle2, AlertTriangle, ShieldCheck } from "lucide-react-native";
+import { useAuth } from "@/lib/auth/AuthContext";
 
 export default function LandingPage() {
   const insets = useSafeAreaInsets();
+  const { user, isLoading } = useAuth();
+
+  useEffect(() => {
+    if (!isLoading && user) {
+      router.replace("/(tabs)");
+    }
+  }, [user, isLoading]);
+
   const [pressed, setPressed] = useState(false);
   const [showReleaseNotes, setShowReleaseNotes] = useState(false);
 

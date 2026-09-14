@@ -59,7 +59,7 @@ export function CreatePostSheet({
     }
 
     const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      mediaTypes: ["images"],
       allowsMultipleSelection: true,
       selectionLimit: 4 - selectedImages.length,
       quality: 0.8,
@@ -68,10 +68,9 @@ export function CreatePostSheet({
     if (!result.canceled && result.assets && result.assets.length > 0) {
       const newFiles: LocalFile[] = result.assets.map((asset, index) => {
         const uri = asset.uri;
-        const filename = uri.split("/").pop() || `photo_${Date.now()}_${index}.jpg`;
-        const match = /\.(\w+)$/.exec(filename);
-        const type = match ? `image/${match[1]}` : "image/jpeg";
-        return { uri, name: filename, type };
+        const filename = asset.fileName || uri.split("/").pop() || `photo_${Date.now()}_${index}.jpg`;
+        const mime = asset.mimeType || (/\.png$/i.test(filename) ? "image/png" : "image/jpeg");
+        return { uri, name: filename, type: mime };
       });
 
       setSelectedImages((prev) => [...prev, ...newFiles].slice(0, 4));

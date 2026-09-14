@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, ReactNode } from "react";
 import * as SecureStore from "expo-secure-store";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as authApi from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/apiError";
 import { disconnectSocket, initSocket } from "@/lib/socket";
@@ -7,6 +8,7 @@ import type { AuthSession, AuthUser, RegisterPayload, RegisterResponse } from "@
 
 const ACCESS_TOKEN_KEY = "ally_access_token";
 const REFRESH_TOKEN_KEY = "ally_refresh_token";
+const USER_CACHE_KEY = "ally_user_data";
 
 interface AuthContextValue {
   user: AuthUser | null;
@@ -42,10 +44,34 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return;
         }
 
-        const session = await authApi.getSession(storedToken);
-        applySession(session);
+        // Restore cached user profile immediately for instant UI availability
+        let parsedUser: AuthUser | null = null;
+        try {
+          const cachedUserStr = await AsyncStorage.getItem(USER_CACHE_KEY);
+          if (cachedUserStr) {
+            parsedUser = JSON.parse(cachedUserStr);
+            setUser(parsedUser);
+            setAccessToken(storedToken);
+          }
+        } catch {}
+
+        try {
+          const session = await authApi.getSession(storedToken);
+          await applySession(session);
+        } catch (err: any) {
+          // If token was rejected by server (401/403), invalidate session
+          if (err?.status === 401 || err?.status === 403) {
+            await clearStoredTokens();
+          } else if (!parsedUser) {
+            // Cannot reach backend and have no cached user
+            await clearStoredTokens();
+          } else {
+            // Network error (offline / connectivity issue) — keep device session
+            console.log("[AuthContext] Backend unreachable during restore, retaining cached session.");
+            setAccessToken(storedToken);
+          }
+        }
       } catch {
-        // Token invalid/expired — clear it and let the user log in again.
         await clearStoredTokens();
       } finally {
         setIsLoading(false);
@@ -58,6 +84,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function applySession(session: AuthSession) {
     setUser(session.user);
     setAccessToken(session.accessToken ?? null);
+
+    if (session.user) {
+      await AsyncStorage.setItem(USER_CACHE_KEY, JSON.stringify(session.user)).catch(() => {});
+    }
+
     if (session.accessToken) {
       await SecureStore.setItemAsync(ACCESS_TOKEN_KEY, session.accessToken);
       initSocket(session.accessToken);
@@ -79,6 +110,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);
     } catch {}
+    await AsyncStorage.removeItem(USER_CACHE_KEY).catch(() => {});
     disconnectSocket();
     setUser(null);
     setAccessToken(null);

@@ -440,20 +440,19 @@ export default function ConversationScreen() {
       if (result.canceled || !result.assets?.[0]?.uri) return;
 
       const asset = result.assets[0];
-      const filename = asset.uri.split("/").pop() || `photo_${Date.now()}.jpg`;
-      const match = /\.(\w+)$/.exec(filename);
-      const type = match ? `image/${match[1]}` : "image/jpeg";
+      const filename = asset.fileName || asset.uri.split("/").pop() || `photo_${Date.now()}.jpg`;
+      const mime = asset.mimeType || (/\.png$/i.test(filename) ? "image/png" : "image/jpeg");
 
       const uploadRes = await uploadChatFile(
-        { uri: asset.uri, name: filename, type },
+        { uri: asset.uri, name: filename, type: mime },
         accessToken
       );
       if (uploadRes?.url) {
         await handleSend("", uploadRes.url);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.warn("Failed to pick and send image", err);
-      Alert.alert("Upload Failed", "Could not upload image. Please try again.");
+      Alert.alert("Upload Failed", err?.message || "Could not upload image. Please try again.");
     }
   }, [conversationId, accessToken, handleSend]);
 
@@ -466,25 +465,25 @@ export default function ConversationScreen() {
         return;
       }
       const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ["images"],
         quality: 0.8,
       });
       if (result.canceled || !result.assets?.[0]?.uri) return;
 
       const asset = result.assets[0];
-      const filename = asset.uri.split("/").pop() || `camera_${Date.now()}.jpg`;
-      const match = /\.(\w+)$/.exec(filename);
-      const type = match ? `image/${match[1]}` : "image/jpeg";
+      const filename = asset.fileName || asset.uri.split("/").pop() || `camera_${Date.now()}.jpg`;
+      const mime = asset.mimeType || (/\.png$/i.test(filename) ? "image/png" : "image/jpeg");
 
       const uploadRes = await uploadChatFile(
-        { uri: asset.uri, name: filename, type },
+        { uri: asset.uri, name: filename, type: mime },
         accessToken
       );
       if (uploadRes?.url) {
         await handleSend("", uploadRes.url);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.warn("Failed to take photo and send", err);
-      Alert.alert("Camera Failed", "Could not upload photo. Please try again.");
+      Alert.alert("Camera Failed", err?.message || "Could not upload photo. Please try again.");
     }
   }, [conversationId, accessToken, handleSend]);
 

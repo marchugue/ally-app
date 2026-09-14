@@ -61,11 +61,20 @@ function RootLayoutNav() {
   }, [accessToken]);
 
   useEffect(() => {
+    if (!isLoading && hasSeenOnboarding !== null) {
+      SplashScreen.hideAsync().catch(() => {});
+    }
+  }, [isLoading, hasSeenOnboarding]);
+
+  useEffect(() => {
     if (isLoading || hasSeenOnboarding === null) return;
+
+    const atRoot = segments.length === 0;
 
     const onAuthPages =
       segments[0] === "pages" &&
       (segments[1] === "onboarding" ||
+        segments[1] === "landing" ||
         segments[1] === "select-email" ||
         segments[1] === "id-upload" ||
         segments[1] === "id-scan-front" ||
@@ -80,61 +89,64 @@ function RootLayoutNav() {
     const onPendingPage = segments[0] === "pages" && segments[1] === "pending-approval";
     const onRegisterPage = segments[0] === "pages" && segments[1] === "register";
 
-    // Is the user's profile incomplete? (authenticated + verified but Steps 2-4 not done)
-    // Mirrors the web's needsOnboarding = session && verified && !onboarding_complete
-    const needsOnboarding = Boolean(
-      user && !user.user_metadata?.onboarding_complete
-    );
+    // ── 1. Device has session ──
+    if (user) {
+      // Mark onboarding as completed in storage so onboarding is never shown again
+      AsyncStorage.setItem("onboarding_done", "1").catch(() => {});
 
-    // Is the user a non-CHMSU student waiting for admin approval?
-    // Aligned with web: uses is_approved flag set by backend after admin action.
-    const isPendingApproval = Boolean(
-      user?.user_metadata?.email_type === 'external' &&
-      !user?.user_metadata?.is_approved
-    );
+      // Authenticated but profile incomplete (Steps 2-4 not yet done)
+      const needsOnboarding = Boolean(!user.user_metadata?.onboarding_complete);
+      if (needsOnboarding) {
+        if (!onRegisterPage) {
+          router.replace({
+            pathname: "/pages/register" as any,
+            params: { startStep: "2" },
+          });
+        }
+        return;
+      }
 
-    const atRoot = segments.length === 0;
+      // Profile complete but non-CHMSU pending admin approval
+      const isPendingApproval = Boolean(
+        user.user_metadata?.email_type === "external" &&
+        !user.user_metadata?.is_approved
+      );
+      if (isPendingApproval) {
+        if (!onPendingPage) {
+          router.replace("/pages/pending-approval" as any);
+        }
+        return;
+      }
 
-    // 1. First launch: if onboarding hasn't been completed and app is at root, go to onboarding
-    if (!hasSeenOnboarding && atRoot) {
-      router.replace("/pages/onboarding" as any);
-      return;
-    }
+      // Authenticated user approved but currently on pending page
+      if (onPendingPage) {
+        router.replace("/(tabs)");
+        return;
+      }
 
-    // 2. Unauthenticated user
-    if (!user) {
-      if (segments[1] === "onboarding") return;
-      if (!onAuthPages || atRoot) {
-        router.replace("/pages/login" as any);
+      // Fully authenticated, onboarded & approved:
+      // If at root or on ANY auth/entry page (including onboarding, landing, login, etc.),
+      // route directly to dashboard with no need to go to Get Started or Login!
+      if (atRoot || onAuthPages) {
+        router.replace("/(tabs)");
       }
       return;
     }
 
-    // 3. Authenticated but profile incomplete (Steps 2-4 not yet done)
-    // Allow register page through to avoid an infinite redirect loop.
-    if (needsOnboarding && !onRegisterPage) {
-      router.replace({
-        pathname: "/pages/register" as any,
-        params: { startStep: "2" },
-      });
+    // ── 2. Device has no session (unauthenticated) ──
+    // First launch: onboarding not yet completed
+    if (!hasSeenOnboarding) {
+      if (atRoot || !onAuthPages) {
+        router.replace("/pages/onboarding" as any);
+      }
       return;
     }
 
-    // 4. Profile complete but pending admin approval
-    if (!needsOnboarding && isPendingApproval && !onPendingPage) {
-      router.replace("/pages/pending-approval" as any);
+    // Subsequent launches / unauthenticated:
+    // If at root or attempting to access protected screens, route to login
+    if (atRoot || !onAuthPages) {
+      router.replace("/pages/login" as any);
       return;
-    }
-
-    // 5. Authenticated user approved but on pending page
-    if (!isPendingApproval && onPendingPage) {
-      router.replace("/(tabs)");
-      return;
-    }
-
-    // 6. Fully authenticated, onboarded, approved — bounce off auth pages
-    if (!needsOnboarding && onAuthPages && segments[1] !== "onboarding") {
-      router.replace("/(tabs)");
     }
   }, [user, isLoading, segments, hasSeenOnboarding]);
 
@@ -150,6 +162,7 @@ function RootLayoutNav() {
     <Stack screenOptions={{ headerShown: false, animation: "fade", }}>
       {/* Auth / onboarding flow */}
       <Stack.Screen name="pages/onboarding" options={{ headerShown: false, animation: "fade" }} />
+      <Stack.Screen name="pages/landing" options={{ headerShown: false }} />
       <Stack.Screen name="pages/select-email" options={{ headerShown: false, animation: "slide_from_right" }} />
       <Stack.Screen name="pages/id-upload" options={{ headerShown: false, animation: "slide_from_right" }} />
       <Stack.Screen name="pages/id-scan-front" options={{ headerShown: false, animation: "slide_from_right" }} />
@@ -216,12 +229,6 @@ export default function RootLayout() {
     PlusJakartaSans: PlusJakartaSans_400Regular,
     "PlusJakartaSans-Bold": PlusJakartaSans_700Bold,
   });
-
-  useEffect(() => {
-    if (fontsLoaded) {
-      SplashScreen.hideAsync();
-    }
-  }, [fontsLoaded]);
 
   if (!fontsLoaded) {
     return null;

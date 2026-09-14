@@ -954,7 +954,12 @@ export default function DiscoverScreen() {
 
       {/* ═══ Matchmaking Fullscreen Queue Overlay Modal ═══ */}
       <MatchmakingOverlayModal
-        visible={showMatchOverlay || matchmaking.phase === "searching" || matchmaking.phase === "pending"}
+        visible={
+          showMatchOverlay ||
+          matchmaking.phase === "searching" ||
+          matchmaking.phase === "pending" ||
+          matchmaking.phase === "accepted"
+        }
         onClose={() => setShowMatchOverlay(false)}
         matchmaking={matchmaking}
       />

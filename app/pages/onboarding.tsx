@@ -1,4 +1,4 @@
-import React, { useRef, useState } from "react";
+import React, { useRef, useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -15,6 +15,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { ArrowLeft } from "lucide-react-native";
 import { Button } from "@/components/Button";
+import { useAuth } from "@/lib/auth/AuthContext";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 const BLOB_SIZE = Math.min(SCREEN_WIDTH * 0.65, SCREEN_HEIGHT * 0.28, 230);
@@ -50,6 +51,13 @@ async function markOnboardingDone() {
 
 export default function OnboardingScreen() {
   const insets = useSafeAreaInsets();
+  const { user, isLoading } = useAuth();
+
+  useEffect(() => {
+    if (!isLoading && user) {
+      router.replace("/(tabs)");
+    }
+  }, [user, isLoading]);
 
   const [activeIndex, setActiveIndex] = useState(0);
   const slideAnim = useRef(new Animated.Value(0)).current;

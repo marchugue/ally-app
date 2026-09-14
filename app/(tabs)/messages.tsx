@@ -12,7 +12,7 @@ import {
 } from "react-native";
 import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
 import { router, useFocusEffect } from "expo-router";
-import { Search, X, MessageCircle, UserPlus, Trash2, Drama } from "lucide-react-native";
+import { Search, X, MessageCircle, Trash2, Drama } from "lucide-react-native";
 import { ScreenHeader } from "@/components/ScreenHeader";
 import { UserAvatar } from "@/components/UserAvatar";
 import { AnonymousAvatar } from "@/components/AnonymousAvatar";
@@ -136,13 +136,13 @@ function BrowseRow({
       })}
     >
       <View
-        className="w-full flex-row items-center px-5 py-3"
+        className="w-full flex-row items-center px-5 py-3.5"
         style={{ flexDirection: "row", width: "100%" }}
       >
         <View style={{ flexShrink: 0 }}>
-          <UserAvatar avatar={browseUser.avatar} size="md" online={isOnline} />
+          <UserAvatar avatar={browseUser.avatar} size="lg" online={isOnline} />
         </View>
-        <View style={{ flex: 1, minWidth: 0, marginHorizontal: 12 }}>
+        <View style={{ flex: 1, minWidth: 0, marginLeft: 16, marginRight: 8 }}>
           <Text
             className="text-[15px] font-bold text-[#111827]"
             numberOfLines={1}
@@ -282,17 +282,17 @@ function SwipeableRow({
         })}
       >
         <View
-          className="w-full flex-row items-center px-5 py-3"
+          className="w-full flex-row items-center px-5 py-3.5"
           style={{ flexDirection: "row", width: "100%", flexWrap: "nowrap" }}
         >
           {/* Avatar */}
           <View className="shrink-0" style={{ flexShrink: 0 }}>
             {info.isAnonymous ? (
-              <AnonymousAvatar avatarKey={info.participantAvatar} size={40} />
+              <AnonymousAvatar avatarKey={info.participantAvatar} size={56} />
             ) : (
               <UserAvatar
                 avatar={info.participantAvatar}
-                size="md"
+                size="lg"
                 online={isOnline}
               />
             )}
@@ -300,7 +300,7 @@ function SwipeableRow({
 
           {/* Details */}
           <View
-            className="flex-1 min-w-0 mx-3"
+            className="flex-1 min-w-0 ml-4 mr-2"
             style={{ flex: 1, flexBasis: 0, minWidth: 0, overflow: "hidden" }}
           >
             <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
@@ -560,15 +560,6 @@ export default function MessagesScreen() {
     [accessToken, startingUserId, loadConversations],
   );
 
-  const handleToggleBrowseMode = useCallback(() => {
-    setBrowseMode((prev) => {
-      const next = !prev;
-      if (next) {
-        requestAnimationFrame(() => searchInputRef.current?.focus());
-      }
-      return next;
-    });
-  }, []);
 
   const renderBrowseSection = () => {
     if (!showBrowse) return null;
@@ -760,43 +751,8 @@ export default function MessagesScreen() {
         </Pressable>
       </Modal>
 
-      {/* Subheader: Chats & Person with Plus */}
-      <View
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
-          paddingHorizontal: 20,
-          paddingTop: 14,
-          paddingBottom: 4,
-        }}
-      >
-        <Text
-          style={{
-            fontSize: 24,
-            fontFamily: "Fraunces_700Bold",
-            color: "#1A6B3C",
-            letterSpacing: -0.5,
-          }}
-        >
-          Chats
-        </Text>
-
-        <Pressable
-          onPress={handleToggleBrowseMode}
-          hitSlop={10}
-          style={{
-            padding: 8,
-            borderRadius: 999,
-            backgroundColor: browseMode ? "rgba(26, 107, 60, 0.1)" : "transparent",
-          }}
-        >
-          <UserPlus size={20} color="#1A6B3C" />
-        </Pressable>
-      </View>
-
       {/* Search bar */}
-      <View className="px-4 pb-3">
+      <View className="px-4 pt-3.5 pb-3">
         <View
           className="flex-row items-center bg-gray-100 rounded-full px-3.5"
           style={{ paddingVertical: 8 }}
@@ -806,7 +762,7 @@ export default function MessagesScreen() {
             ref={searchInputRef}
             value={searchQuery}
             onChangeText={setSearchQuery}
-            placeholder={browseMode ? "Search allies and classmates…" : "Search chats or people…"}
+            placeholder="Search chats or people…"
             placeholderTextColor="#9CA3AF"
             className="flex-1 ml-2 text-textPrimary text-sm font-jakarta"
             style={{ paddingVertical: 0 }}
@@ -892,16 +848,7 @@ export default function MessagesScreen() {
             />
           );
         }}
-        ItemSeparatorComponent={() => (
-          <View
-            style={{
-              height: 1,
-              backgroundColor: "#F3F4F6",
-              marginLeft: 72,
-              marginRight: 20,
-            }}
-          />
-        )}
+
         ListEmptyComponent={
           showBrowse ? null : (
             <EmptyState
