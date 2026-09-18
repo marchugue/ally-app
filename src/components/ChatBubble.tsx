@@ -131,12 +131,15 @@ export function ChatBubble({
   const margins = getBubbleMargins(groupPosition);
   const showSenderName = Boolean(senderName && (groupPosition === "single" || groupPosition === "first"));
 
+  const extraBottom = hasReactions ? 10 : 0;
+
   return (
     <View
       style={{
         alignSelf: isMine ? "flex-end" : "flex-start",
         maxWidth: "78%",
-        ...margins,
+        marginTop: margins.marginTop,
+        marginBottom: margins.marginBottom + extraBottom,
         marginHorizontal: 16,
       }}
     >
@@ -179,8 +182,9 @@ export function ChatBubble({
         </View>
       )}
 
-      {/* Main bubble */}
-      <Pressable
+      {/* Main bubble + overlapping reactions */}
+      <View style={{ position: "relative" }}>
+        <Pressable
         onPress={() => setShowTime((prev) => !prev)}
         onLongPress={() => !isSending && !isFailed && onLongPress?.(message)}
         android_ripple={{ color: "rgba(0,0,0,0.06)" }}
@@ -274,6 +278,61 @@ export function ChatBubble({
         )}
       </Pressable>
 
+        {/* Reactions sitting on the edge of the message */}
+        {hasReactions && (
+          <View
+            pointerEvents="none"
+            style={{
+              position: "absolute",
+              bottom: -9,
+              ...(isMine ? { right: 12 } : { left: 12 }),
+              flexDirection: isMine ? "row-reverse" : "row",
+              alignItems: "center",
+              gap: 2,
+              zIndex: 10,
+              elevation: 3,
+            }}
+          >
+            {groupReactions(message.reactions).map(({ emoji, count }) => (
+              <View
+                key={emoji}
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                }}
+              >
+                <Text
+                  style={{
+                    fontSize: 17,
+                    lineHeight: 19,
+                    textShadowColor: "rgba(0, 0, 0, 0.22)",
+                    textShadowOffset: { width: 0, height: 1 },
+                    textShadowRadius: 2,
+                  }}
+                >
+                  {emoji}
+                </Text>
+                {count > 1 && (
+                  <Text
+                    style={{
+                      fontSize: 10,
+                      fontWeight: "700",
+                      color: isMine ? "#FFFFFF" : "#374151",
+                      marginLeft: 2,
+                      textShadowColor: "rgba(0, 0, 0, 0.3)",
+                      textShadowOffset: { width: 0, height: 1 },
+                      textShadowRadius: 1,
+                    }}
+                  >
+                    {count}
+                  </Text>
+                )}
+              </View>
+            ))}
+          </View>
+        )}
+      </View>
+
       {/* Failed indicator & retry action */}
       {isFailed && (
         <Pressable
@@ -294,39 +353,6 @@ export function ChatBubble({
             Failed to send · Tap to retry
           </Text>
         </Pressable>
-      )}
-
-      {/* Reactions */}
-      {hasReactions && (
-        <View
-          style={{
-            flexDirection: "row",
-            gap: 4,
-            marginTop: 2,
-            alignSelf: isMine ? "flex-end" : "flex-start",
-            paddingHorizontal: 4,
-          }}
-        >
-          {groupReactions(message.reactions).map(({ emoji, count }) => (
-            <View
-              key={emoji}
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                gap: 2,
-                backgroundColor: "#F0EDE8",
-                borderRadius: 12,
-                paddingHorizontal: 6,
-                paddingVertical: 2,
-              }}
-            >
-              <Text style={{ fontSize: 12 }}>{emoji}</Text>
-              {count > 1 && (
-                <Text style={{ fontSize: 10, color: "#6B7280" }}>{count}</Text>
-              )}
-            </View>
-          ))}
-        </View>
       )}
     </View>
   );

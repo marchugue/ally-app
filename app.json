@@ -9,7 +9,7 @@
     "userInterfaceStyle": "dark",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "xyz.allyjis.app",
+      "bundleIdentifier": "com.allyjis.app",
       "infoPlist": {
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": true
@@ -36,7 +36,7 @@
         "foregroundImage": "./assets/images/group9.png",
         "backgroundColor": "#1f663c"
       },
-      "package": "xyz.allyjis.app",
+      "package": "com.allyjis.app",
       "googleServicesFile": "./google-services.json",
       "intentFilters": [
         {

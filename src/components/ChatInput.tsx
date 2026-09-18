@@ -317,7 +317,8 @@ export function ChatInput({
             activeOpacity={0.85}
             style={{
               width: 50,
-              height: 30,
+              marginTop: 1,
+              height: 29,
               borderRadius: 99,
               flexShrink: 0,
               backgroundColor: canSend ? "#1A6B3C" : "#A7D0B8",

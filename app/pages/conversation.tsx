@@ -10,6 +10,7 @@ import {
   Keyboard,
   Alert,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router, useLocalSearchParams } from "expo-router";
 import {
   ArrowLeft,
@@ -32,6 +33,7 @@ import {
   markConversationRead,
   getConversationById,
   setMessageReaction,
+  restoreConversationStreak,
 } from "@/lib/api/conversation";
 import { getProfilesBatch } from "@/lib/api/profiles";
 import { usePresence } from "@/context/PresenceContext";
@@ -67,6 +69,60 @@ function canGroupMessages(current: Message, adjacent: Message | null | undefined
 }
 const POLL_INTERVAL_MS = 3000;
 
+const CACHE_KEY_PREFIX = "ally_chat_cache_";
+const MAX_CACHED_MESSAGES = 50;
+
+interface MobileChatCache {
+  messages: Message[];
+  hasMore: boolean;
+  nextCursor: string | null;
+  cachedAt: number;
+}
+
+async function getCachedMessagesMobile(convId: string): Promise<MobileChatCache | null> {
+  try {
+    const raw = await AsyncStorage.getItem(CACHE_KEY_PREFIX + convId);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed?.messages)) {
+      return {
+        messages: parsed.messages,
+        hasMore: Boolean(parsed.hasMore),
+        nextCursor: parsed.nextCursor ?? null,
+        cachedAt: Number(parsed.cachedAt) || 0,
+      };
+    }
+  } catch {
+    // ignore
+  }
+  return null;
+}
+
+async function setCachedMessagesMobile(
+  convId: string,
+  messages: Message[],
+  hasMore: boolean,
+  nextCursor: string | null
+) {
+  try {
+    const confirmed = messages.filter(
+      (m) => !m.id.startsWith("temp-") && m.status !== "failed" && m.status !== "sending"
+    );
+    const toCache = confirmed.slice(-MAX_CACHED_MESSAGES);
+    await AsyncStorage.setItem(
+      CACHE_KEY_PREFIX + convId,
+      JSON.stringify({
+        messages: toCache,
+        hasMore,
+        nextCursor,
+        cachedAt: Date.now(),
+      })
+    );
+  } catch {
+    // ignore
+  }
+}
+
 export default function ConversationScreen() {
   const insets = useSafeAreaInsets();
   const { user, accessToken } = useAuth();
@@ -89,6 +145,11 @@ export default function ConversationScreen() {
   const conversationId = rawConvId || rawId || "";
 
   const [messages, setMessages] = useState<Message[]>([]);
+  const [hasMore, setHasMore] = useState(false);
+  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const [isLoadingOlder, setIsLoadingOlder] = useState(false);
+  const hasLoadedOnceRef = useRef(false);
+
   // If prefill data is passed from messages list, skip loading screen entirely
   const [loading, setLoading] = useState(!prefillName);
   const [otherProfile, setOtherProfile] = useState<Profile | null>(
@@ -121,39 +182,10 @@ export default function ConversationScreen() {
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
   const [showReactions, setShowReactions] = useState(false);
 
-  // Check if streak was activated today (both participants sent at least 1 message today)
-  const isStreakActiveToday = useMemo(() => {
-    if (convStreakActiveToday || Boolean(matchInfo?.streakActiveToday)) return true;
-    if (!messages.length || !user?.id) return false;
-
-    // Evaluate in both PHT (UTC+8) and device local date
-    const phtToday = new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10);
-    const localToday = new Date().toISOString().slice(0, 10);
-
-    const hasBothOnDate = (targetDate: string) => {
-      let myMsg = false;
-      let partnerMsg = false;
-      for (const msg of messages) {
-        if (!msg.created_at) continue;
-        const msgPht = new Date(new Date(msg.created_at).getTime() + 8 * 3600_000)
-          .toISOString()
-          .slice(0, 10);
-        const msgLocal = new Date(msg.created_at).toISOString().slice(0, 10);
-
-        if (msgPht === targetDate || msgLocal === targetDate) {
-          if (msg.sender_id === user.id) {
-            myMsg = true;
-          } else if (msg.sender_id) {
-            partnerMsg = true;
-          }
-        }
-        if (myMsg && partnerMsg) return true;
-      }
-      return myMsg && partnerMsg;
-    };
-
-    return hasBothOnDate(phtToday) || hasBothOnDate(localToday);
-  }, [messages, user?.id, matchInfo?.streakActiveToday]);
+  // Streak active today — derived purely from backend state (convStreakActiveToday).
+  // The backend is the source of truth; we do NOT re-derive from message history
+  // to avoid false positives caused by timezone or clock drift.
+  const isStreakActiveToday = convStreakActiveToday || Boolean(matchInfo?.streakActiveToday);
 
   // Overflow menu
   const [showOverflow, setShowOverflow] = useState(false);
@@ -168,19 +200,50 @@ export default function ConversationScreen() {
   // Position is preserved natively when keyboard opens, without jumping!
   const invertedMessages = useMemo(() => [...messages].reverse(), [messages]);
 
+  // ── Instant Navigation (0ms display) ──────────────────────────────────
+  useEffect(() => {
+    if (!conversationId) return;
+    hasLoadedOnceRef.current = false;
+    getCachedMessagesMobile(conversationId).then((cached) => {
+      if (cached && cached.messages.length > 0 && !hasLoadedOnceRef.current) {
+        setMessages(cached.messages);
+        setHasMore(cached.hasMore);
+        setNextCursor(cached.nextCursor);
+        setLoading(false);
+      }
+    });
+  }, [conversationId]);
+
   // ── Load messages & profile ───────────────────────────────────────────
   const loadMessages = useCallback(async (_silent = false) => {
     if (!conversationId || !accessToken) return;
     try {
-      const msgs = await listMessages(conversationId, accessToken);
+      const res = await listMessages(conversationId, accessToken, { limit: 30 });
+      const msgs = res.messages;
+      setHasMore(res.hasMore);
+      setNextCursor(res.nextCursor);
+
       setMessages((prev) => {
         const pending = prev.filter(
           (m) => m.id.startsWith("temp-") || m.status === "sending" || m.status === "failed"
         );
-        if (pending.length === 0) return msgs;
+
+        // Keep any older messages already loaded into history before msgs
+        const serverIds = new Set(msgs.map((m) => m.id));
+        const firstServerTime = msgs.length > 0 ? new Date(msgs[0].created_at).getTime() : Infinity;
+        const olderHistory = prev.filter(
+          (m) => !serverIds.has(m.id) && !m.id.startsWith("temp-") && new Date(m.created_at).getTime() < firstServerTime
+        );
+
+        const combined = [...olderHistory, ...msgs];
+
+        if (pending.length === 0) {
+          setCachedMessagesMobile(conversationId, combined, res.hasMore, res.nextCursor);
+          return combined;
+        }
 
         // Retain any pending/sending/failed messages that haven't been reconciled into msgs yet
-        const result = [...msgs];
+        const result = [...combined];
         for (const p of pending) {
           const alreadyInList = result.some(
             (m) =>
@@ -193,8 +256,11 @@ export default function ConversationScreen() {
             result.push(p);
           }
         }
+        setCachedMessagesMobile(conversationId, combined, res.hasMore, res.nextCursor);
         return result;
       });
+
+      hasLoadedOnceRef.current = true;
 
       // Mark as read
       if (msgs.length > 0) {
@@ -208,6 +274,28 @@ export default function ConversationScreen() {
       console.warn("Failed to load messages", err);
     }
   }, [conversationId, accessToken]);
+
+  const loadOlderMessages = useCallback(async () => {
+    if (!hasMore || !nextCursor || isLoadingOlder || !accessToken || !conversationId) return;
+    setIsLoadingOlder(true);
+    try {
+      const res = await listMessages(conversationId, accessToken, {
+        limit: 30,
+        before: nextCursor,
+      });
+      setHasMore(res.hasMore);
+      setNextCursor(res.nextCursor);
+      setMessages((prev) => {
+        const existingIds = new Set(prev.map((m) => m.id));
+        const olderFiltered = res.messages.filter((m) => !existingIds.has(m.id));
+        return [...olderFiltered, ...prev];
+      });
+    } catch (err) {
+      console.warn("Failed to load older messages", err);
+    } finally {
+      setIsLoadingOlder(false);
+    }
+  }, [hasMore, nextCursor, isLoadingOlder, accessToken, conversationId]);
 
   const loadConversation = useCallback(async () => {
     if (!conversationId || !accessToken || !user) return;
@@ -295,6 +383,7 @@ export default function ConversationScreen() {
       setMessages((prev) => {
         if (prev.some((m) => m.id === incomingMsg.id)) return prev;
 
+        let nextList: Message[];
         // Reconcile optimistic temp message if already present
         const pendingIndex = prev.findIndex(
           (m) =>
@@ -303,12 +392,13 @@ export default function ConversationScreen() {
             m.content === incomingMsg.content
         );
         if (pendingIndex !== -1) {
-          const next = [...prev];
-          next[pendingIndex] = incomingMsg;
-          return next;
+          nextList = [...prev];
+          nextList[pendingIndex] = incomingMsg;
+        } else {
+          nextList = [...prev, incomingMsg];
         }
-
-        return [...prev, incomingMsg];
+        setCachedMessagesMobile(conversationId, nextList, hasMore, nextCursor);
+        return nextList;
       });
       markConversationRead(conversationId, new Date().toISOString(), accessToken).catch(() => { });
       setTimeout(() => {
@@ -331,9 +421,11 @@ export default function ConversationScreen() {
 
     const onStreakUpdate = (payload: any) => {
       if (payload?.matchId === matchInfo?.id || payload?.conversationId === conversationId) {
-        const isInactive = payload.status === "inactive" || payload.dayStreak === 0 || payload.streak === 0;
+        // 'inactive' status → streak lapsed. 'restored' → streak brought back.
+        // Do NOT treat dayStreak===0 alone as inactive (could be a valid day-1 restore).
+        const isInactive = payload.status === "inactive";
         const streak = isInactive ? 0 : (payload.dayStreak ?? payload.streak ?? convStreak);
-        const activeToday = isInactive ? false : (payload.streakActiveToday ?? true);
+        const activeToday = isInactive ? false : (payload.streakActiveToday ?? convStreakActiveToday);
         setConvStreak(streak);
         setConvStreakActiveToday(activeToday);
         setMatchInfo((prev: any) => ({
@@ -374,30 +466,32 @@ export default function ConversationScreen() {
     };
   }, [conversationId, accessToken, loadMessages, matchInfo?.id, convStreak]);
 
-  // Midnight end-of-day watcher on conversation screen
-  useEffect(() => {
-    let lastDate = new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10);
-    const interval = setInterval(() => {
-      const currentDate = new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10);
-      if (currentDate !== lastDate) {
-        lastDate = currentDate;
-        // Day ended! If streak was not active today, force inactive status
-        if (!isStreakActiveToday) {
-          setConvStreak(0);
-          setConvStreakActiveToday(false);
-          setMatchInfo((prev: any) => ({
-            ...prev,
-            dayStreak: 0,
-            streakActiveToday: false,
-          }));
-        }
-      }
-    }, 30_000);
-    return () => clearInterval(interval);
-  }, [isStreakActiveToday]);
+  // Midnight streak expiry is handled server-side (streakReminder.service.ts).
+  // The backend emits 'conversation:streak_updated' with status:'inactive' and
+  // dayStreak:0 at 12:00 AM PHT, which the onStreakUpdate handler above picks up.
+  // A client-side watcher is not needed and can cause stale-closure race conditions.
+
+  // ── Restore streak ────────────────────────────────────────────────────
+  const handleRestoreStreak = useCallback(async () => {
+    if (!conversationId || !accessToken) return;
+    try {
+      const result = await restoreConversationStreak(conversationId, accessToken);
+      // Optimistically update local state — socket will confirm shortly
+      setConvStreak(result.newStreak);
+      setConvStreakActiveToday(true);
+      setMatchInfo((prev: any) => prev ? { ...prev, dayStreak: result.newStreak, streakActiveToday: true } : prev);
+      Alert.alert(
+        "Successfully restored",
+        `Your streak is back! You have ${result.restoresRemaining} restore${result.restoresRemaining !== 1 ? "s" : ""} remaining.`
+      );
+    } catch (err: any) {
+      Alert.alert("Couldn't Restore", err?.message ?? "You may be out of restore tokens.");
+    }
+  }, [conversationId, accessToken]);
 
   // ── Send message (Optimistic UI — 0ms instant display) ───────────────
   const handleSend = useCallback(
+
     async (content: string, imageUrl?: string | null) => {
       if (!conversationId || !accessToken || !user) return;
 
@@ -440,10 +534,14 @@ export default function ConversationScreen() {
 
         // Replace temp optimistic message with real saved message and mark sent
         setMessages((prev) => {
+          let updated: Message[];
           if (prev.some((m) => m.id === savedMsg.id)) {
-            return prev.filter((m) => m.id !== tempId);
+            updated = prev.filter((m) => m.id !== tempId);
+          } else {
+            updated = prev.map((m) => (m.id === tempId ? { ...savedMsg, status: "sent" } : m));
           }
-          return prev.map((m) => (m.id === tempId ? { ...savedMsg, status: "sent" } : m));
+          setCachedMessagesMobile(conversationId, updated, hasMore, nextCursor);
+          return updated;
         });
       } catch (err) {
         console.warn("Failed to send message", err);
@@ -790,7 +888,7 @@ export default function ConversationScreen() {
       </View>
 
       {/* ── Scrollable chat area — lifts with keyboard, header stays put ── */}
-      <KeyboardHugView style={{ flex: 1 }} keyboardVerticalOffset={0}>
+      <KeyboardHugView style={{ flex: 1 }} keyboardVerticalOffset={Math.max(insets.bottom, 8)}>
         {/* ── Anonymous Progression Banner ─────────────────────────────────── */}
         {isAnonymous && !isEnded && (
           <Pressable
@@ -844,7 +942,29 @@ export default function ConversationScreen() {
           </View>
         )}
 
+        {/* ── Streak Ended Notice ──────────────────────────────────────────── */}
+        {!isEnded && convStreak === 0 && (
+          <View
+            style={{
+              paddingVertical: 20,
+              paddingHorizontal: 24,
+              alignItems: "center",
+            }}
+          >
+            <Text style={{ fontSize: 13, color: "#9CA3AF", textAlign: "center", lineHeight: 20 }}>
+              Your daily streak has ended. Keep the conversation going to start a new one.{" "}
+              <Text
+                onPress={handleRestoreStreak}
+                style={{ color: "#1A6B3C", fontWeight: "700", textDecorationLine: "underline" }}
+              >
+                Restore Streak
+              </Text>
+            </Text>
+          </View>
+        )}
+
         {/* ── Messages list ────────────────────────────────────────────────── */}
+
         <KeyboardGestureArea style={{ flex: 1 }} interpolator="ios">
           <FlatList
             ref={flatListRef}
@@ -858,6 +978,15 @@ export default function ConversationScreen() {
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="interactive"
             inverted
+            onEndReached={loadOlderMessages}
+            onEndReachedThreshold={0.2}
+            ListFooterComponent={
+              isLoadingOlder ? (
+                <View style={{ paddingVertical: 14, alignItems: "center", justifyContent: "center", transform: [{ scaleY: -1 }] }}>
+                  <ActivityIndicator size="small" color="#1A6B3C" />
+                </View>
+              ) : null
+            }
             contentContainerStyle={{
               paddingVertical: 12,
             }}
