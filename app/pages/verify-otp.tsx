@@ -6,7 +6,7 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  KeyboardAvoidingView, Platform, ActivityIndicator, Alert, ScrollView,
+  Platform, ActivityIndicator, Alert, ScrollView,
   Dimensions,
 } from 'react-native';
 import { useRouter, useLocalSearchParams } from 'expo-router';
@@ -157,8 +157,7 @@ export default function VerifyOtpPage() {
   const illustrationSize = Math.min(SCREEN_WIDTH * 0.45, 180);
 
   return (
-    <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    <View
       style={styles.root}
     >
       <ScrollView
@@ -274,7 +273,7 @@ export default function VerifyOtpPage() {
 
         <Text style={styles.spamHint}>Check your spam folder if you don't see the email.</Text>
       </ScrollView>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 

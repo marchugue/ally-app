@@ -32,63 +32,65 @@ export default function LandingPage() {
     <View style={[styles.root, { paddingTop: insets.top, paddingBottom: insets.bottom }]}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
-      {/* Release Notes Chip */}
-      <View style={styles.chipRow}>
-        <Pressable
-          onPress={() => setShowReleaseNotes(true)}
-          style={styles.chip}
-        >
-          <Sparkles size={13} color="#1A6B3C" />
-          <Text style={styles.chipText}>Official Release v1.0 • CHMSU Alijis Campus</Text>
-        </Pressable>
-      </View>
-
-      {/* Center Brand + Illustration area */}
-      <View style={styles.centerContent}>
-        {/* Logo blob */}
-        <View style={styles.logoBlob}>
-          <Image
-            source={require("../../assets/images/logo.png")}
-            style={styles.logoImage}
-            resizeMode="contain"
-          />
+      <View style={styles.container}>
+        {/* Release Notes Chip */}
+        <View style={styles.chipRow}>
+          <Pressable
+            onPress={() => setShowReleaseNotes(true)}
+            style={styles.chip}
+          >
+            <Sparkles size={13} color="#1A6B3C" />
+            <Text style={styles.chipText}>Official Release v1.0 • CHMSU Alijis Campus</Text>
+          </Pressable>
         </View>
 
-        <Text style={styles.brandName}>
-          ally<Text style={styles.brandAccent}>-jis</Text>
-        </Text>
-        <Text style={styles.tagline}>The social space for{"\n"}CHMSU Alijis Campus</Text>
-
-        <View style={styles.badgeRow}>
-          <View style={styles.badge}>
-            <Text style={styles.badgeText}>🎓 Campus Exclusive</Text>
+        {/* Center Brand + Illustration area */}
+        <View style={styles.centerContent}>
+          {/* Logo blob */}
+          <View style={styles.logoBlob}>
+            <Image
+              source={require("../../assets/images/logo.png")}
+              style={styles.logoImage}
+              resizeMode="contain"
+            />
           </View>
-          <View style={styles.badge}>
-            <Text style={styles.badgeText}>🔒 Verified Students</Text>
-          </View>
-        </View>
-      </View>
 
-      {/* CTA Section */}
-      <View style={styles.ctaSection}>
-        <Pressable
-          onPress={() => router.push("/pages/select-email" as any)}
-          onPressIn={() => setPressed(true)}
-          onPressOut={() => setPressed(false)}
-          style={[styles.getStartedBtn, pressed && styles.getStartedBtnPressed]}
-        >
-          <Text style={styles.getStartedText}>Get Started</Text>
-          <ArrowRight size={18} color="#FFFFFF" />
-        </Pressable>
-
-        <Pressable onPress={() => router.push("/pages/login")} hitSlop={8} style={styles.signInRow}>
-          <Text style={styles.signInText}>
-            Already have an account?{" "}
-            <Text style={styles.signInLink}>Sign in</Text>
+          <Text style={styles.brandName}>
+            ally<Text style={styles.brandAccent}>-jis</Text>
           </Text>
-        </Pressable>
+          <Text style={styles.tagline}>The social space for{"\n"}CHMSU Alijis Campus</Text>
 
-        <Text style={styles.disclaimer}>For CHMSU Alijis Campus students only</Text>
+          <View style={styles.badgeRow}>
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>🎓 Campus Exclusive</Text>
+            </View>
+            <View style={styles.badge}>
+              <Text style={styles.badgeText}>🔒 Verified Students</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* CTA Section */}
+        <View style={styles.ctaSection}>
+          <Pressable
+            onPress={() => router.push("/pages/select-email" as any)}
+            onPressIn={() => setPressed(true)}
+            onPressOut={() => setPressed(false)}
+            style={[styles.getStartedBtn, pressed && styles.getStartedBtnPressed]}
+          >
+            <Text style={styles.getStartedText}>Get Started</Text>
+            <ArrowRight size={18} color="#FFFFFF" />
+          </Pressable>
+
+          <Pressable onPress={() => router.push("/pages/login")} hitSlop={8} style={styles.signInRow}>
+            <Text style={styles.signInText}>
+              Already have an account?{" "}
+              <Text style={styles.signInLink}>Sign in</Text>
+            </Text>
+          </Pressable>
+
+          <Text style={styles.disclaimer}>For CHMSU Alijis Campus students only</Text>
+        </View>
       </View>
 
       {/* ── Scrollable Release Notes Modal ── */}
@@ -141,7 +143,7 @@ export default function LandingPage() {
                 { title: "Smart Peer Matching", desc: "Calculates match percentage based on 3+ shared interest tags & organization affiliations." },
                 { title: "Intentional Connections", desc: "Send connection requests before unlocking direct chat to ensure safe campus interactions." },
                 { title: "Campus Feed & Media", desc: "Share posts, images, comments, and like student activities across departments." },
-                { title: "Direct APK Website Hosting", desc: "Self-hosted directly on official website ally-jis.xyz with instant update notifications." },
+                { title: "Direct APK Website Hosting", desc: "Self-hosted directly on official website ally-jis.com with instant update notifications." },
               ].map((item, i) => (
                 <View key={i} style={styles.featureRow}>
                   <CheckCircle2 size={18} color="#1A6B3C" style={{ marginTop: 2 }} />
@@ -157,7 +159,7 @@ export default function LandingPage() {
               </Text>
 
               {[
-                { title: "Bypassed App Store Distribution", desc: "App is distributed via direct APK host (ally-jis.xyz) instead of Google Play Store." },
+                { title: "Bypassed App Store Distribution", desc: "App is distributed via direct APK host (ally-jis.com) instead of Google Play Store." },
                 { title: "Offline & Connection Shield", desc: "Requires active internet. Prompts Reconnect / Exit screen if connection drops." },
                 { title: "CHMSU Alijis Verification", desc: "Account creation is restricted to verified student credentials." },
               ].map((item, i) => (
@@ -172,7 +174,7 @@ export default function LandingPage() {
 
               <View style={styles.footerRow}>
                 <ShieldCheck size={16} color="#1A6B3C" />
-                <Text style={styles.footerText}>Official Ally-jis Mobile Release • ally-jis.xyz</Text>
+                <Text style={styles.footerText}>Official Ally-jis Mobile Release • ally-jis.com</Text>
               </View>
             </ScrollView>
 
@@ -199,6 +201,12 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: "#FFFFFF",
+  },
+  container: {
+    flex: 1,
+    width: "100%",
+    maxWidth: 580,
+    alignSelf: "center",
   },
   chipRow: {
     alignItems: "center",

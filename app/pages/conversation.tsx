@@ -46,8 +46,8 @@ import { ChatInput } from "@/components/ChatInput";
 import { UserAvatar } from "@/components/UserAvatar";
 import { AnonymousAvatar } from "@/components/AnonymousAvatar";
 import { MatchRevealSheet } from "@/components/MatchRevealSheet";
-import { useKeyboard } from "@/hooks/useKeyboard";
 import { KeyboardHugView } from "@/components/KeyboardHugView";
+import { KeyboardGestureArea } from "react-native-keyboard-controller";
 import { ConfirmModal } from "@/components/ConfirmModal";
 import type { Message, Conversation, MessageGroupPosition } from "@/types/conversation";
 import type { Profile } from "@/types/profile";
@@ -108,6 +108,8 @@ export default function ConversationScreen() {
     (partnerUserId && checkIsOnline(partnerUserId))
   );
   const [matchInfo, setMatchInfo] = useState<any>(null);
+  const [convStreak, setConvStreak] = useState<number>(0);
+  const [convStreakActiveToday, setConvStreakActiveToday] = useState<boolean>(false);
   const [conversationVariant, setConversationVariant] = useState<string | null>(
     isAnonymousParam === "true" ? "anonymous" : null
   );
@@ -121,7 +123,7 @@ export default function ConversationScreen() {
 
   // Check if streak was activated today (both participants sent at least 1 message today)
   const isStreakActiveToday = useMemo(() => {
-    if (Boolean(matchInfo?.streakActiveToday)) return true;
+    if (convStreakActiveToday || Boolean(matchInfo?.streakActiveToday)) return true;
     if (!messages.length || !user?.id) return false;
 
     // Evaluate in both PHT (UTC+8) and device local date
@@ -158,15 +160,13 @@ export default function ConversationScreen() {
   const [showBlockConfirm, setShowBlockConfirm] = useState(false);
   const [showReportConfirm, setShowReportConfirm] = useState(false);
 
-  const { isKeyboardVisible } = useKeyboard();
+
   const flatListRef = useRef<FlatList>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  useEffect(() => {
-    if (isKeyboardVisible) {
-      setTimeout(() => flatListRef.current?.scrollToEnd({ animated: true }), 100);
-    }
-  }, [isKeyboardVisible]);
+  // In an inverted list, index 0 is at the bottom (newest message).
+  // Position is preserved natively when keyboard opens, without jumping!
+  const invertedMessages = useMemo(() => [...messages].reverse(), [messages]);
 
   // ── Load messages & profile ───────────────────────────────────────────
   const loadMessages = useCallback(async (_silent = false) => {
@@ -213,6 +213,11 @@ export default function ConversationScreen() {
     if (!conversationId || !accessToken || !user) return;
     try {
       const conv = await getConversationById(conversationId, accessToken);
+      const streak = conv.dayStreak ?? conv.matchInfo?.dayStreak ?? 0;
+      const activeToday = Boolean(conv.streakActiveToday ?? conv.matchInfo?.streakActiveToday ?? false);
+      setConvStreak(streak);
+      setConvStreakActiveToday(activeToday);
+
       const isAnon =
         conv.variant === "anonymous" ||
         conv.variant === "anonymous_ended" ||
@@ -307,7 +312,7 @@ export default function ConversationScreen() {
       });
       markConversationRead(conversationId, new Date().toISOString(), accessToken).catch(() => { });
       setTimeout(() => {
-        flatListRef.current?.scrollToEnd({ animated: true });
+        flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
       }, 50);
     };
 
@@ -326,10 +331,15 @@ export default function ConversationScreen() {
 
     const onStreakUpdate = (payload: any) => {
       if (payload?.matchId === matchInfo?.id || payload?.conversationId === conversationId) {
+        const isInactive = payload.status === "inactive" || payload.dayStreak === 0 || payload.streak === 0;
+        const streak = isInactive ? 0 : (payload.dayStreak ?? payload.streak ?? convStreak);
+        const activeToday = isInactive ? false : (payload.streakActiveToday ?? true);
+        setConvStreak(streak);
+        setConvStreakActiveToday(activeToday);
         setMatchInfo((prev: any) => ({
           ...prev,
-          dayStreak: payload.dayStreak ?? prev?.dayStreak,
-          streakActiveToday: true,
+          dayStreak: streak,
+          streakActiveToday: activeToday,
         }));
       }
     };
@@ -362,7 +372,29 @@ export default function ConversationScreen() {
       socket.off("matchmaking:chat_expired", onMatchEnded);
       socket.off("connect", onConnect);
     };
-  }, [conversationId, accessToken, loadMessages, matchInfo?.id]);
+  }, [conversationId, accessToken, loadMessages, matchInfo?.id, convStreak]);
+
+  // Midnight end-of-day watcher on conversation screen
+  useEffect(() => {
+    let lastDate = new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10);
+    const interval = setInterval(() => {
+      const currentDate = new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10);
+      if (currentDate !== lastDate) {
+        lastDate = currentDate;
+        // Day ended! If streak was not active today, force inactive status
+        if (!isStreakActiveToday) {
+          setConvStreak(0);
+          setConvStreakActiveToday(false);
+          setMatchInfo((prev: any) => ({
+            ...prev,
+            dayStreak: 0,
+            streakActiveToday: false,
+          }));
+        }
+      }
+    }, 30_000);
+    return () => clearInterval(interval);
+  }, [isStreakActiveToday]);
 
   // ── Send message (Optimistic UI — 0ms instant display) ───────────────
   const handleSend = useCallback(
@@ -389,9 +421,9 @@ export default function ConversationScreen() {
       // 1. Immediately display message on screen (0ms delay)
       setMessages((prev) => [...prev, optimisticMsg]);
 
-      // 2. Immediately scroll to bottom
+      // 2. Immediately scroll to bottom (offset 0 in inverted list)
       requestAnimationFrame(() => {
-        flatListRef.current?.scrollToEnd({ animated: true });
+        flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
       });
 
       // 3. Send to server in background
@@ -645,7 +677,7 @@ export default function ConversationScreen() {
 
 
                 {/* Streak badge placed right next to active ally badge */}
-                {(matchInfo?.dayStreak ?? 0) > 0 && (
+                {(convStreak || matchInfo?.dayStreak || 0) > 0 && (
                   <View
                     style={{
                       flexDirection: "row",
@@ -665,7 +697,7 @@ export default function ConversationScreen() {
                         color: isStreakActiveToday ? "#eb5600" : "#9CA3AF",
                       }}
                     >
-                      {matchInfo?.dayStreak}
+                      {(convStreak || matchInfo?.dayStreak || 0)}d
                     </Text>
                   </View>
                 )}
@@ -710,7 +742,7 @@ export default function ConversationScreen() {
                 </Text>
 
 
-                {(matchInfo?.dayStreak ?? 0) > 0 && (
+                {(convStreak || matchInfo?.dayStreak || 0) > 0 && (
                   <View
                     style={{
                       flexDirection: "row",
@@ -730,7 +762,7 @@ export default function ConversationScreen() {
                         color: isStreakActiveToday ? "#eb5600" : "#9CA3AF",
                       }}
                     >
-                      {matchInfo?.dayStreak}
+                      {(convStreak || matchInfo?.dayStreak || 0)}d
                     </Text>
                   </View>
                 )}
@@ -813,74 +845,73 @@ export default function ConversationScreen() {
         )}
 
         {/* ── Messages list ────────────────────────────────────────────────── */}
-        <FlatList
-          ref={flatListRef}
-          data={messages}
-          style={{ flex: 1 }}
-          keyExtractor={(item, index) => (item.id ? `${item.id}-${index}` : `msg-${index}`)}
-          initialNumToRender={15}
-          maxToRenderPerBatch={10}
-          windowSize={10}
-          removeClippedSubviews={Platform.OS === "android"}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="interactive"
-          contentContainerStyle={{
-            paddingVertical: 12,
-            flexGrow: 1,
-            justifyContent: messages.length === 0 ? "center" : "flex-end",
-          }}
-          extraData={messages}
-          renderItem={({ item, index }) => {
-            const prev = index > 0 ? messages[index - 1] : null;
-            const next = index < messages.length - 1 ? messages[index + 1] : null;
-            const hasPrev = canGroupMessages(item, prev);
-            const hasNext = canGroupMessages(item, next);
+        <KeyboardGestureArea style={{ flex: 1 }} interpolator="ios">
+          <FlatList
+            ref={flatListRef}
+            data={invertedMessages}
+            style={{ flex: 1 }}
+            keyExtractor={(item, index) => (item.id ? `${item.id}-${index}` : `msg-${index}`)}
+            initialNumToRender={15}
+            maxToRenderPerBatch={10}
+            windowSize={10}
+            removeClippedSubviews={Platform.OS === "android"}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="interactive"
+            inverted
+            contentContainerStyle={{
+              paddingVertical: 12,
+            }}
+            extraData={invertedMessages}
+            renderItem={({ item, index }) => {
+              // Inverted list: index 0 is the newest message
+              // index - 1 is newer chronologically
+              // index + 1 is older chronologically
+              const older = index < invertedMessages.length - 1 ? invertedMessages[index + 1] : null;
+              const newer = index > 0 ? invertedMessages[index - 1] : null;
+              const hasOlder = canGroupMessages(item, older);
+              const hasNewer = canGroupMessages(item, newer);
 
-            let groupPosition: MessageGroupPosition = "single";
-            if (!hasPrev && hasNext) {
-              groupPosition = "first";
-            } else if (hasPrev && hasNext) {
-              groupPosition = "middle";
-            } else if (hasPrev && !hasNext) {
-              groupPosition = "last";
+              let groupPosition: MessageGroupPosition = "single";
+              if (!hasOlder && hasNewer) {
+                groupPosition = "first";
+              } else if (hasOlder && hasNewer) {
+                groupPosition = "middle";
+              } else if (hasOlder && !hasNewer) {
+                groupPosition = "last";
+              }
+
+              const isMine = item.sender_id === user?.id;
+              const partnerDisplayName = isAnonymous
+                ? (matchInfo?.partnerAlias || prefillName || "Anonymous Ally")
+                : (otherProfile?.username || otherProfile?.full_name || prefillName || "User");
+              const senderName = isMine ? "Me" : partnerDisplayName;
+
+              return (
+                <SwipeableChatBubble
+                  message={item}
+                  isMine={isMine}
+                  groupPosition={groupPosition}
+                  senderName={senderName}
+                  onLongPress={handleLongPress}
+                  onReply={(msg) => setReplyTo(msg)}
+                  onRetry={handleRetry}
+                />
+              );
+            }}
+            ListEmptyComponent={
+              <View style={{ alignItems: "center", padding: 32, transform: [{ scaleY: -1 }] }}>
+                <Text style={{ fontSize: 14, color: "#9CA3AF", textAlign: "center" }}>
+                  Say hello! 👋{"\n"}Start the conversation.
+                </Text>
+              </View>
             }
-
-            const isMine = item.sender_id === user?.id;
-            const partnerDisplayName = isAnonymous
-              ? (matchInfo?.partnerAlias || prefillName || "Anonymous Ally")
-              : (otherProfile?.username || otherProfile?.full_name || prefillName || "User");
-            const senderName = isMine ? "Me" : partnerDisplayName;
-
-            return (
-              <SwipeableChatBubble
-                message={item}
-                isMine={isMine}
-                groupPosition={groupPosition}
-                senderName={senderName}
-                onLongPress={handleLongPress}
-                onReply={(msg) => setReplyTo(msg)}
-                onRetry={handleRetry}
-              />
-            );
-          }}
-          ListEmptyComponent={
-            <View style={{ alignItems: "center", padding: 32 }}>
-              <Text style={{ fontSize: 14, color: "#9CA3AF", textAlign: "center" }}>
-                Say hello! 👋{"\n"}Start the conversation.
-              </Text>
-            </View>
-          }
-          onContentSizeChange={() => {
-            if (messages.length > 0) {
-              flatListRef.current?.scrollToEnd({ animated: false });
-            }
-          }}
-        />
+          />
+        </KeyboardGestureArea>
 
         {/* ── Input ────────────────────────────────────────────────────────── */}
         <View
           style={{
-            paddingBottom: isKeyboardVisible ? 0 : Math.max(insets.bottom, 8),
+            paddingBottom: Math.max(insets.bottom, 8),
             backgroundColor: "#FFFFFF",
             zIndex: 20,
           }}

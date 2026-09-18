@@ -40,7 +40,7 @@ export function UpdateModal({
 
   if (!versionInfo) return null;
 
-  const downloadUrl = versionInfo.downloadUrl || 'https://ally-jis.xyz/download';
+  const downloadUrl = versionInfo.downloadUrl || 'https://ally-jis.com/download';
 
   // Target URL: prefer direct Cloudflare R2 APK link if available, fallback to download page
   const targetApkUrl = versionInfo.apkUrl || downloadUrl;
@@ -54,7 +54,7 @@ export function UpdateModal({
         if (canOpen) {
           await Linking.openURL(targetApkUrl);
         } else {
-          await Linking.openURL('https://ally-jis.xyz/download');
+          await Linking.openURL('https://ally-jis.com/download');
         }
       } catch (err) {
         console.warn('Failed to open download URL:', err);
@@ -111,7 +111,7 @@ export function UpdateModal({
       if (canOpen) {
         await Linking.openURL(targetApkUrl);
       } else {
-        await Linking.openURL('https://ally-jis.xyz/download');
+        await Linking.openURL('https://ally-jis.com/download');
       }
     } catch (err) {
       console.warn('Failed to open URL:', err);

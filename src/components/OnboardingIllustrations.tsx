@@ -1,10 +1,11 @@
 /**
- * OnboardingIllustrations.tsx
- * SVG inline illustrations for registration steps and OTP verification.
- * Uses react-native-svg for crisp, scalable, no-API vector art.
+ * OnboardingIllustrations.tsx (Mobile)
+ * SVG inline illustrations for registration steps, email selection, ID verification, and OTP.
+ * Supports easy-to-plug-in custom images (via config or props) with automatic fallback
+ * to the crisp, scalable, hardcoded vector SVG if no image is provided or on image load error.
  */
-import React from "react";
-import { View, StyleSheet } from "react-native";
+import React, { useState, useEffect } from "react";
+import { View, StyleSheet, Image, type ImageSourcePropType } from "react-native";
 import Svg, {
   Circle,
   Ellipse,
@@ -20,6 +21,21 @@ import Svg, {
   Stop,
   ClipPath,
 } from "react-native-svg";
+import {
+  ONBOARDING_ILLUSTRATION_ASSETS,
+  setOnboardingIllustrations,
+  setOnboardingIllustration,
+  type OnboardingIllustrationAssets,
+  type IllustrationSource,
+} from "@/config/onboardingIllustrations";
+
+export {
+  ONBOARDING_ILLUSTRATION_ASSETS,
+  setOnboardingIllustrations,
+  setOnboardingIllustration,
+  type OnboardingIllustrationAssets,
+  type IllustrationSource,
+};
 
 // ── Shared blob container ───────────────────────────────────────────
 
@@ -42,12 +58,67 @@ export function IllustrationBlob({ size = 220, color = "#E8F5EE", children }: Bl
   );
 }
 
+// ── Pluggable Image Wrapper with Automatic Vector Fallback ──────────
+
+interface PluggableIllustrationProps {
+  size?: number;
+  color?: string;
+  imageSource?: IllustrationSource;
+  configKey: keyof OnboardingIllustrationAssets;
+  children: React.ReactNode;
+}
+
+export function PluggableIllustration({
+  size = 220,
+  color = "#E8F5EE",
+  imageSource,
+  configKey,
+  children,
+}: PluggableIllustrationProps) {
+  const [hasError, setHasError] = useState(false);
+  const rawSource = imageSource !== undefined ? imageSource : ONBOARDING_ILLUSTRATION_ASSETS[configKey];
+
+  useEffect(() => {
+    setHasError(false);
+  }, [rawSource]);
+
+  // If a custom image source is configured and hasn't errored, display it
+  if (rawSource && !hasError) {
+    const resolvedSource = typeof rawSource === "string" ? { uri: rawSource } : rawSource;
+    return (
+      <IllustrationBlob size={size} color={color}>
+        <Image
+          source={resolvedSource}
+          style={{ width: size * 0.85, height: size * 0.85, resizeMode: "contain" }}
+          onError={() => setHasError(true)}
+        />
+      </IllustrationBlob>
+    );
+  }
+
+  // Fallback: render the crisp hardcoded vector SVG
+  return (
+    <IllustrationBlob size={size} color={color}>
+      {children}
+    </IllustrationBlob>
+  );
+}
+
+export interface IllustrationProps {
+  size?: number;
+  imageSource?: IllustrationSource;
+}
+
 // ── Step 1: Basic Info — Profile card with user/email/lock ──────────
 
-export function BasicInfoIllustration({ size = 200 }: { size?: number }) {
-  const s = size / 200;
+export function BasicInfoIllustration({ size = 200, imageSource }: IllustrationProps) {
   return (
-    <IllustrationBlob size={size} color="#E8F5EE">
+    <PluggableIllustration
+      size={size}
+      color="#E8F5EE"
+      imageSource={imageSource}
+      configKey="basicInfo"
+    >
       <Svg width={size * 0.75} height={size * 0.75} viewBox="0 0 150 150">
         {/* Profile card */}
         <Rect x="20" y="30" width="110" height="95" rx="14" fill="#FFFFFF" opacity="0.95" />
@@ -82,15 +153,20 @@ export function BasicInfoIllustration({ size = 200 }: { size?: number }) {
         <Rect x="118" y="118" width="24" height="16" rx="4" fill="#1A6B3C" opacity="0.9" />
         <Path d="M118 122 L130 130 L142 122" stroke="#FFFFFF" strokeWidth="1.5" fill="none" />
       </Svg>
-    </IllustrationBlob>
+    </PluggableIllustration>
   );
 }
 
 // ── Step 2: Academic — Graduation cap + campus building ──────────────
 
-export function AcademicIllustration({ size = 200 }: { size?: number }) {
+export function AcademicIllustration({ size = 200, imageSource }: IllustrationProps) {
   return (
-    <IllustrationBlob size={size} color="#D1FAE5">
+    <PluggableIllustration
+      size={size}
+      color="#D1FAE5"
+      imageSource={imageSource}
+      configKey="academic"
+    >
       <Svg width={size * 0.75} height={size * 0.75} viewBox="0 0 150 150">
         {/* Building */}
         <Rect x="30" y="65" width="90" height="70" rx="4" fill="#FFFFFF" opacity="0.9" />
@@ -125,15 +201,20 @@ export function AcademicIllustration({ size = 200 }: { size?: number }) {
         <Circle cx="20" cy="80" r="5" fill="#6EE7B7" opacity="0.7" />
         <Circle cx="25" cy="68" r="3" fill="#A7F3D0" />
       </Svg>
-    </IllustrationBlob>
+    </PluggableIllustration>
   );
 }
 
 // ── Step 3: Interests — Floating colored interest tags ───────────────
 
-export function InterestsIllustration({ size = 200 }: { size?: number }) {
+export function InterestsIllustration({ size = 200, imageSource }: IllustrationProps) {
   return (
-    <IllustrationBlob size={size} color="#FEF3C7">
+    <PluggableIllustration
+      size={size}
+      color="#FEF3C7"
+      imageSource={imageSource}
+      configKey="interests"
+    >
       <Svg width={size * 0.75} height={size * 0.75} viewBox="0 0 150 150">
         {/* Center person */}
         <Circle cx="75" cy="85" r="18" fill="#FBBF24" opacity="0.3" />
@@ -172,15 +253,20 @@ export function InterestsIllustration({ size = 200 }: { size?: number }) {
         <Line x1="58" y1="110" x2="68" y2="98" stroke="#CFFAFE" strokeWidth="1.5" strokeDasharray="3,2" />
         <Line x1="94" y1="110" x2="82" y2="98" stroke="#FFEDD5" strokeWidth="1.5" strokeDasharray="3,2" />
       </Svg>
-    </IllustrationBlob>
+    </PluggableIllustration>
   );
 }
 
 // ── Step 4: Avatar & Bio — Emoji floating palette ────────────────────
 
-export function AvatarIllustration({ size = 200 }: { size?: number }) {
+export function AvatarIllustration({ size = 200, imageSource }: IllustrationProps) {
   return (
-    <IllustrationBlob size={size} color="#FCE7F3">
+    <PluggableIllustration
+      size={size}
+      color="#FCE7F3"
+      imageSource={imageSource}
+      configKey="avatar"
+    >
       <Svg width={size * 0.75} height={size * 0.75} viewBox="0 0 150 150">
         {/* Large center phone */}
         <Rect x="48" y="25" width="54" height="96" rx="12" fill="#FFFFFF" opacity="0.95" />
@@ -217,15 +303,20 @@ export function AvatarIllustration({ size = 200 }: { size?: number }) {
         {/* Sparkle */}
         <Path d="M112 18 L113.5 22 L118 22 L114.5 24.5 L116 28.5 L112 26 L108 28.5 L109.5 24.5 L106 22 L110.5 22 Z" fill="#FBBF24" />
       </Svg>
-    </IllustrationBlob>
+    </PluggableIllustration>
   );
 }
 
 // ── OTP Verification: Phone + Floating digits ────────────────────────
 
-export function OtpIllustration({ size = 200 }: { size?: number }) {
+export function OtpIllustration({ size = 200, imageSource }: IllustrationProps) {
   return (
-    <IllustrationBlob size={size} color="#E8F5EE">
+    <PluggableIllustration
+      size={size}
+      color="#E8F5EE"
+      imageSource={imageSource}
+      configKey="otp"
+    >
       <Svg width={size * 0.75} height={size * 0.75} viewBox="0 0 150 150">
         {/* Phone */}
         <Rect x="42" y="20" width="66" height="108" rx="14" fill="#FFFFFF" opacity="0.95" />
@@ -267,14 +358,19 @@ export function OtpIllustration({ size = 200 }: { size?: number }) {
         <Circle cx="130" cy="68" r="12" fill="#1A6B3C" />
         <Path d="M124 68 L128 72 L136 64" stroke="#FFFFFF" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" fill="none" />
       </Svg>
-    </IllustrationBlob>
+    </PluggableIllustration>
   );
 }
 
 // ── Email Selection: University & Personal email illustration ────────
-export function EmailSelectIllustration({ size = 180 }: { size?: number }) {
+export function EmailSelectIllustration({ size = 180, imageSource }: IllustrationProps) {
   return (
-    <IllustrationBlob size={size} color="#E8F5EE">
+    <PluggableIllustration
+      size={size}
+      color="#E8F5EE"
+      imageSource={imageSource}
+      configKey="emailSelect"
+    >
       <Svg width={size * 0.75} height={size * 0.75} viewBox="0 0 150 150">
         {/* Background card */}
         <Rect x="20" y="32" width="110" height="86" rx="14" fill="#FFFFFF" opacity="0.95" />
@@ -298,14 +394,19 @@ export function EmailSelectIllustration({ size = 180 }: { size?: number }) {
         <Circle cx="28" cy="44" r="4" fill="#34D399" />
         <Circle cx="126" cy="40" r="3" fill="#6EE7B7" />
       </Svg>
-    </IllustrationBlob>
+    </PluggableIllustration>
   );
 }
 
 // ── Student ID Upload: ID Card scanner with camera viewfinder ────────
-export function IdUploadIllustration({ size = 180 }: { size?: number }) {
+export function IdUploadIllustration({ size = 180, imageSource }: IllustrationProps) {
   return (
-    <IllustrationBlob size={size} color="#E8F5EE">
+    <PluggableIllustration
+      size={size}
+      color="#E8F5EE"
+      imageSource={imageSource}
+      configKey="idUpload"
+    >
       <Svg width={size * 0.75} height={size * 0.75} viewBox="0 0 150 150">
         {/* Scanner Viewfinder corners */}
         <Path d="M18 35 L18 22 L31 22" stroke="#1A6B3C" strokeWidth="2.5" strokeLinecap="round" fill="none" />
@@ -342,8 +443,62 @@ export function IdUploadIllustration({ size = 180 }: { size?: number }) {
         <Circle cx="120" cy="40" r="14" fill="#FBBF24" />
         <Path d="M116 38 L120 35 L124 38 L124 43 Q120 47 116 43 Z" fill="#1A6B3C" />
       </Svg>
-    </IllustrationBlob>
+    </PluggableIllustration>
   );
+}
+
+// ── Unified Onboarding Step Illustration Component ──────────────────
+
+export type OnboardingIllustrationType =
+  | "email-select"
+  | "emailSelect"
+  | "basic-info"
+  | "basicInfo"
+  | "academic"
+  | "interests"
+  | "avatar"
+  | "id-upload"
+  | "idUpload"
+  | "otp"
+  | 1
+  | 2
+  | 3
+  | 4;
+
+export function OnboardingStepIllustration({
+  step,
+  size = 200,
+  imageSource,
+}: {
+  step: OnboardingIllustrationType;
+  size?: number;
+  imageSource?: IllustrationSource;
+}) {
+  switch (step) {
+    case "email-select":
+    case "emailSelect":
+      return <EmailSelectIllustration size={size} imageSource={imageSource} />;
+    case "basic-info":
+    case "basicInfo":
+    case 1:
+      return <BasicInfoIllustration size={size} imageSource={imageSource} />;
+    case "academic":
+    case 2:
+      return <AcademicIllustration size={size} imageSource={imageSource} />;
+    case "interests":
+    case 3:
+      return <InterestsIllustration size={size} imageSource={imageSource} />;
+    case "avatar":
+    case 4:
+      return <AvatarIllustration size={size} imageSource={imageSource} />;
+    case "id-upload":
+    case "idUpload":
+      return <IdUploadIllustration size={size} imageSource={imageSource} />;
+    case "otp":
+      return <OtpIllustration size={size} imageSource={imageSource} />;
+    default:
+      return <BasicInfoIllustration size={size} imageSource={imageSource} />;
+  }
 }
 
 const styles = StyleSheet.create({

@@ -250,6 +250,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
+    width: "100%",
+    maxWidth: 580,
+    alignSelf: "center",
     paddingHorizontal: 20,
     paddingBottom: 4,
     height: 48,
@@ -347,6 +350,8 @@ const styles = StyleSheet.create({
   // Bottom CTA container
   ctaArea: {
     width: "100%",
+    maxWidth: 580,
+    alignSelf: "center",
     paddingHorizontal: 32,
     paddingTop: 8,
     alignItems: "center",

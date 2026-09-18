@@ -80,7 +80,7 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
           setShowUpdateModal(true);
           const otaInfo: VersionInfo = {
             version: 'OTA Update Available',
-            downloadUrl: 'https://ally-jis.xyz/download',
+            downloadUrl: 'https://ally-jis.com/download',
             releaseNotes: 'An instant Over-The-Air performance and feature patch is ready to download.',
           };
           setVersionInfo(otaInfo);
@@ -88,8 +88,8 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
         }
       }
 
-      // 2. Check domain version manifest (ally-jis.xyz/version.json)
-      const endpoint = 'https://ally-jis.xyz/version.json';
+      // 2. Check domain version manifest (ally-jis.com/version.json)
+      const endpoint = 'https://ally-jis.com/version.json';
       const response = await fetch(endpoint, { cache: 'no-store' });
       if (!response.ok) {
         throw new Error(`Failed to fetch version info (${response.status})`);

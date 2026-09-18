@@ -31,6 +31,7 @@ import {
   Trash2,
 } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { KeyboardGestureArea } from "react-native-keyboard-controller";
 import { useKeyboard } from "@/hooks/useKeyboard";
 import { KeyboardHugView } from "@/components/KeyboardHugView";
 import { resolveImageUri, UserAvatar } from "@/components/UserAvatar";
@@ -511,71 +512,75 @@ export default function MediaPreviewScreen() {
                   <ActivityIndicator color="#1A6B3C" size="small" />
                 </View>
               ) : (
-                <FlatList
-                  data={comments}
-                  keyExtractor={(item, idx) => `${item.id}-${idx}`}
-                  contentContainerStyle={styles.commentsListContent}
-                  renderItem={({ item }) => {
-                    const isReply = Boolean(item.parent_comment_id);
-                    return (
-                      <View
-                        style={[
-                          styles.commentItem,
-                          isReply && styles.commentItemReply,
-                        ]}
-                      >
-                        <UserAvatar avatar={item.author?.avatar_url} size="sm" />
-                        <View style={{ flex: 1 }}>
-                          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                            <Text style={styles.commentAuthor}>
-                              @{item.author?.username || "User"}
-                            </Text>
-                            {isReply && (
-                              <Text style={styles.replyBadgeText}>· reply</Text>
-                            )}
-                          </View>
-                          <Text style={styles.commentBody}>{item.content}</Text>
-
-                          {/* Comment Actions: Like & Reply */}
-                          <View style={styles.commentActionRow}>
-                            <Pressable
-                              onPress={() => handleToggleCommentLike(item)}
-                              style={styles.commentActionBtn}
-                              hitSlop={6}
-                            >
-                              <Heart
-                                size={13}
-                                color={item.liked_by_me ? "#EF4444" : "#9CA3AF"}
-                                fill={item.liked_by_me ? "#EF4444" : "none"}
-                              />
-                              <Text
-                                style={[
-                                  styles.commentActionText,
-                                  item.liked_by_me && { color: "#EF4444", fontWeight: "700" },
-                                ]}
-                              >
-                                {item.likes_count > 0 ? item.likes_count : "Like"}
+                <KeyboardGestureArea style={{ flex: 1 }} interpolator="ios">
+                  <FlatList
+                    data={comments}
+                    keyExtractor={(item, idx) => `${item.id}-${idx}`}
+                    keyboardShouldPersistTaps="handled"
+                    keyboardDismissMode="interactive"
+                    contentContainerStyle={styles.commentsListContent}
+                    renderItem={({ item }) => {
+                      const isReply = Boolean(item.parent_comment_id);
+                      return (
+                        <View
+                          style={[
+                            styles.commentItem,
+                            isReply && styles.commentItemReply,
+                          ]}
+                        >
+                          <UserAvatar avatar={item.author?.avatar_url} size="sm" />
+                          <View style={{ flex: 1 }}>
+                            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                              <Text style={styles.commentAuthor}>
+                                @{item.author?.username || "User"}
                               </Text>
-                            </Pressable>
+                              {isReply && (
+                                <Text style={styles.replyBadgeText}>· reply</Text>
+                              )}
+                            </View>
+                            <Text style={styles.commentBody}>{item.content}</Text>
 
-                            <Pressable
-                              onPress={() => setReplyingToComment(item)}
-                              style={styles.commentActionBtn}
-                              hitSlop={6}
-                            >
-                              <Text style={styles.commentActionText}>Reply</Text>
-                            </Pressable>
+                            {/* Comment Actions: Like & Reply */}
+                            <View style={styles.commentActionRow}>
+                              <Pressable
+                                onPress={() => handleToggleCommentLike(item)}
+                                style={styles.commentActionBtn}
+                                hitSlop={6}
+                              >
+                                <Heart
+                                  size={13}
+                                  color={item.liked_by_me ? "#EF4444" : "#9CA3AF"}
+                                  fill={item.liked_by_me ? "#EF4444" : "none"}
+                                />
+                                <Text
+                                  style={[
+                                    styles.commentActionText,
+                                    item.liked_by_me && { color: "#EF4444", fontWeight: "700" },
+                                  ]}
+                                >
+                                  {item.likes_count > 0 ? item.likes_count : "Like"}
+                                </Text>
+                              </Pressable>
+
+                              <Pressable
+                                onPress={() => setReplyingToComment(item)}
+                                style={styles.commentActionBtn}
+                                hitSlop={6}
+                              >
+                                <Text style={styles.commentActionText}>Reply</Text>
+                              </Pressable>
+                            </View>
                           </View>
                         </View>
-                      </View>
-                    );
-                  }}
-                  ListEmptyComponent={
-                    <Text style={styles.emptyCommentsText}>
-                      No comments yet. Be the first to comment!
-                    </Text>
-                  }
-                />
+                      );
+                    }}
+                    ListEmptyComponent={
+                      <Text style={styles.emptyCommentsText}>
+                        No comments yet. Be the first to comment!
+                      </Text>
+                    }
+                  />
+                </KeyboardGestureArea>
               )}
 
               {/* Replying Banner */}

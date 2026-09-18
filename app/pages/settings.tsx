@@ -103,7 +103,7 @@ export default function SettingsScreen() {
         <SettingsRow
           icon={Shield}
           label="Privacy Policy"
-          onPress={() => Linking.openURL("https://ally-jis.xyz/privacy")}
+          onPress={() => Linking.openURL("https://ally-jis.com/privacy")}
         />
 
         {/* System & Updates */}

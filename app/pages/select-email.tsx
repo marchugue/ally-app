@@ -41,8 +41,9 @@ export default function SelectEmailScreen() {
     <View style={[styles.root, { paddingTop: insets.top, paddingBottom: Math.max(insets.bottom, 20) }]}>
       <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
-      {/* Top Bar */}
-      <View style={styles.topBar}>
+      <View style={styles.container}>
+        {/* Top Bar */}
+        <View style={styles.topBar}>
         <Pressable
           onPress={handleBack}
           hitSlop={14}
@@ -154,6 +155,7 @@ export default function SelectEmailScreen() {
           className="w-full"
         />
       </View>
+      </View>
     </View>
   );
 }
@@ -162,6 +164,12 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: "#FFFFFF",
+  },
+  container: {
+    flex: 1,
+    width: "100%",
+    maxWidth: 580,
+    alignSelf: "center",
   },
   topBar: {
     flexDirection: "row",

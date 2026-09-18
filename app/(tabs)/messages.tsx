@@ -12,7 +12,7 @@ import {
 } from "react-native";
 import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
 import { router, useFocusEffect } from "expo-router";
-import { Search, X, MessageCircle, Trash2, Drama } from "lucide-react-native";
+import { Search, X, MessageCircle, Trash2, Drama, Flame } from "lucide-react-native";
 import { ScreenHeader } from "@/components/ScreenHeader";
 import { UserAvatar } from "@/components/UserAvatar";
 import { AnonymousAvatar } from "@/components/AnonymousAvatar";
@@ -35,6 +35,9 @@ function getParticipantInfo(conv: any, myId: string) {
     conv.variant ? conv.variant !== "regular" : (conv.is_anonymous || conv.type === "anonymous")
   );
 
+  const dayStreak = conv.matchInfo?.dayStreak ?? conv.dayStreak ?? 0;
+  const streakActiveToday = Boolean(conv.matchInfo?.streakActiveToday ?? conv.streakActiveToday ?? false);
+
   if (isAnonymous) {
     return {
       participantId: conv.matchInfo?.id || conv.matchInfo?.matchId || conv.id || "anonymous",
@@ -42,7 +45,8 @@ function getParticipantInfo(conv: any, myId: string) {
       participantAvatar: conv.matchInfo?.partnerAvatar || "fox",
       isAnonymous: true,
       stage: conv.matchInfo?.stage ?? 0,
-      dayStreak: conv.matchInfo?.dayStreak ?? conv.dayStreak ?? 0,
+      dayStreak,
+      streakActiveToday,
       ended: conv.variant === "anonymous_ended" || Boolean(conv.matchInfo?.ended),
     };
   }
@@ -62,6 +66,8 @@ function getParticipantInfo(conv: any, myId: string) {
     participantName: profile?.full_name || (profile?.username ? `@${profile.username}` : "Student"),
     participantAvatar: profile?.avatar_url || null,
     isAnonymous: false,
+    dayStreak,
+    streakActiveToday,
   };
 }
 
@@ -312,10 +318,29 @@ function SwipeableRow({
                 {info.participantName}
               </Text>
               {info.isAnonymous && <Drama size={13} color="#1A6B3C" />}
-              {info.isAnonymous && info.dayStreak > 0 && (
-                <Text style={{ fontSize: 11, color: "#EA580C", fontWeight: "700" }}>
-                  🔥{info.dayStreak}d
-                </Text>
+              {info.dayStreak > 0 && (
+                <View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 2,
+                    backgroundColor: info.streakActiveToday ? "rgba(235, 86, 0, 0.1)" : "#F3F4F6",
+                    paddingHorizontal: 5,
+                    paddingVertical: 1,
+                    borderRadius: 6,
+                  }}
+                >
+                  <Flame size={11} color={info.streakActiveToday ? "#eb5600" : "#9CA3AF"} />
+                  <Text
+                    style={{
+                      fontSize: 11,
+                      fontWeight: "700",
+                      color: info.streakActiveToday ? "#eb5600" : "#9CA3AF",
+                    }}
+                  >
+                    {info.dayStreak}d
+                  </Text>
+                </View>
               )}
             </View>
             <Text
@@ -464,14 +489,70 @@ export default function MessagesScreen() {
       void refreshOnlineUsers();
     };
 
+    const onStreakUpdated = (payload: any) => {
+      setConversations((prev) =>
+        prev.map((c) => {
+          const isMatch =
+            (payload?.conversationId && c.id === payload.conversationId) ||
+            (payload?.matchId && c.matchInfo?.matchId === payload.matchId);
+          if (!isMatch) return c;
+          const isInactive = payload.status === "inactive" || payload.dayStreak === 0 || payload.streak === 0;
+          const streak = isInactive ? 0 : (payload.dayStreak ?? payload.streak ?? c.dayStreak ?? 0);
+          const activeToday = isInactive ? false : (payload.streakActiveToday ?? true);
+          return {
+            ...c,
+            dayStreak: streak,
+            streakActiveToday: activeToday,
+            matchInfo: c.matchInfo
+              ? { ...c.matchInfo, dayStreak: streak, streakActiveToday: activeToday }
+              : c.matchInfo,
+          };
+        })
+      );
+      void loadConversations(true);
+    };
+
     socket.on("conversation:message_new", onMessageNew);
+    socket.on("conversation:streak_updated", onStreakUpdated);
+    socket.on("matchmaking:streak_update", onStreakUpdated);
     socket.on("connect", onConnect);
 
     return () => {
       socket.off("conversation:message_new", onMessageNew);
+      socket.off("conversation:streak_updated", onStreakUpdated);
+      socket.off("matchmaking:streak_update", onStreakUpdated);
       socket.off("connect", onConnect);
     };
   }, [accessToken, loadConversations, refreshOnlineUsers]);
+
+  // Midnight end-of-day watcher on mobile
+  useEffect(() => {
+    let lastDate = new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10);
+    const interval = setInterval(() => {
+      const currentDate = new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10);
+      if (currentDate !== lastDate) {
+        lastDate = currentDate;
+        // Day has ended! Reset unactivated streaks
+        setConversations((prev) =>
+          prev.map((c) => {
+            if (c.dayStreak && !c.streakActiveToday && !c.matchInfo?.streakActiveToday) {
+              return {
+                ...c,
+                dayStreak: 0,
+                streakActiveToday: false,
+                matchInfo: c.matchInfo
+                  ? { ...c.matchInfo, dayStreak: 0, streakActiveToday: false }
+                  : c.matchInfo,
+              };
+            }
+            return c;
+          })
+        );
+        void loadConversations(true);
+      }
+    }, 30_000);
+    return () => clearInterval(interval);
+  }, [loadConversations]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);

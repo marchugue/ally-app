@@ -3,7 +3,6 @@ import {
   View,
   Text,
   TextInput,
-  KeyboardAvoidingView,
   Platform,
   ScrollView,
   Pressable,
@@ -96,9 +95,8 @@ export default function ForgotPasswordScreen() {
   }
 
   return (
-    <KeyboardAvoidingView
+    <View
       className="flex-1 bg-background"
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       <StatusBar barStyle="dark-content" />
       <ScrollView
@@ -326,6 +324,6 @@ export default function ForgotPasswordScreen() {
           </View>
         )}
       </ScrollView>
-    </KeyboardAvoidingView>
+    </View>
   );
 }

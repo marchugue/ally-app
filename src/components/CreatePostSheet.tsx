@@ -12,6 +12,7 @@ import {
   Platform,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { KeyboardGestureArea } from "react-native-keyboard-controller";
 import { useKeyboard } from "@/hooks/useKeyboard";
 import { KeyboardHugView } from "@/components/KeyboardHugView";
 import { X, Image as ImageIcon, Globe, Users } from "lucide-react-native";
@@ -173,71 +174,78 @@ export function CreatePostSheet({
         ) : null}
 
         {/* Content & Media Previews */}
-        <ScrollView style={{ flex: 1 }} contentContainerStyle={{ padding: 16 }}>
-          <TextInput
-            value={content}
-            onChangeText={(t) => setContent(t.slice(0, MAX_LENGTH))}
-            placeholder="What's happening on campus?"
-            placeholderTextColor="#9CA3AF"
-            multiline
-            autoFocus
-            style={{
-              minHeight: 120,
-              fontSize: 17,
-              color: "#111827",
-              lineHeight: 24,
-              textAlignVertical: "top",
-            }}
-          />
-
-          {/* Attached Images Grid */}
-          {selectedImages.length > 0 && (
-            <View
+        <KeyboardGestureArea style={{ flex: 1 }} interpolator="ios">
+          <ScrollView
+            style={{ flex: 1 }}
+            contentContainerStyle={{ padding: 16 }}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="interactive"
+          >
+            <TextInput
+              value={content}
+              onChangeText={(t) => setContent(t.slice(0, MAX_LENGTH))}
+              placeholder="What's happening on campus?"
+              placeholderTextColor="#9CA3AF"
+              multiline
+              autoFocus
               style={{
-                flexDirection: "row",
-                flexWrap: "wrap",
-                gap: 10,
-                marginTop: 16,
+                minHeight: 120,
+                fontSize: 17,
+                color: "#111827",
+                lineHeight: 24,
+                textAlignVertical: "top",
               }}
-            >
-              {selectedImages.map((file, index) => (
-                <View
-                  key={`${file.uri}-${index}`}
-                  style={{
-                    width: 80,
-                    height: 80,
-                    borderRadius: 12,
-                    overflow: "hidden",
-                    position: "relative",
-                  }}
-                >
-                  <Image
-                    source={{ uri: file.uri }}
-                    style={{ width: "100%", height: "100%" }}
-                    resizeMode="cover"
-                  />
-                  <Pressable
-                    onPress={() => handleRemoveImage(index)}
-                    hitSlop={6}
+            />
+
+            {/* Attached Images Grid */}
+            {selectedImages.length > 0 && (
+              <View
+                style={{
+                  flexDirection: "row",
+                  flexWrap: "wrap",
+                  gap: 10,
+                  marginTop: 16,
+                }}
+              >
+                {selectedImages.map((file, index) => (
+                  <View
+                    key={`${file.uri}-${index}`}
                     style={{
-                      position: "absolute",
-                      top: 4,
-                      right: 4,
-                      backgroundColor: "rgba(0, 0, 0, 0.65)",
+                      width: 80,
+                      height: 80,
                       borderRadius: 12,
-                      width: 22,
-                      height: 22,
-                      alignItems: "center",
-                      justifyContent: "center",
+                      overflow: "hidden",
+                      position: "relative",
                     }}
                   >
-                    <X size={12} color="#FFFFFF" />
-                  </Pressable>
-                </View>
-              ))}
-            </View>
-          )}
-        </ScrollView>
+                    <Image
+                      source={{ uri: file.uri }}
+                      style={{ width: "100%", height: "100%" }}
+                      resizeMode="cover"
+                    />
+                    <Pressable
+                      onPress={() => handleRemoveImage(index)}
+                      hitSlop={6}
+                      style={{
+                        position: "absolute",
+                        top: 4,
+                        right: 4,
+                        backgroundColor: "rgba(0, 0, 0, 0.65)",
+                        borderRadius: 12,
+                        width: 22,
+                        height: 22,
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <X size={12} color="#FFFFFF" />
+                    </Pressable>
+                  </View>
+                ))}
+              </View>
+            )}
+          </ScrollView>
+        </KeyboardGestureArea>
 
         {/* Bottom toolbar */}
         <View

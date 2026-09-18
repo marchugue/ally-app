@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import {
   View,
   Text,
@@ -12,6 +12,7 @@ import {
 import { router, useLocalSearchParams } from "expo-router";
 import { ArrowLeft, Send, Heart } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { KeyboardGestureArea } from "react-native-keyboard-controller";
 import { useKeyboard } from "@/hooks/useKeyboard";
 import { KeyboardHugView } from "@/components/KeyboardHugView";
 import { useAuth } from "@/lib/auth/AuthContext";
@@ -53,6 +54,7 @@ export default function PostDetailScreen() {
   const [commentText, setCommentText] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const { isKeyboardVisible } = useKeyboard();
+  const flatListRef = useRef<FlatList>(null);
 
   const loadData = useCallback(async () => {
     if (!postId || !accessToken) return;
@@ -124,6 +126,9 @@ export default function PostDetailScreen() {
       setPost((prev) =>
         prev ? { ...prev, comments_count: prev.comments_count + 1 } : prev
       );
+      setTimeout(() => {
+        flatListRef.current?.scrollToEnd({ animated: true });
+      }, 100);
     } catch (err) {
       console.warn("Failed to create comment", err);
     } finally {
@@ -187,14 +192,8 @@ export default function PostDetailScreen() {
   }
 
   return (
-    <KeyboardHugView
-      style={{
-        flex: 1,
-        backgroundColor: "#F7F4EF",
-      }}
-      keyboardVerticalOffset={0}
-    >
-      {/* Header */}
+    <View style={{ flex: 1, backgroundColor: "#F7F4EF" }}>
+      {/* Header (pinned to top) */}
       <View
         style={{
           paddingTop: insets.top + 8,
@@ -216,11 +215,22 @@ export default function PostDetailScreen() {
         </Text>
       </View>
 
-      {/* Post + Comments */}
-      <FlatList
-        data={comments}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={{ paddingBottom: 20 }}
+      <KeyboardHugView
+        style={{
+          flex: 1,
+          backgroundColor: "#F7F4EF",
+        }}
+        keyboardVerticalOffset={0}
+      >
+        {/* Post + Comments */}
+        <KeyboardGestureArea style={{ flex: 1 }} interpolator="ios">
+          <FlatList
+            ref={flatListRef}
+            data={comments}
+            keyExtractor={(item) => item.id}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="interactive"
+            contentContainerStyle={{ paddingBottom: 20 }}
         ListHeaderComponent={
           <View>
             <PostCard post={post} onToggleLike={toggleLike} />
@@ -319,6 +329,7 @@ export default function PostDetailScreen() {
           </View>
         }
       />
+      </KeyboardGestureArea>
 
       {/* Comment input */}
       <View
@@ -384,6 +395,7 @@ export default function PostDetailScreen() {
           )}
         </Pressable>
       </View>
-    </KeyboardHugView>
+      </KeyboardHugView>
+    </View>
   );
 }

@@ -52,6 +52,7 @@ export interface Conversation {
   variant?: "regular" | "anonymous" | "anonymous_ended";
   matchInfo?: any;
   dayStreak?: number;
+  streakActiveToday?: boolean;
 }
 
 export interface SendMessagePayload {

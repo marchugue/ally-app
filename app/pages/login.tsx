@@ -2,8 +2,6 @@ import { useState, useEffect } from "react";
 import {
   View,
   Text,
-  KeyboardAvoidingView,
-  Platform,
   ScrollView,
   Pressable,
   StatusBar,
@@ -125,7 +123,7 @@ export default function LoginScreen() {
         </SlideIn>
       </View>
 
-      <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+      <View style={{ flex: 1 }}>
         <SlideIn delay={120} distance={30} style={{ flex: 1, marginTop: -60 }}>
           <ScrollView
             contentContainerStyle={{
@@ -218,7 +216,7 @@ export default function LoginScreen() {
               </View>
           </ScrollView>
         </SlideIn>
-      </KeyboardAvoidingView>
+      </View>
     </View>
   );
 }

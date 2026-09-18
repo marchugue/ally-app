@@ -8,9 +8,9 @@ import {
   TextInput,
   ActivityIndicator,
   Alert,
-  KeyboardAvoidingView,
   Platform,
 } from "react-native";
+import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { X, ChevronLeft, ChevronRight, ShieldAlert, CheckCircle2 } from "lucide-react-native";
 import { COMMUNITY_STANDARDS, ReportCategory, ReportViolation } from "@/constants/communityStandards";
 

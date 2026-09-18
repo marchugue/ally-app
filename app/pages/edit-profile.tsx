@@ -6,7 +6,6 @@ import {
   ScrollView,
   Pressable,
   ActivityIndicator,
-  KeyboardAvoidingView,
   Platform,
   Alert,
 } from "react-native";
@@ -213,9 +212,8 @@ export default function EditProfileScreen() {
   }
 
   return (
-    <KeyboardAvoidingView
+    <View
       style={{ flex: 1, backgroundColor: COLORS.bg }}
-      behavior={Platform.OS === "ios" ? "padding" : undefined}
     >
       {/* ── Header ── */}
       <View
@@ -441,7 +439,7 @@ export default function EditProfileScreen() {
           />
         </View>
       </ScrollView>
-    </KeyboardAvoidingView>
+    </View>
   );
 }
 

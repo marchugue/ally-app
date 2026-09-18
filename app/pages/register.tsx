@@ -5,7 +5,6 @@ import {
   TextInput,
   ScrollView,
   Pressable,
-  KeyboardAvoidingView,
   Platform,
   StatusBar,
   Image,
@@ -133,7 +132,7 @@ By using this platform, you agree to comply with our community standards and ter
 3. Conduct: Treat fellow students with respect. Harassment, bullying, hate speech, or inappropriate media uploads will result in account suspension.
 4. Privacy & Safety: Direct messaging requires mutual connection approval.
 
-Official Terms on Website: https://ally-jis.xyz/terms`;
+Official Terms on Website: https://ally-jis.com/terms`;
 
 const PRIVACY_TEXT = `Privacy Policy for Ally-jis:
 
@@ -142,7 +141,7 @@ const PRIVACY_TEXT = `Privacy Policy for Ally-jis:
 3. Data Safety: We never sell or share your personal data with third-party advertisers. Your information stays inside the CHMSU community.
 4. Account Rights: You can edit your profile details or request account deletion at any time.
 
-Official Policy on Website: https://ally-jis.xyz/privacy`;
+Official Policy on Website: https://ally-jis.com/privacy`;
 
 const STEPS = [
   { num: 1, label: "Basic Info",    icon: User,          hint: "Your identity on the platform" },
@@ -652,9 +651,8 @@ export default function RegisterScreen() {
     <View style={{ flex: 1, backgroundColor: "#FFFFFF" }}>
       <StatusBar barStyle="dark-content" />
 
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+      <View
+        style={{ flex: 1, width: "100%", maxWidth: 620, alignSelf: "center" }}
       >
         <View style={{ flex: 1 }}>
 
@@ -1216,7 +1214,7 @@ export default function RegisterScreen() {
             )}
           </View>
         </View>
-      </KeyboardAvoidingView>
+      </View>
 
       {/* ── Department picker modal ── */}
       <PickerModal

@@ -18,8 +18,8 @@
         "NSPhotoLibraryUsageDescription": "The app needs access to your photo library to share photos and select profile pictures."
       },
       "associatedDomains": [
-        "applinks:ally-jis.xyz",
-        "applinks:www.ally-jis.xyz"
+        "applinks:ally-jis.com",
+        "applinks:www.ally-jis.com"
       ]
     },
     "android": {
@@ -45,12 +45,12 @@
           "data": [
             {
               "scheme": "https",
-              "host": "ally-jis.xyz",
+              "host": "ally-jis.com",
               "pathPrefix": "/"
             },
             {
               "scheme": "https",
-              "host": "www.ally-jis.xyz",
+              "host": "www.ally-jis.com",
               "pathPrefix": "/"
             }
           ],

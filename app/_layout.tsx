@@ -5,6 +5,7 @@ import { Stack, router, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
+import { KeyboardProvider } from "react-native-keyboard-controller";
 import * as SplashScreen from "expo-splash-screen";
 import { View, ActivityIndicator, Platform } from "react-native";
 import Constants from "expo-constants";
@@ -237,14 +238,16 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <StatusBar style="auto" />
-        <NetworkProvider>
-          <AuthProvider>
-            <PresenceProvider>
-              <RootLayoutNav />
-            </PresenceProvider>
-          </AuthProvider>
-        </NetworkProvider>
+        <KeyboardProvider statusBarTranslucent navigationBarTranslucent>
+          <StatusBar style="auto" />
+          <NetworkProvider>
+            <AuthProvider>
+              <PresenceProvider>
+                <RootLayoutNav />
+              </PresenceProvider>
+            </AuthProvider>
+          </NetworkProvider>
+        </KeyboardProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );
