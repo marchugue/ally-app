@@ -13,6 +13,8 @@ interface SwipeableChatBubbleProps {
   onLongPress?: (message: Message) => void;
   onReply?: (message: Message) => void;
   onRetry?: (message: Message) => void;
+  isActiveTime?: boolean;
+  onToggleTime?: (messageId: string) => void;
 }
 
 /** Reply arrow indicator shown during swipe */
@@ -42,6 +44,8 @@ export function SwipeableChatBubble({
   onLongPress,
   onReply,
   onRetry,
+  isActiveTime,
+  onToggleTime,
 }: SwipeableChatBubbleProps) {
   const swipeRef = useRef<any>(null);
 
@@ -82,6 +86,8 @@ export function SwipeableChatBubble({
           onLongPress={onLongPress}
           onReply={onReply}
           onRetry={onRetry}
+          isActiveTime={isActiveTime}
+          onToggleTime={onToggleTime}
         />
       </ReanimatedSwipeable>
     );
@@ -115,6 +121,8 @@ export function SwipeableChatBubble({
         onLongPress={onLongPress}
         onReply={onReply}
         onRetry={onRetry}
+        isActiveTime={isActiveTime}
+        onToggleTime={onToggleTime}
       />
     </ReanimatedSwipeable>
   );

@@ -9,7 +9,9 @@ import {
   Modal,
   Keyboard,
   Alert,
+  Image,
 } from "react-native";
+import { getFluentEmojiUrl } from "@/lib/fluentEmoji";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { router, useLocalSearchParams } from "expo-router";
 import {
@@ -24,6 +26,7 @@ import {
   Flame,
   ChevronRight,
   LogOut,
+  Plus,
 } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/lib/auth/AuthContext";
@@ -47,6 +50,7 @@ import { SwipeableChatBubble } from "@/components/SwipeableChatBubble";
 import { ChatInput } from "@/components/ChatInput";
 import { UserAvatar } from "@/components/UserAvatar";
 import { AnonymousAvatar } from "@/components/AnonymousAvatar";
+import { FluentEmojiPickerModal } from "@/components/FluentEmojiPickerModal";
 import { MatchRevealSheet } from "@/components/MatchRevealSheet";
 import { KeyboardHugView } from "@/components/KeyboardHugView";
 import { KeyboardGestureArea } from "react-native-keyboard-controller";
@@ -72,6 +76,8 @@ const POLL_INTERVAL_MS = 3000;
 const CACHE_KEY_PREFIX = "ally_chat_cache_";
 const MAX_CACHED_MESSAGES = 50;
 
+const MAX_CHAT_CACHE_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
+
 interface MobileChatCache {
   messages: Message[];
   hasMore: boolean;
@@ -79,17 +85,27 @@ interface MobileChatCache {
   cachedAt: number;
 }
 
-async function getCachedMessagesMobile(convId: string): Promise<MobileChatCache | null> {
+function getCacheKey(convId: string, userId?: string | null): string {
+  return userId ? `${CACHE_KEY_PREFIX}${userId}_${convId}` : `${CACHE_KEY_PREFIX}${convId}`;
+}
+
+async function getCachedMessagesMobile(convId: string, userId?: string | null): Promise<MobileChatCache | null> {
   try {
-    const raw = await AsyncStorage.getItem(CACHE_KEY_PREFIX + convId);
+    const key = getCacheKey(convId, userId);
+    const raw = await AsyncStorage.getItem(key);
     if (!raw) return null;
     const parsed = JSON.parse(raw);
     if (Array.isArray(parsed?.messages)) {
+      const cachedAt = Number(parsed.cachedAt) || 0;
+      if (Date.now() - cachedAt > MAX_CHAT_CACHE_AGE_MS) {
+        await AsyncStorage.removeItem(key).catch(() => {});
+        return null;
+      }
       return {
         messages: parsed.messages,
         hasMore: Boolean(parsed.hasMore),
         nextCursor: parsed.nextCursor ?? null,
-        cachedAt: Number(parsed.cachedAt) || 0,
+        cachedAt,
       };
     }
   } catch {
@@ -102,7 +118,8 @@ async function setCachedMessagesMobile(
   convId: string,
   messages: Message[],
   hasMore: boolean,
-  nextCursor: string | null
+  nextCursor: string | null,
+  userId?: string | null
 ) {
   try {
     const confirmed = messages.filter(
@@ -110,7 +127,7 @@ async function setCachedMessagesMobile(
     );
     const toCache = confirmed.slice(-MAX_CACHED_MESSAGES);
     await AsyncStorage.setItem(
-      CACHE_KEY_PREFIX + convId,
+      getCacheKey(convId, userId),
       JSON.stringify({
         messages: toCache,
         hasMore,
@@ -123,6 +140,16 @@ async function setCachedMessagesMobile(
   }
 }
 
+interface StreakNoticeAnchor {
+  messageId: string;
+  timestamp: number;
+}
+const streakNoticeAnchorMap = new Map<string, StreakNoticeAnchor>();
+
+function getStreakAnchorKey(convId: string): string {
+  return `@streak_anchor_${convId}`;
+}
+
 export default function ConversationScreen() {
   const insets = useSafeAreaInsets();
   const { user, accessToken } = useAuth();
@@ -133,6 +160,9 @@ export default function ConversationScreen() {
     prefillAvatar,
     prefillUserId,
     isAnonymous: isAnonymousParam,
+    prefillDayStreak,
+    prefillStreakActiveToday,
+    prefillStreakRestoreDeadline,
   } = useLocalSearchParams<{
     conversationId?: string;
     id?: string;
@@ -140,6 +170,9 @@ export default function ConversationScreen() {
     prefillAvatar?: string;
     prefillUserId?: string;
     isAnonymous?: string;
+    prefillDayStreak?: string;
+    prefillStreakActiveToday?: string;
+    prefillStreakRestoreDeadline?: string;
   }>();
 
   const conversationId = rawConvId || rawId || "";
@@ -159,6 +192,11 @@ export default function ConversationScreen() {
   );
   const { isOnline: checkIsOnline } = usePresence();
   const [replyTo, setReplyTo] = useState<Message | null>(null);
+  const [activeTimeMessageId, setActiveTimeMessageId] = useState<string | null>(null);
+
+  const handleToggleTime = useCallback((messageId: string) => {
+    setActiveTimeMessageId((prev) => (prev === messageId ? null : messageId));
+  }, []);
 
   // Anonymous Matchmaking State
   const [isAnonymous, setIsAnonymous] = useState(isAnonymousParam === "true");
@@ -169,11 +207,25 @@ export default function ConversationScreen() {
     (partnerUserId && checkIsOnline(partnerUserId))
   );
   const [matchInfo, setMatchInfo] = useState<any>(null);
-  const [convStreak, setConvStreak] = useState<number>(0);
-  const [convStreakActiveToday, setConvStreakActiveToday] = useState<boolean>(false);
+  const [convStreak, setConvStreak] = useState<number>(
+    prefillDayStreak !== undefined ? parseInt(prefillDayStreak, 10) || 0 : 0
+  );
+  const [convStreakActiveToday, setConvStreakActiveToday] = useState<boolean>(
+    prefillStreakActiveToday === "true"
+  );
+  /** ISO UTC string deadline for restoring a lapsed streak. Null when window expired or streak is active. */
+  const [streakRestoreDeadline, setStreakRestoreDeadline] = useState<string | null>(
+    prefillStreakRestoreDeadline || null
+  );
+  /** Realtime countdown tick — increments every minute to re-derive hoursRemaining without re-fetching */
+  const [nowTick, setNowTick] = useState(0);
   const [conversationVariant, setConversationVariant] = useState<string | null>(
     isAnonymousParam === "true" ? "anonymous" : null
   );
+
+  const isEnded =
+    conversationVariant === "anonymous_ended" ||
+    Boolean(matchInfo?.ended);
   const [showRevealSheet, setShowRevealSheet] = useState(false);
   const [showEndMatchConfirm, setShowEndMatchConfirm] = useState(false);
   const [draftText, setDraftText] = useState("");
@@ -181,30 +233,152 @@ export default function ConversationScreen() {
   // Context menu
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
   const [showReactions, setShowReactions] = useState(false);
+  const [showFullEmojiPicker, setShowFullEmojiPicker] = useState(false);
 
   // Streak active today — derived purely from backend state (convStreakActiveToday).
   // The backend is the source of truth; we do NOT re-derive from message history
   // to avoid false positives caused by timezone or clock drift.
   const isStreakActiveToday = convStreakActiveToday || Boolean(matchInfo?.streakActiveToday);
 
+  // ── Restore window derived values ─────────────────────────────────────
+  // True when the streak has lapsed AND the backend restore deadline hasn't passed yet.
+  const deadlineRaw = streakRestoreDeadline ?? matchInfo?.streakRestoreDeadline ?? null;
+  const canRestoreStreak = useMemo(() => {
+    return Boolean(deadlineRaw && new Date() < new Date(deadlineRaw));
+  }, [deadlineRaw, nowTick]);
+  // Hours remaining (floor), updated every minute by the tick interval below.
+  const restoreHoursRemaining = useMemo(() => {
+    if (!deadlineRaw) return 0;
+    const diffMs = new Date(deadlineRaw).getTime() - Date.now();
+    return Math.max(0, Math.floor(diffMs / (1000 * 60 * 60)));
+  }, [deadlineRaw, nowTick]);
+
+  // Exact timestamp when the streak lapsed (deadline minus 42 hours window).
+  const streakEndedAt = useMemo(() => {
+    if (!deadlineRaw) return null;
+    return new Date(new Date(deadlineRaw).getTime() - 42 * 60 * 60 * 1000);
+  }, [deadlineRaw]);
+
   // Overflow menu
   const [showOverflow, setShowOverflow] = useState(false);
   const [showBlockConfirm, setShowBlockConfirm] = useState(false);
   const [showReportConfirm, setShowReportConfirm] = useState(false);
 
+  // ── Minute-tick for realtime deadline countdown ──────────────────────
+  useEffect(() => {
+    if (!deadlineRaw) return;
+    const interval = setInterval(() => setNowTick((t) => t + 1), 60_000);
+    return () => clearInterval(interval);
+  }, [deadlineRaw]);
+
 
   const flatListRef = useRef<FlatList>(null);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Load anchor from AsyncStorage if not already in memory
+  useEffect(() => {
+    if (!conversationId) return;
+    if (!streakNoticeAnchorMap.has(conversationId)) {
+      AsyncStorage.getItem(getStreakAnchorKey(conversationId))
+        .then((raw) => {
+          if (raw) {
+            try {
+              const parsed = JSON.parse(raw);
+              if (parsed?.messageId) {
+                streakNoticeAnchorMap.set(conversationId, parsed);
+              }
+            } catch {
+              streakNoticeAnchorMap.set(conversationId, { messageId: raw, timestamp: Date.now() });
+            }
+          }
+        })
+        .catch(() => {});
+    }
+  }, [conversationId]);
+
+  type ChatItem =
+    | { type: 'message'; data: Message }
+    | { type: 'streak_notice'; id: '__streak_notice__' };
+
+  const showStreakNotice = !isEnded && convStreak === 0;
+
   // In an inverted list, index 0 is at the bottom (newest message).
-  // Position is preserved natively when keyboard opens, without jumping!
-  const invertedMessages = useMemo(() => [...messages].reverse(), [messages]);
+  // The streak notice is inserted chronologically based on when the streak ended,
+  // so newer messages naturally stack below it!
+  const invertedChatItems = useMemo<ChatItem[]>(() => {
+    const sorted = [...messages]; // chronological: oldest to newest
+    if (!showStreakNotice) {
+      if (conversationId && streakNoticeAnchorMap.has(conversationId)) {
+        streakNoticeAnchorMap.delete(conversationId);
+        AsyncStorage.removeItem(getStreakAnchorKey(conversationId)).catch(() => {});
+      }
+      return sorted.reverse().map((m) => ({ type: 'message', data: m }));
+    }
+
+    const endedTime = streakEndedAt ? new Date(streakEndedAt).getTime() : NaN;
+
+    let insertIdx: number;
+    if (!isNaN(endedTime)) {
+      const idx = sorted.findIndex((m) => {
+        const msgTime = new Date(m.created_at || (m as any).timestamp).getTime();
+        return !isNaN(msgTime) && msgTime > endedTime;
+      });
+      insertIdx = idx !== -1 ? idx : sorted.length;
+    } else {
+      // Anchoring logic for when streakEndedAt is not available
+      const savedAnchor = conversationId ? streakNoticeAnchorMap.get(conversationId) : undefined;
+      if (savedAnchor) {
+        if (savedAnchor.messageId === '__START__') {
+          insertIdx = 0;
+        } else {
+          const anchorIdx = sorted.findIndex((m) => m.id === savedAnchor.messageId);
+          if (anchorIdx !== -1) {
+            insertIdx = anchorIdx + 1;
+          } else if (savedAnchor.timestamp) {
+            const timeIdx = sorted.findIndex((m) => {
+              const msgTime = new Date(m.created_at || (m as any).timestamp).getTime();
+              return !isNaN(msgTime) && msgTime > savedAnchor.timestamp;
+            });
+            insertIdx = timeIdx !== -1 ? timeIdx : 0;
+          } else {
+            insertIdx = 0;
+          }
+        }
+      } else if (sorted.length > 0) {
+        const lastMsg = sorted[sorted.length - 1];
+        const newAnchor: StreakNoticeAnchor = {
+          messageId: lastMsg.id,
+          timestamp: new Date(lastMsg.created_at || (lastMsg as any).timestamp).getTime() || Date.now(),
+        };
+        if (conversationId) {
+          streakNoticeAnchorMap.set(conversationId, newAnchor);
+          AsyncStorage.setItem(getStreakAnchorKey(conversationId), JSON.stringify(newAnchor)).catch(() => {});
+        }
+        insertIdx = sorted.length;
+      } else {
+        insertIdx = 0;
+      }
+    }
+
+    const items: ChatItem[] = [];
+    for (let i = 0; i < sorted.length; i++) {
+      if (i === insertIdx) {
+        items.push({ type: 'streak_notice', id: '__streak_notice__' });
+      }
+      items.push({ type: 'message', data: sorted[i] });
+    }
+    if (insertIdx === sorted.length) {
+      items.push({ type: 'streak_notice', id: '__streak_notice__' });
+    }
+
+    return items.reverse();
+  }, [messages, showStreakNotice, streakEndedAt, conversationId]);
 
   // ── Instant Navigation (0ms display) ──────────────────────────────────
   useEffect(() => {
     if (!conversationId) return;
     hasLoadedOnceRef.current = false;
-    getCachedMessagesMobile(conversationId).then((cached) => {
+    getCachedMessagesMobile(conversationId, user?.id).then((cached) => {
       if (cached && cached.messages.length > 0 && !hasLoadedOnceRef.current) {
         setMessages(cached.messages);
         setHasMore(cached.hasMore);
@@ -212,7 +386,7 @@ export default function ConversationScreen() {
         setLoading(false);
       }
     });
-  }, [conversationId]);
+  }, [conversationId, user?.id]);
 
   // ── Load messages & profile ───────────────────────────────────────────
   const loadMessages = useCallback(async (_silent = false) => {
@@ -238,7 +412,7 @@ export default function ConversationScreen() {
         const combined = [...olderHistory, ...msgs];
 
         if (pending.length === 0) {
-          setCachedMessagesMobile(conversationId, combined, res.hasMore, res.nextCursor);
+          setCachedMessagesMobile(conversationId, combined, res.hasMore, res.nextCursor, user?.id);
           return combined;
         }
 
@@ -256,7 +430,7 @@ export default function ConversationScreen() {
             result.push(p);
           }
         }
-        setCachedMessagesMobile(conversationId, combined, res.hasMore, res.nextCursor);
+        setCachedMessagesMobile(conversationId, combined, res.hasMore, res.nextCursor, user?.id);
         return result;
       });
 
@@ -303,8 +477,10 @@ export default function ConversationScreen() {
       const conv = await getConversationById(conversationId, accessToken);
       const streak = conv.dayStreak ?? conv.matchInfo?.dayStreak ?? 0;
       const activeToday = Boolean(conv.streakActiveToday ?? conv.matchInfo?.streakActiveToday ?? false);
+      const deadline = conv.streakRestoreDeadline ?? conv.matchInfo?.streakRestoreDeadline ?? null;
       setConvStreak(streak);
       setConvStreakActiveToday(activeToday);
+      setStreakRestoreDeadline(deadline);
 
       const isAnon =
         conv.variant === "anonymous" ||
@@ -379,7 +555,13 @@ export default function ConversationScreen() {
 
     const onMessageNew = (payload: { conversationId: string; message: Message }) => {
       if (payload.conversationId !== conversationId) return;
-      const incomingMsg: Message = { ...payload.message, status: "sent" };
+      const rawMsg = payload.message as any;
+      const incomingMsg: Message = {
+        ...rawMsg,
+        image_url: rawMsg.image_url || rawMsg.imageUrl || null,
+        status: "sent",
+      };
+      (incomingMsg as any).imageUrl = rawMsg.imageUrl || rawMsg.image_url || null;
       setMessages((prev) => {
         if (prev.some((m) => m.id === incomingMsg.id)) return prev;
 
@@ -397,7 +579,7 @@ export default function ConversationScreen() {
         } else {
           nextList = [...prev, incomingMsg];
         }
-        setCachedMessagesMobile(conversationId, nextList, hasMore, nextCursor);
+        setCachedMessagesMobile(conversationId, nextList, hasMore, nextCursor, user?.id);
         return nextList;
       });
       markConversationRead(conversationId, new Date().toISOString(), accessToken).catch(() => { });
@@ -424,10 +606,13 @@ export default function ConversationScreen() {
         // 'inactive' status → streak lapsed. 'restored' → streak brought back.
         // Do NOT treat dayStreak===0 alone as inactive (could be a valid day-1 restore).
         const isInactive = payload.status === "inactive";
+        const isRestored = payload.status === "restored";
         const streak = isInactive ? 0 : (payload.dayStreak ?? payload.streak ?? convStreak);
         const activeToday = isInactive ? false : (payload.streakActiveToday ?? convStreakActiveToday);
         setConvStreak(streak);
         setConvStreakActiveToday(activeToday);
+        // When restored, clear the deadline window immediately
+        if (isRestored) setStreakRestoreDeadline(null);
         setMatchInfo((prev: any) => ({
           ...prev,
           dayStreak: streak,
@@ -479,6 +664,7 @@ export default function ConversationScreen() {
       // Optimistically update local state — socket will confirm shortly
       setConvStreak(result.newStreak);
       setConvStreakActiveToday(true);
+      setStreakRestoreDeadline(null); // window consumed
       setMatchInfo((prev: any) => prev ? { ...prev, dayStreak: result.newStreak, streakActiveToday: true } : prev);
       Alert.alert(
         "Successfully restored",
@@ -511,6 +697,7 @@ export default function ConversationScreen() {
         reactions: [],
         status: "sending",
       };
+      (optimisticMsg as any).imageUrl = imageUrl || null;
 
       // 1. Immediately display message on screen (0ms delay)
       setMessages((prev) => [...prev, optimisticMsg]);
@@ -540,7 +727,7 @@ export default function ConversationScreen() {
           } else {
             updated = prev.map((m) => (m.id === tempId ? { ...savedMsg, status: "sent" } : m));
           }
-          setCachedMessagesMobile(conversationId, updated, hasMore, nextCursor);
+          setCachedMessagesMobile(conversationId, updated, hasMore, nextCursor, user?.id);
           return updated;
         });
       } catch (err) {
@@ -554,7 +741,7 @@ export default function ConversationScreen() {
     [conversationId, accessToken, user, replyTo]
   );
 
-  // ── Pick media & take photo handlers ─────────────────────────────────
+  // ── Pick media & take photo handlers (up to 6 images) ────────────────
   const handlePickMedia = useCallback(async () => {
     if (!conversationId || !accessToken) return;
     try {
@@ -565,20 +752,27 @@ export default function ConversationScreen() {
       }
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ["images"],
+        allowsMultipleSelection: true,
+        selectionLimit: 6,
         quality: 0.8,
       });
-      if (result.canceled || !result.assets?.[0]?.uri) return;
+      if (result.canceled || !result.assets?.length) return;
 
-      const asset = result.assets[0];
-      const filename = asset.fileName || asset.uri.split("/").pop() || `photo_${Date.now()}.jpg`;
-      const mime = asset.mimeType || (/\.png$/i.test(filename) ? "image/png" : "image/jpeg");
+      const assets = result.assets.slice(0, 6);
+      const uploadPromises = assets.map(async (asset) => {
+        const filename = asset.fileName || asset.uri.split("/").pop() || `photo_${Date.now()}.jpg`;
+        const mime = asset.mimeType || (/\.png$/i.test(filename) ? "image/png" : "image/jpeg");
+        const uploadRes = await uploadChatFile(
+          { uri: asset.uri, name: filename, type: mime },
+          accessToken
+        );
+        return uploadRes?.url;
+      });
 
-      const uploadRes = await uploadChatFile(
-        { uri: asset.uri, name: filename, type: mime },
-        accessToken
-      );
-      if (uploadRes?.url) {
-        await handleSend("", uploadRes.url);
+      const uploadedUrls = (await Promise.all(uploadPromises)).filter((url): url is string => Boolean(url));
+      if (uploadedUrls.length > 0) {
+        const payloadImageUrl = uploadedUrls.length === 1 ? uploadedUrls[0] : JSON.stringify(uploadedUrls);
+        await handleSend("", payloadImageUrl);
       }
     } catch (err: any) {
       console.warn("Failed to pick and send image", err);
@@ -703,10 +897,6 @@ export default function ConversationScreen() {
     }
   }, [otherProfile, accessToken]);
 
-  const isEnded =
-    conversationVariant === "anonymous_ended" ||
-    Boolean(matchInfo?.ended);
-
   const handleEndMatch = useCallback(async () => {
     const id = matchInfo?.matchId || matchInfo?.id || conversationId;
     if (!id || !accessToken) return;
@@ -773,24 +963,13 @@ export default function ConversationScreen() {
                 </Text>
                 <Drama size={15} color="#1A6B3C" />
 
-
-                {/* Streak badge placed right next to active ally badge */}
+                {/* Streak badge — no background pill, just flame icon + count text */}
                 {(convStreak || matchInfo?.dayStreak || 0) > 0 && (
-                  <View
-                    style={{
-                      flexDirection: "row",
-                      alignItems: "center",
-                      gap: 2,
-                      backgroundColor: isStreakActiveToday ? "rgba(235, 86, 0, 0.1)" : "#F3F4F6",
-                      paddingHorizontal: 6,
-                      paddingVertical: 1.5,
-                      borderRadius: 8,
-                    }}
-                  >
-                    <Flame size={12} color={isStreakActiveToday ? "#eb5600" : "#9CA3AF"} />
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 2 }}>
+                    <Flame size={14} color={isStreakActiveToday ? "#eb5600" : "#9CA3AF"} />
                     <Text
                       style={{
-                        fontSize: 11,
+                        fontSize: 12,
                         fontWeight: "700",
                         color: isStreakActiveToday ? "#eb5600" : "#9CA3AF",
                       }}
@@ -839,23 +1018,13 @@ export default function ConversationScreen() {
                   {otherProfile?.full_name || otherProfile?.username || "User"}
                 </Text>
 
-
+                {/* Streak badge — no background pill, just flame icon + count text */}
                 {(convStreak || matchInfo?.dayStreak || 0) > 0 && (
-                  <View
-                    style={{
-                      flexDirection: "row",
-                      alignItems: "center",
-                      gap: 2,
-                      backgroundColor: isStreakActiveToday ? "rgba(235, 86, 0, 0.1)" : "#F3F4F6",
-                      paddingHorizontal: 6,
-                      paddingVertical: 1.5,
-                      borderRadius: 8,
-                    }}
-                  >
-                    <Flame size={12} color={isStreakActiveToday ? "#eb5600" : "#9CA3AF"} />
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 2 }}>
+                    <Flame size={14} color={isStreakActiveToday ? "#eb5600" : "#9CA3AF"} />
                     <Text
                       style={{
-                        fontSize: 11,
+                        fontSize: 12,
                         fontWeight: "700",
                         color: isStreakActiveToday ? "#eb5600" : "#9CA3AF",
                       }}
@@ -942,35 +1111,17 @@ export default function ConversationScreen() {
           </View>
         )}
 
-        {/* ── Streak Ended Notice ──────────────────────────────────────────── */}
-        {!isEnded && convStreak === 0 && (
-          <View
-            style={{
-              paddingVertical: 20,
-              paddingHorizontal: 24,
-              alignItems: "center",
-            }}
-          >
-            <Text style={{ fontSize: 13, color: "#9CA3AF", textAlign: "center", lineHeight: 20 }}>
-              Your daily streak has ended. Keep the conversation going to start a new one.{" "}
-              <Text
-                onPress={handleRestoreStreak}
-                style={{ color: "#1A6B3C", fontWeight: "700", textDecorationLine: "underline" }}
-              >
-                Restore Streak
-              </Text>
-            </Text>
-          </View>
-        )}
+        {/* ── Streak Ended Notice — removed from here, now rendered inside FlatList ── */}
+
 
         {/* ── Messages list ────────────────────────────────────────────────── */}
 
         <KeyboardGestureArea style={{ flex: 1 }} interpolator="ios">
           <FlatList
             ref={flatListRef}
-            data={invertedMessages}
+            data={invertedChatItems}
             style={{ flex: 1 }}
-            keyExtractor={(item, index) => (item.id ? `${item.id}-${index}` : `msg-${index}`)}
+            keyExtractor={(item, index) => (item.type === 'message' ? (item.data.id ? `${item.data.id}-${index}` : `msg-${index}`) : '__streak_notice__')}
             initialNumToRender={15}
             maxToRenderPerBatch={10}
             windowSize={10}
@@ -990,15 +1141,49 @@ export default function ConversationScreen() {
             contentContainerStyle={{
               paddingVertical: 12,
             }}
-            extraData={invertedMessages}
+            extraData={invertedChatItems}
             renderItem={({ item, index }) => {
+              if (item.type === 'streak_notice') {
+                return (
+                  <View
+                    style={{
+                      paddingVertical: 16,
+                      paddingHorizontal: 24,
+                      alignItems: "center",
+                      transform: [{ scaleY: -1 }],
+                    }}
+                  >
+                    {canRestoreStreak ? (
+                      <Text style={{ fontSize: 13, color: "#9CA3AF", textAlign: "center", lineHeight: 20 }}>
+                        Your daily streak has ended.{" "}
+                        <Text
+                          onPress={handleRestoreStreak}
+                          style={{ color: "#1A6B3C", fontWeight: "700", textDecorationLine: "underline" }}
+                        >
+                          Restore Streak
+                        </Text>
+                        {restoreHoursRemaining > 0 && (
+                          <Text style={{ color: "#C4B8A8" }}>{` (${restoreHoursRemaining}h left)`}</Text>
+                        )}
+                      </Text>
+                    ) : (
+                      <Text style={{ fontSize: 13, color: "#9CA3AF", textAlign: "center", lineHeight: 20 }}>
+                        Your streak has ended. Keep chatting to start a new one! 🔥
+                      </Text>
+                    )}
+                  </View>
+                );
+              }
+
               // Inverted list: index 0 is the newest message
               // index - 1 is newer chronologically
               // index + 1 is older chronologically
-              const older = index < invertedMessages.length - 1 ? invertedMessages[index + 1] : null;
-              const newer = index > 0 ? invertedMessages[index - 1] : null;
-              const hasOlder = canGroupMessages(item, older);
-              const hasNewer = canGroupMessages(item, newer);
+              const olderItem = index < invertedChatItems.length - 1 ? invertedChatItems[index + 1] : null;
+              const newerItem = index > 0 ? invertedChatItems[index - 1] : null;
+              const older = olderItem?.type === 'message' ? olderItem.data : null;
+              const newer = newerItem?.type === 'message' ? newerItem.data : null;
+              const hasOlder = canGroupMessages(item.data, older);
+              const hasNewer = canGroupMessages(item.data, newer);
 
               let groupPosition: MessageGroupPosition = "single";
               if (!hasOlder && hasNewer) {
@@ -1009,7 +1194,7 @@ export default function ConversationScreen() {
                 groupPosition = "last";
               }
 
-              const isMine = item.sender_id === user?.id;
+              const isMine = item.data.sender_id === user?.id;
               const partnerDisplayName = isAnonymous
                 ? (matchInfo?.partnerAlias || prefillName || "Anonymous Ally")
                 : (otherProfile?.username || otherProfile?.full_name || prefillName || "User");
@@ -1017,13 +1202,15 @@ export default function ConversationScreen() {
 
               return (
                 <SwipeableChatBubble
-                  message={item}
+                  message={item.data}
                   isMine={isMine}
                   groupPosition={groupPosition}
                   senderName={senderName}
                   onLongPress={handleLongPress}
                   onReply={(msg) => setReplyTo(msg)}
                   onRetry={handleRetry}
+                  isActiveTime={activeTimeMessageId === item.data.id}
+                  onToggleTime={handleToggleTime}
                 />
               );
             }}
@@ -1110,22 +1297,50 @@ export default function ConversationScreen() {
               elevation: 8,
             }}
           >
-            {REACTION_EMOJIS.map((emoji) => (
-              <Pressable
-                key={emoji}
-                onPress={() => handleReaction(emoji)}
-                style={{
-                  width: 44,
-                  height: 44,
-                  borderRadius: 22,
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-                android_ripple={{ color: "rgba(0,0,0,0.06)" }}
-              >
-                <Text style={{ fontSize: 24 }}>{emoji}</Text>
-              </Pressable>
-            ))}
+            {REACTION_EMOJIS.map((emoji) => {
+              const fluentUrl = getFluentEmojiUrl(emoji, { animated: true });
+              return (
+                <Pressable
+                  key={emoji}
+                  onPress={() => handleReaction(emoji)}
+                  style={{
+                    width: 48,
+                    height: 48,
+                    borderRadius: 24,
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                  android_ripple={{ color: "rgba(0,0,0,0.06)" }}
+                >
+                  {fluentUrl ? (
+                    <Image
+                      source={{ uri: fluentUrl }}
+                      style={{ width: 32, height: 32 }}
+                      resizeMode="contain"
+                    />
+                  ) : (
+                    <Text style={{ fontSize: 24 }}>{emoji}</Text>
+                  )}
+                </Pressable>
+              );
+            })}
+            <Pressable
+              onPress={() => {
+                setShowReactions(false);
+                setShowFullEmojiPicker(true);
+              }}
+              style={{
+                width: 48,
+                height: 48,
+                borderRadius: 24,
+                alignItems: "center",
+                justifyContent: "center",
+                backgroundColor: "#F9FAFB",
+              }}
+              android_ripple={{ color: "rgba(0,0,0,0.06)" }}
+            >
+              <Plus size={20} color="#6B7280" />
+            </Pressable>
           </View>
 
           {/* Reply shortcut */}
@@ -1156,6 +1371,19 @@ export default function ConversationScreen() {
           )}
         </Pressable>
       </Modal>
+
+      {/* ── Full Microsoft Fluent Emoji Picker Modal ──────────────────────── */}
+      <FluentEmojiPickerModal
+        visible={showFullEmojiPicker}
+        onClose={() => {
+          setShowFullEmojiPicker(false);
+          setSelectedMessage(null);
+        }}
+        onSelect={(emoji) => {
+          handleReaction(emoji);
+          setShowFullEmojiPicker(false);
+        }}
+      />
 
       {/* ── Overflow menu ────────────────────────────────────────────────── */}
       <Modal

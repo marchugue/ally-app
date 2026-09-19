@@ -53,7 +53,10 @@ export interface Conversation {
   matchInfo?: any;
   dayStreak?: number;
   streakActiveToday?: boolean;
+  /** ISO UTC deadline by which a lapsed streak can be restored. Null if active, pending, or window expired. */
+  streakRestoreDeadline?: string | null;
 }
+
 
 export interface SendMessagePayload {
   content: string;

@@ -10,6 +10,7 @@ import {
   TextInput,
   Modal,
 } from "react-native";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
 import { router, useFocusEffect } from "expo-router";
 import { Search, X, MessageCircle, Trash2, Drama, Flame } from "lucide-react-native";
@@ -275,6 +276,9 @@ function SwipeableRow({
               prefillAvatar: info.participantAvatar || "",
               prefillUserId: info.isAnonymous ? "" : (info.participantId || ""),
               isAnonymous: info.isAnonymous ? "true" : "false",
+              prefillDayStreak: String(info.dayStreak ?? 0),
+              prefillStreakActiveToday: info.streakActiveToday ? "true" : "false",
+              prefillStreakRestoreDeadline: (item.streakRestoreDeadline || item.matchInfo?.streakRestoreDeadline || "") as string,
             },
           })
         }
@@ -399,6 +403,43 @@ function SwipeableRow({
   );
 }
 
+const CONVERSATIONS_CACHE_KEY_PREFIX = "ally_conversations_cache_";
+const MAX_CACHE_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+async function getCachedConversationsMobile(userId: string): Promise<Conversation[] | null> {
+  try {
+    const raw = await AsyncStorage.getItem(CONVERSATIONS_CACHE_KEY_PREFIX + userId);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed?.conversations)) {
+      const cachedAt = Number(parsed.cachedAt) || 0;
+      if (Date.now() - cachedAt > MAX_CACHE_AGE_MS) {
+        await AsyncStorage.removeItem(CONVERSATIONS_CACHE_KEY_PREFIX + userId);
+        return null;
+      }
+      return parsed.conversations;
+    }
+  } catch {
+    // ignore corrupted cache
+  }
+  return null;
+}
+
+async function setCachedConversationsMobile(userId: string, conversations: Conversation[]) {
+  try {
+    const toCache = conversations.slice(0, 30);
+    await AsyncStorage.setItem(
+      CONVERSATIONS_CACHE_KEY_PREFIX + userId,
+      JSON.stringify({
+        conversations: toCache,
+        cachedAt: Date.now(),
+      })
+    );
+  } catch {
+    // ignore storage errors
+  }
+}
+
 export default function MessagesScreen() {
   const { user, accessToken } = useAuth();
   const [conversations, setConversations] = useState<Conversation[]>([]);
@@ -443,17 +484,30 @@ export default function MessagesScreen() {
           deduped.set(info.participantId, conv);
         }
       });
-      setConversations(Array.from(deduped.values()));
+      const finalConvs = Array.from(deduped.values());
+      setConversations(finalConvs);
+      if (user?.id) {
+        setCachedConversationsMobile(user.id, finalConvs);
+      }
     } catch (err) {
       console.warn("Failed to load conversations", err);
     }
   }, [accessToken, user?.id]);
 
   useEffect(() => {
+    let isMounted = true;
     async function init() {
-      setLoading(true);
-      await Promise.all([loadConversations(), refreshOnlineUsers()]);
-      setLoading(false);
+      if (user?.id) {
+        const cached = await getCachedConversationsMobile(user.id);
+        if (cached && cached.length > 0 && isMounted) {
+          setConversations(cached);
+          setLoading(false);
+        }
+      }
+      await Promise.all([loadConversations(true), refreshOnlineUsers()]);
+      if (isMounted) {
+        setLoading(false);
+      }
     }
     init();
 
@@ -462,8 +516,11 @@ export default function MessagesScreen() {
       loadConversations(true);
       refreshOnlineUsers();
     }, 60000);
-    return () => clearInterval(interval);
-  }, [loadConversations, refreshOnlineUsers]);
+    return () => {
+      isMounted = false;
+      clearInterval(interval);
+    };
+  }, [loadConversations, refreshOnlineUsers, user?.id]);
 
   // Re-fetch when navigating back to the Messages tab to instantly reflect read status changes
   useFocusEffect(

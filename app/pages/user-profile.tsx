@@ -824,10 +824,16 @@ export default function UserProfileScreen() {
                       pathname: "/pages/media-preview" as any,
                       params: {
                         postId: item.id,
-                        mediaUrl: item.media?.[0] || "",
+                        mediaUrls: item.media && item.media.length > 0 ? JSON.stringify(item.media) : "",
+                        initialIndex: "0",
                         caption: item.content || "",
                         authorName: profile.full_name || `@${profile.username}`,
+                        authorUsername: profile.username || "",
                         authorAvatar: profile.avatar_url || "",
+                        createdAt: item.created_at || "",
+                        likesCount: String(item.likes_count || 0),
+                        commentsCount: String(item.comments_count || 0),
+                        isLiked: item.liked_by_me ? "true" : "false",
                       },
                     });
                   }}

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect, useCallback } from "react";
+import React, { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import {
   View,
   Text,
@@ -20,6 +20,7 @@ import {
 import { useLocalSearchParams, router } from "expo-router";
 import {
   ChevronLeft,
+  ChevronRight,
   MoreVertical,
   Heart,
   MessageCircle,
@@ -55,6 +56,7 @@ export default function MediaPreviewScreen() {
   const { user, accessToken } = useAuth();
   const {
     mediaUrls,
+    mediaUrl,
     initialIndex,
     postId,
     caption,
@@ -69,6 +71,7 @@ export default function MediaPreviewScreen() {
     commentId,
   } = useLocalSearchParams<{
     mediaUrls?: string;
+    mediaUrl?: string;
     initialIndex?: string;
     postId?: string;
     caption?: string;
@@ -85,18 +88,19 @@ export default function MediaPreviewScreen() {
   }>();
 
   const parsedUrls: string[] = useMemo(() => {
-    if (!mediaUrls) return [];
+    const raw = mediaUrls || mediaUrl;
+    if (!raw) return [];
     let list: any[] = [];
     try {
-      const parsed = JSON.parse(mediaUrls);
+      const parsed = JSON.parse(raw);
       list = Array.isArray(parsed) ? parsed : [parsed];
     } catch {
-      list = [mediaUrls];
+      list = [raw];
     }
     return list
       .map((item) => resolveImageUri(item))
       .filter((uri): uri is string => Boolean(uri));
-  }, [mediaUrls]);
+  }, [mediaUrls, mediaUrl]);
 
   const hasMedia = parsedUrls.length > 0;
 
@@ -117,8 +121,15 @@ export default function MediaPreviewScreen() {
     return `${diffWeek}w ago`;
   }, [createdAt]);
 
-  const startIndex = Math.max(0, parseInt(initialIndex || "0", 10) || 0);
+  const startIndex = useMemo(() => {
+    const parsed = parseInt(initialIndex || "0", 10) || 0;
+    return Math.max(0, Math.min(parsedUrls.length > 0 ? parsedUrls.length - 1 : 0, parsed));
+  }, [initialIndex, parsedUrls.length]);
   const [activeIndex, setActiveIndex] = useState(startIndex);
+
+  useEffect(() => {
+    setActiveIndex(startIndex);
+  }, [startIndex]);
 
   // Like & Save state
   const [liked, setLiked] = useState(rawLiked === "true");
@@ -235,11 +246,47 @@ export default function MediaPreviewScreen() {
     }
   };
 
+  const flatListRef = useRef<FlatList>(null);
+  const thumbnailListRef = useRef<FlatList>(null);
+
+  const handleNext = () => {
+    if (activeIndex < parsedUrls.length - 1) {
+      const next = activeIndex + 1;
+      setActiveIndex(next);
+      flatListRef.current?.scrollToIndex({ index: next, animated: true });
+      try {
+        thumbnailListRef.current?.scrollToIndex({ index: next, animated: true, viewPosition: 0.5 });
+      } catch {}
+    }
+  };
+
+  const handlePrev = () => {
+    if (activeIndex > 0) {
+      const prev = activeIndex - 1;
+      setActiveIndex(prev);
+      flatListRef.current?.scrollToIndex({ index: prev, animated: true });
+      try {
+        thumbnailListRef.current?.scrollToIndex({ index: prev, animated: true, viewPosition: 0.5 });
+      } catch {}
+    }
+  };
+
+  const handleSelectThumbnail = (index: number) => {
+    setActiveIndex(index);
+    flatListRef.current?.scrollToIndex({ index, animated: true });
+    try {
+      thumbnailListRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.5 });
+    } catch {}
+  };
+
   const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const slideSize = event.nativeEvent.layoutMeasurement.width;
     const index = Math.round(event.nativeEvent.contentOffset.x / slideSize);
     if (index >= 0 && index < parsedUrls.length && index !== activeIndex) {
       setActiveIndex(index);
+      try {
+        thumbnailListRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.5 });
+      } catch {}
     }
   };
 
@@ -271,6 +318,7 @@ export default function MediaPreviewScreen() {
       {/* ── Background Media Viewer / Text Content Slide ────────────────────── */}
       {parsedUrls.length > 0 ? (
         <FlatList
+          ref={flatListRef}
           data={parsedUrls}
           horizontal
           pagingEnabled
@@ -281,6 +329,11 @@ export default function MediaPreviewScreen() {
             offset: SCREEN_WIDTH * index,
             index,
           })}
+          onScrollToIndexFailed={(info) => {
+            setTimeout(() => {
+              flatListRef.current?.scrollToIndex({ index: info.index, animated: false });
+            }, 100);
+          }}
           onScroll={handleScroll}
           scrollEventThrottle={16}
           keyExtractor={(url, index) => `${url}-${index}`}
@@ -315,58 +368,138 @@ export default function MediaPreviewScreen() {
         )}
 
         {/* Upper Right: Three Dot Post Settings */}
-        <Pressable
-          onPress={() => setShowSettingsModal(true)}
-          style={styles.iconCircle}
-          hitSlop={10}
-        >
-          <MoreVertical size={20} color="#FFFFFF" />
-        </Pressable>
+        {postId ? (
+          <Pressable
+            onPress={() => setShowSettingsModal(true)}
+            style={styles.iconCircle}
+            hitSlop={10}
+          >
+            <MoreVertical size={20} color="#FFFFFF" />
+          </Pressable>
+        ) : (
+          <View style={{ width: 38 }} />
+        )}
       </View>
 
       {/* ── Center Right Floating Action Bar ─────────────────────────────── */}
-      <View style={styles.centerRightActions}>
-        {/* Like */}
-        <Pressable onPress={handleToggleLike} style={styles.actionBtn} hitSlop={8}>
-          <View style={styles.actionIconWrapper}>
-            <Heart
-              size={28}
-              color={liked ? "#EF4444" : "#FFFFFF"}
-              fill={liked ? "#EF4444" : "#FFFFFF"}
+      {postId && (
+        <View style={styles.centerRightActions}>
+          {/* Like */}
+          <Pressable onPress={handleToggleLike} style={styles.actionBtn} hitSlop={8}>
+            <View style={styles.actionIconWrapper}>
+              <Heart
+                size={28}
+                color={liked ? "#EF4444" : "#FFFFFF"}
+                fill={liked ? "#EF4444" : "#FFFFFF"}
+              />
+            </View>
+            <Text style={styles.actionLabel}>{likesCount > 0 ? likesCount : "Like"}</Text>
+          </Pressable>
+
+          {/* Comment */}
+          <Pressable onPress={handleOpenCommentModal} style={styles.actionBtn} hitSlop={8}>
+            <View style={styles.actionIconWrapper}>
+              <MessageCircle
+                size={28}
+                color="#FFFFFF"
+                fill="#FFFFFF"
+              />
+            </View>
+            <Text style={styles.actionLabel}>
+              {comments.length > 0 ? comments.length : rawComments || "Comment"}
+            </Text>
+          </Pressable>
+
+          {/* Save */}
+          <Pressable onPress={handleToggleSave} style={styles.actionBtn} hitSlop={8}>
+            <View style={styles.actionIconWrapper}>
+              <Bookmark
+                size={28}
+                color={saved ? "#16A34A" : "#FFFFFF"}
+                fill={saved ? "#16A34A" : "#FFFFFF"}
+              />
+            </View>
+            <Text style={styles.actionLabel}>{saved ? "Saved" : "Save"}</Text>
+          </Pressable>
+        </View>
+      )}
+
+      {/* ── Left / Right Navigation Buttons (UI Arrow Symbols) ─────── */}
+      {parsedUrls.length > 1 && (
+        <>
+          <Pressable
+            disabled={activeIndex === 0}
+            onPress={handlePrev}
+            style={[
+              styles.navArrowBtn,
+              styles.navArrowLeft,
+              activeIndex === 0 && { opacity: 0.35 },
+            ]}
+            hitSlop={12}
+          >
+            <ChevronLeft size={28} color="#FFFFFF" />
+          </Pressable>
+
+          <Pressable
+            disabled={activeIndex === parsedUrls.length - 1}
+            onPress={handleNext}
+            style={[
+              styles.navArrowBtn,
+              styles.navArrowRight,
+              activeIndex === parsedUrls.length - 1 && { opacity: 0.35 },
+            ]}
+            hitSlop={12}
+          >
+            <ChevronRight size={28} color="#FFFFFF" />
+          </Pressable>
+        </>
+      )}
+
+      {/* ── Bottom Details Overlay (Thumbnail Carousel, Avatar, Caption) ── */}
+      <View
+        style={[
+          styles.bottomOverlay,
+          !postId && { right: 16 },
+          { paddingBottom: Math.max(insets.bottom + 16, 24) },
+        ]}
+      >
+        {/* Bottom Thumbnail Carousel Strip */}
+        {parsedUrls.length > 1 && (
+          <View style={styles.thumbnailCarouselContainer}>
+            <FlatList
+              ref={thumbnailListRef}
+              data={parsedUrls}
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              keyExtractor={(_, idx) => `thumb-${idx}`}
+              contentContainerStyle={styles.thumbnailListContent}
+              onScrollToIndexFailed={(info) => {
+                setTimeout(() => {
+                  thumbnailListRef.current?.scrollToIndex({ index: info.index, animated: false, viewPosition: 0.5 });
+                }, 100);
+              }}
+              renderItem={({ item, index }) => {
+                const isSelected = index === activeIndex;
+                return (
+                  <Pressable
+                    onPress={() => handleSelectThumbnail(index)}
+                    style={[
+                      styles.thumbnailWrapper,
+                      isSelected && styles.thumbnailWrapperActive,
+                    ]}
+                  >
+                    <Image
+                      source={{ uri: item }}
+                      style={styles.thumbnailImage}
+                      resizeMode="cover"
+                    />
+                  </Pressable>
+                );
+              }}
             />
           </View>
-          <Text style={styles.actionLabel}>{likesCount > 0 ? likesCount : "Like"}</Text>
-        </Pressable>
+        )}
 
-        {/* Comment */}
-        <Pressable onPress={handleOpenCommentModal} style={styles.actionBtn} hitSlop={8}>
-          <View style={styles.actionIconWrapper}>
-            <MessageCircle
-              size={28}
-              color="#FFFFFF"
-              fill="#FFFFFF"
-            />
-          </View>
-          <Text style={styles.actionLabel}>
-            {comments.length > 0 ? comments.length : rawComments || "Comment"}
-          </Text>
-        </Pressable>
-
-        {/* Save */}
-        <Pressable onPress={handleToggleSave} style={styles.actionBtn} hitSlop={8}>
-          <View style={styles.actionIconWrapper}>
-            <Bookmark
-              size={28}
-              color={saved ? "#16A34A" : "#FFFFFF"}
-              fill={saved ? "#16A34A" : "#FFFFFF"}
-            />
-          </View>
-          <Text style={styles.actionLabel}>{saved ? "Saved" : "Save"}</Text>
-        </Pressable>
-      </View>
-
-      {/* ── Bottom Details Overlay (Avatar next to Username, Caption underneath) ─ */}
-      <View style={[styles.bottomOverlay, { paddingBottom: Math.max(insets.bottom + 16, 24) }]}>
         <View style={styles.bottomAuthorRow}>
           <UserAvatar avatar={authorAvatar} size="sm" />
           <Text style={styles.bottomUsernameText} numberOfLines={1}>
@@ -971,5 +1104,51 @@ const styles = StyleSheet.create({
   },
   sendBtnDisabled: {
     backgroundColor: "#9CA3AF",
+  },
+  navArrowBtn: {
+    position: "absolute",
+    top: "50%",
+    marginTop: -24,
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    backgroundColor: "rgba(0, 0, 0, 0.55)",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 60,
+  },
+  navArrowLeft: {
+    left: 14,
+  },
+  navArrowRight: {
+    right: 14,
+  },
+  thumbnailCarouselContainer: {
+    marginBottom: 12,
+    width: "100%",
+  },
+  thumbnailListContent: {
+    gap: 10,
+    paddingHorizontal: 2,
+    alignItems: "center",
+  },
+  thumbnailWrapper: {
+    width: 52,
+    height: 52,
+    borderRadius: 10,
+    overflow: "hidden",
+    borderWidth: 1.5,
+    borderColor: "rgba(255, 255, 255, 0.35)",
+    opacity: 0.6,
+  },
+  thumbnailWrapperActive: {
+    borderColor: "#1A6B3C",
+    borderWidth: 2.5,
+    opacity: 1,
+    transform: [{ scale: 1.08 }],
+  },
+  thumbnailImage: {
+    width: "100%",
+    height: "100%",
   },
 });

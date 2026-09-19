@@ -111,6 +111,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);
     } catch {}
     await AsyncStorage.removeItem(USER_CACHE_KEY).catch(() => {});
+    // Clear all chat and conversation caches on logout to protect user privacy
+    try {
+      const allKeys = await AsyncStorage.getAllKeys();
+      const chatKeys = allKeys.filter(
+        (k) => k.startsWith('ally_chat_cache_') || k.startsWith('ally_conversations_cache_')
+      );
+      if (chatKeys.length > 0) {
+        await AsyncStorage.multiRemove(chatKeys);
+      }
+    } catch {}
     disconnectSocket();
     setUser(null);
     setAccessToken(null);
