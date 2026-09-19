@@ -44,117 +44,108 @@ export default function SelectEmailScreen() {
       <View style={styles.container}>
         {/* Top Bar */}
         <View style={styles.topBar}>
-        <Pressable
-          onPress={handleBack}
-          hitSlop={14}
-          style={styles.iconBtn}
-          accessibilityLabel="Go back"
+          <Pressable
+            onPress={handleBack}
+            hitSlop={14}
+            style={styles.iconBtn}
+            accessibilityLabel="Go back"
+          >
+            <ArrowLeft size={24} color={GREEN} />
+          </Pressable>
+        </View>
+
+        <ScrollView
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.scrollContent}
         >
-          <ArrowLeft size={24} color={GREEN} />
-        </Pressable>
-      </View>
+          {/* Top Illustration */}
+          <View style={styles.illustrationWrapper}>
+            <EmailSelectIllustration size={Math.min(SCREEN_WIDTH * 0.44, 175)} />
+          </View>
 
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
-      >
-        {/* Top Illustration */}
-        <View style={styles.illustrationWrapper}>
-          <EmailSelectIllustration size={Math.min(SCREEN_WIDTH * 0.44, 175)} />
-        </View>
-
-        {/* Title & Subtitle */}
-        <View style={styles.headerText}>
-          <Text style={styles.title}>How would you like to sign up?</Text>
-          <Text style={styles.subtitle}>
-            Choose an email type to verify your CHMSU Alijis student identity.
-          </Text>
-        </View>
-
-        {/* Selection Cards */}
-        <View style={styles.cardsContainer}>
-          {/* Option 1: CHMSU Email */}
-          <Pressable
-            onPress={() => setSelectedType("chmsu")}
-            style={[
-              styles.card,
-              selectedType === "chmsu" ? styles.cardActive : styles.cardInactive,
-            ]}
-          >
-            <View style={styles.cardHeaderRow}>
-              <View
-                style={[
-                  styles.iconCircle,
-                  selectedType === "chmsu" ? styles.iconCircleActive : styles.iconCircleInactive,
-                ]}
-              >
-                <GraduationCap size={22} color={selectedType === "chmsu" ? GREEN : "#4B5563"} />
-              </View>
-
-              <View style={styles.badgeInstant}>
-                <Text style={styles.badgeInstantText}>Instant Access</Text>
-              </View>
-
-              {selectedType === "chmsu" && (
-                <CheckCircle2 size={22} color={GREEN} style={styles.checkIcon} />
-              )}
-            </View>
-
-            <Text style={styles.cardTitle}>CHMSU Student Email</Text>
-            <Text style={styles.cardDomain}>@chmsu.edu.ph</Text>
-            <Text style={styles.cardDesc}>
-              Instant verification code sent directly to your institutional student inbox. No ID upload needed.
+          {/* Title & Subtitle */}
+          <View style={styles.headerText}>
+            <Text style={styles.title}>How would you like to sign up?</Text>
+            <Text style={styles.subtitle}>
+              Choose an email type to verify your CHMSU Alijis student identity.
             </Text>
-          </Pressable>
+          </View>
 
-          {/* Option 2: Personal Email */}
-          <Pressable
-            onPress={() => setSelectedType("external")}
-            style={[
-              styles.card,
-              selectedType === "external" ? styles.cardActive : styles.cardInactive,
-            ]}
-          >
-            <View style={styles.cardHeaderRow}>
-              <View
-                style={[
-                  styles.iconCircle,
-                  selectedType === "external" ? styles.iconCircleActive : styles.iconCircleInactive,
-                ]}
-              >
-                <FileCheck size={22} color={selectedType === "external" ? GREEN : "#4B5563"} />
+          {/* Selection Cards */}
+          <View style={styles.cardsContainer}>
+            {/* Option 1: CHMSU Email */}
+            <Pressable
+              onPress={() => setSelectedType("chmsu")}
+              style={[
+                styles.card,
+                selectedType === "chmsu" ? styles.cardActive : styles.cardInactive,
+              ]}
+            >
+              <View style={styles.cardHeaderRow}>
+                <View
+                  style={[
+                    styles.iconCircle,
+                    selectedType === "chmsu" ? styles.iconCircleActive : styles.iconCircleInactive,
+                  ]}
+                >
+                  <GraduationCap size={22} color={selectedType === "chmsu" ? GREEN : "#4B5563"} />
+                </View>
+
+                {selectedType === "chmsu" && (
+                  <CheckCircle2 size={22} color={GREEN} style={styles.checkIcon} />
+                )}
               </View>
 
-              <View style={styles.badgeId}>
-                <Text style={styles.badgeIdText}>Student ID Required</Text>
+              <Text style={styles.cardTitle}>CHMSU Student Email</Text>
+              <Text style={styles.cardDesc}>
+                Instant verification code sent directly to your institutional student inbox. No ID upload needed.
+              </Text>
+            </Pressable>
+
+            {/* Option 2: Personal Email */}
+            <Pressable
+              onPress={() => setSelectedType("external")}
+              style={[
+                styles.card,
+                selectedType === "external" ? styles.cardActive : styles.cardInactive,
+              ]}
+            >
+              <View style={styles.cardHeaderRow}>
+                <View
+                  style={[
+                    styles.iconCircle,
+                    selectedType === "external" ? styles.iconCircleActive : styles.iconCircleInactive,
+                  ]}
+                >
+                  <FileCheck size={22} color={selectedType === "external" ? GREEN : "#4B5563"} />
+                </View>
+
+
+                {selectedType === "external" && (
+                  <CheckCircle2 size={22} color={GREEN} style={styles.checkIcon} />
+                )}
               </View>
 
-              {selectedType === "external" && (
-                <CheckCircle2 size={22} color={GREEN} style={styles.checkIcon} />
-              )}
-            </View>
+              <Text style={styles.cardTitle}>Personal Email</Text>
+              <Text style={styles.cardDesc}>
+                For students awaiting institutional account activation. Requires a quick photo scan of your Student ID or COR.
+              </Text>
+            </Pressable>
+          </View>
+        </ScrollView>
 
-            <Text style={styles.cardTitle}>Personal Email</Text>
-            <Text style={styles.cardDomain}>Gmail, Yahoo, Outlook, etc.</Text>
-            <Text style={styles.cardDesc}>
-              For students awaiting institutional account activation. Requires a quick photo scan of your Student ID or COR.
-            </Text>
-          </Pressable>
+        {/* Bottom Continue Button */}
+        <View style={styles.ctaArea}>
+          <Button
+            label="Continue"
+            variant="primary"
+            pill
+            size="lg"
+            onPress={handleContinue}
+            style={{ backgroundColor: GREEN, width: "100%" }}
+            className="w-full"
+          />
         </View>
-      </ScrollView>
-
-      {/* Bottom Continue Button */}
-      <View style={styles.ctaArea}>
-        <Button
-          label="Continue"
-          variant="primary"
-          pill
-          size="lg"
-          onPress={handleContinue}
-          style={{ backgroundColor: GREEN, width: "100%" }}
-          className="w-full"
-        />
-      </View>
       </View>
     </View>
   );

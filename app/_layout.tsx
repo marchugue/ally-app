@@ -238,7 +238,7 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
-        <KeyboardProvider statusBarTranslucent navigationBarTranslucent>
+        <KeyboardProvider>
           <StatusBar style="auto" />
           <NetworkProvider>
             <AuthProvider>

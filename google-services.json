@@ -1,13 +1,13 @@
 {
   "project_info": {
-    "project_number": "1008506516432",
-    "project_id": "ally-app-android",
-    "storage_bucket": "ally-app-android.firebasestorage.app"
+    "project_number": "895776105284",
+    "project_id": "notification-4c5d8",
+    "storage_bucket": "notification-4c5d8.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:1008506516432:android:3d128f5e1b34db38d97fd5",
+        "mobilesdk_app_id": "1:895776105284:android:fa253c4306fcfa02d3ed11",
         "android_client_info": {
           "package_name": "com.allyjis.app"
         }
@@ -15,26 +15,7 @@
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyBCNoelQis6zA0Fub8PUKUTV_9N7PRgyOw"
-        }
-      ],
-      "services": {
-        "appinvite_service": {
-          "other_platform_oauth_client": []
-        }
-      }
-    },
-    {
-      "client_info": {
-        "mobilesdk_app_id": "1:1008506516432:android:3d128f5e1b34db38d97fd5",
-        "android_client_info": {
-          "package_name": "xyz.allyjis.app"
-        }
-      },
-      "oauth_client": [],
-      "api_key": [
-        {
-          "current_key": "AIzaSyBCNoelQis6zA0Fub8PUKUTV_9N7PRgyOw"
+          "current_key": "AIzaSyDfSzodg3u5rdE9FxyFTV2bDDf6GbvxAbE"
         }
       ],
       "services": {

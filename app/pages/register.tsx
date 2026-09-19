@@ -48,17 +48,13 @@ import { uploadStudentIdFile } from "@/lib/api/media";
 import { DiagonalStripes } from "@/components/DiagonalStripes";
 import { SlideIn } from "@/components/SlideIn";
 import { Button } from "@/components/Button";
+import { KeyboardHugView } from "@/components/KeyboardHugView";
+import { useKeyboard } from "@/hooks/useKeyboard";
 import Input from "@/components/buttons/button";
 import EmailInput from "@/components/buttons/email";
 import PasswordInput from "@/components/buttons/password";
 import AlertMessage from "@/components/AlertMessage";
 import LoadingOverlay from "@/components/LoadingOverlay";
-import {
-  BasicInfoIllustration,
-  AcademicIllustration,
-  InterestsIllustration,
-  AvatarIllustration,
-} from "@/components/OnboardingIllustrations";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
@@ -172,20 +168,6 @@ function FieldError({ msg }: { msg?: string }) {
   return <Text style={{ color: "#EF4444", fontSize: 11, marginTop: 6, marginLeft: 4 }}>{msg}</Text>;
 }
 
-// ── Step illustration selector ────────────────────────────────────────────────
-
-const STEP_BLOB_COLORS = ["#EDE9FE", "#D1FAE5", "#FEF3C7", "#FCE7F3"];
-
-function StepIllustration({ step }: { step: number }) {
-  const size = Math.min(SCREEN_WIDTH * 0.42, 170);
-  switch (step) {
-    case 1: return <BasicInfoIllustration size={size} />;
-    case 2: return <AcademicIllustration size={size} />;
-    case 3: return <InterestsIllustration size={size} />;
-    case 4: return <AvatarIllustration size={size} />;
-    default: return <BasicInfoIllustration size={size} />;
-  }
-}
 
 
 // ── Main Component ───────────────────────────────────────────────────────────
@@ -255,31 +237,9 @@ export default function RegisterScreen() {
   const [showDeptPicker, setShowDeptPicker] = useState(false);
   const [showCoursePicker, setShowCoursePicker] = useState(false);
 
-  // Keyboard height & visibility for hugging the action button directly to keyboard top
-  const [keyboardHeight, setKeyboardHeight] = useState(0);
-  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+  // Keyboard visibility via native state
+  const { isKeyboardVisible } = useKeyboard();
 
-  useEffect(() => {
-    const showEvent = Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow";
-    const hideEvent = Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide";
-
-    const showSub = Keyboard.addListener(showEvent, (e) => {
-      setIsKeyboardVisible(true);
-      if (Platform.OS === "android") {
-        setKeyboardHeight(e.endCoordinates.height);
-      }
-    });
-
-    const hideSub = Keyboard.addListener(hideEvent, () => {
-      setIsKeyboardVisible(false);
-      setKeyboardHeight(0);
-    });
-
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-    };
-  }, []);
 
   const [form, setForm] = useState<FormData>({
     username: "",
@@ -651,27 +611,30 @@ export default function RegisterScreen() {
     <View style={{ flex: 1, backgroundColor: "#FFFFFF" }}>
       <StatusBar barStyle="dark-content" />
 
-      <View
-        style={{ flex: 1, width: "100%", maxWidth: 620, alignSelf: "center" }}
-      >
-        <View style={{ flex: 1 }}>
-
-          {/* ── Illustrated Step Header ── */}
-          <View style={{
-            alignItems: "center",
-            paddingTop: Math.max(insets.top, 12),
-            paddingBottom: 12,
-            backgroundColor: "#FFFFFF",
-          }}>
-            {/* Back button row */}
-            <View style={{
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "space-between",
-              width: "100%",
+      <KeyboardHugView style={{ flex: 1 }}>
+        <View
+          style={{ flex: 1, width: "100%", maxWidth: 620, alignSelf: "center" }}
+        >
+          {/* ── Header Page (Pinned at top) ── */}
+          <View
+            style={{
               paddingHorizontal: 20,
-              marginBottom: 8,
-            }}>
+              paddingTop: Math.max(insets.top, 12),
+              paddingBottom: 12,
+              backgroundColor: "#FFFFFF",
+              borderBottomWidth: 1,
+              borderBottomColor: "#F3F4F6",
+            }}
+          >
+            {/* Back button & Step counter row */}
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: 6,
+              }}
+            >
               <Pressable
                 onPress={handleBack}
                 style={{
@@ -693,33 +656,31 @@ export default function RegisterScreen() {
               <View style={{ width: 38 }} />
             </View>
 
-            {/* Illustration blob */}
-            <StepIllustration step={step} />
-
-            {/* Title + subtitle */}
-            <Text style={{
-              fontSize: 22,
-              fontWeight: "800",
-              color: "#111827",
-              textAlign: "center",
-              marginTop: 14,
-              letterSpacing: -0.5,
-            }}>
+            {/* Title + Subtitle */}
+            <Text
+              style={{
+                fontSize: 20,
+                fontWeight: "800",
+                color: "#111827",
+                textAlign: "center",
+                letterSpacing: -0.5,
+              }}
+            >
               {STEPS[step - 1].label}
             </Text>
-            <Text style={{ fontSize: 13, color: "#6B7280", textAlign: "center", marginTop: 4 }}>
+            <Text style={{ fontSize: 13, color: "#6B7280", textAlign: "center", marginTop: 2 }}>
               {STEPS[step - 1].hint}
             </Text>
 
             {/* Progress dots */}
-            <View style={{ flexDirection: "row", gap: 8, marginTop: 12, alignItems: "center" }}>
+            <View style={{ flexDirection: "row", gap: 8, marginTop: 8, justifyContent: "center", alignItems: "center" }}>
               {STEPS.map(({ num }) => (
                 <View
                   key={num}
                   style={{
-                    height: 8,
-                    borderRadius: 4,
-                    width: num === step ? 22 : 8,
+                    height: 6,
+                    borderRadius: 3,
+                    width: num === step ? 20 : 6,
                     backgroundColor: step >= num ? "#1A6B3C" : "#E5E7EB",
                   }}
                 />
@@ -727,19 +688,18 @@ export default function RegisterScreen() {
             </View>
 
             {submitError ? (
-              <View style={{ marginTop: 10, width: "100%", paddingHorizontal: 20 }}>
+              <View style={{ marginTop: 8, width: "100%" }}>
                 <AlertMessage message={submitError} type="error" />
               </View>
             ) : null}
           </View>
 
-          {/* ── Scrollable Content ── */}
+          {/* ── Scrollable Content (Upper input positioned directly under header page) ── */}
           <ScrollView
             showsVerticalScrollIndicator={false}
-            style={{ backgroundColor: "#F9FAFB" }}
+            style={{ flex: 1, backgroundColor: "#FFFFFF" }}
             contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 24, paddingTop: 16 }}
             keyboardShouldPersistTaps="handled"
-            automaticallyAdjustKeyboardInsets={true}
             keyboardDismissMode="on-drag"
           >
             {/* ── STEP 1: Basic Info & Email Type & Inline OTP ── */}
@@ -1168,15 +1128,15 @@ export default function RegisterScreen() {
 
           </ScrollView>
 
-          {/* ── Fixed Footer (Non-scrollable, hugs keyboard when inputting) ── */}
+          {/* ── Fixed Footer (Hugs keyboard when typing) ── */}
           <View
             style={{
               paddingHorizontal: 24,
               paddingTop: 10,
-              paddingBottom: isKeyboardVisible || keyboardHeight > 0 ? 10 : Math.max(insets.bottom + 12, 16),
+              paddingBottom: isKeyboardVisible ? 10 : Math.max(insets.bottom + 12, 16),
               borderTopWidth: 1,
               borderTopColor: "rgba(0,0,0,0.05)",
-              backgroundColor: "transparent",
+              backgroundColor: "#FFFFFF",
             }}
           >
             <Button
@@ -1214,7 +1174,7 @@ export default function RegisterScreen() {
             )}
           </View>
         </View>
-      </View>
+      </KeyboardHugView>
 
       {/* ── Department picker modal ── */}
       <PickerModal
