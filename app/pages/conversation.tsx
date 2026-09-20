@@ -13,6 +13,11 @@ import {
 } from "react-native";
 import { getFluentEmojiUrl } from "@/lib/fluentEmoji";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import {
+  getMemoryChat,
+  getCachedChat,
+  setCachedChat,
+} from "@/lib/chatCache";
 import { router, useLocalSearchParams } from "expo-router";
 import {
   ArrowLeft,
@@ -38,6 +43,8 @@ import {
   setMessageReaction,
   restoreConversationStreak,
 } from "@/lib/api/conversation";
+import * as Notifications from "expo-notifications";
+import { setAppBadgeCount } from "@/lib/pushNotifications";
 import { getProfilesBatch } from "@/lib/api/profiles";
 import { usePresence } from "@/context/PresenceContext";
 import { blockUser, reportUser } from "@/lib/api/moderation";
@@ -71,74 +78,8 @@ function canGroupMessages(current: Message, adjacent: Message | null | undefined
   if (isNaN(curTime) || isNaN(adjTime)) return true;
   return Math.abs(curTime - adjTime) <= GROUPING_MAX_GAP_MS;
 }
-const POLL_INTERVAL_MS = 3000;
-
-const CACHE_KEY_PREFIX = "ally_chat_cache_";
-const MAX_CACHED_MESSAGES = 50;
-
-const MAX_CHAT_CACHE_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
-
-interface MobileChatCache {
-  messages: Message[];
-  hasMore: boolean;
-  nextCursor: string | null;
-  cachedAt: number;
-}
-
-function getCacheKey(convId: string, userId?: string | null): string {
-  return userId ? `${CACHE_KEY_PREFIX}${userId}_${convId}` : `${CACHE_KEY_PREFIX}${convId}`;
-}
-
-async function getCachedMessagesMobile(convId: string, userId?: string | null): Promise<MobileChatCache | null> {
-  try {
-    const key = getCacheKey(convId, userId);
-    const raw = await AsyncStorage.getItem(key);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed?.messages)) {
-      const cachedAt = Number(parsed.cachedAt) || 0;
-      if (Date.now() - cachedAt > MAX_CHAT_CACHE_AGE_MS) {
-        await AsyncStorage.removeItem(key).catch(() => {});
-        return null;
-      }
-      return {
-        messages: parsed.messages,
-        hasMore: Boolean(parsed.hasMore),
-        nextCursor: parsed.nextCursor ?? null,
-        cachedAt,
-      };
-    }
-  } catch {
-    // ignore
-  }
-  return null;
-}
-
-async function setCachedMessagesMobile(
-  convId: string,
-  messages: Message[],
-  hasMore: boolean,
-  nextCursor: string | null,
-  userId?: string | null
-) {
-  try {
-    const confirmed = messages.filter(
-      (m) => !m.id.startsWith("temp-") && m.status !== "failed" && m.status !== "sending"
-    );
-    const toCache = confirmed.slice(-MAX_CACHED_MESSAGES);
-    await AsyncStorage.setItem(
-      getCacheKey(convId, userId),
-      JSON.stringify({
-        messages: toCache,
-        hasMore,
-        nextCursor,
-        cachedAt: Date.now(),
-      })
-    );
-  } catch {
-    // ignore
-  }
-}
+// No hard poll — socket delivers messages in real-time.
+// onConnect handler below reconciles anything missed on reconnect.
 
 interface StreakNoticeAnchor {
   messageId: string;
@@ -177,14 +118,18 @@ export default function ConversationScreen() {
 
   const conversationId = rawConvId || rawId || "";
 
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [hasMore, setHasMore] = useState(false);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
+  const initialCached = useMemo(
+    () => (conversationId ? getMemoryChat(conversationId, user?.id) : null),
+    [conversationId, user?.id]
+  );
+  const [messages, setMessages] = useState<Message[]>(() => initialCached?.messages || []);
+  const [hasMore, setHasMore] = useState(() => initialCached?.hasMore ?? false);
+  const [nextCursor, setNextCursor] = useState<string | null>(() => initialCached?.nextCursor ?? null);
   const [isLoadingOlder, setIsLoadingOlder] = useState(false);
   const hasLoadedOnceRef = useRef(false);
 
-  // If prefill data is passed from messages list, skip loading screen entirely
-  const [loading, setLoading] = useState(!prefillName);
+  // If prefill data is passed OR cached messages exist in memory, skip loading screen entirely (0ms display)
+  const [loading, setLoading] = useState(() => !prefillName && (initialCached?.messages?.length || 0) === 0);
   const [otherProfile, setOtherProfile] = useState<Profile | null>(
     prefillName
       ? ({ id: prefillUserId, full_name: prefillName, avatar_url: prefillAvatar || null } as any)
@@ -273,7 +218,6 @@ export default function ConversationScreen() {
 
 
   const flatListRef = useRef<FlatList>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   // Load anchor from AsyncStorage if not already in memory
   useEffect(() => {
@@ -292,7 +236,7 @@ export default function ConversationScreen() {
             }
           }
         })
-        .catch(() => {});
+        .catch(() => { });
     }
   }, [conversationId]);
 
@@ -310,7 +254,7 @@ export default function ConversationScreen() {
     if (!showStreakNotice) {
       if (conversationId && streakNoticeAnchorMap.has(conversationId)) {
         streakNoticeAnchorMap.delete(conversationId);
-        AsyncStorage.removeItem(getStreakAnchorKey(conversationId)).catch(() => {});
+        AsyncStorage.removeItem(getStreakAnchorKey(conversationId)).catch(() => { });
       }
       return sorted.reverse().map((m) => ({ type: 'message', data: m }));
     }
@@ -352,7 +296,7 @@ export default function ConversationScreen() {
         };
         if (conversationId) {
           streakNoticeAnchorMap.set(conversationId, newAnchor);
-          AsyncStorage.setItem(getStreakAnchorKey(conversationId), JSON.stringify(newAnchor)).catch(() => {});
+          AsyncStorage.setItem(getStreakAnchorKey(conversationId), JSON.stringify(newAnchor)).catch(() => { });
         }
         insertIdx = sorted.length;
       } else {
@@ -378,7 +322,7 @@ export default function ConversationScreen() {
   useEffect(() => {
     if (!conversationId) return;
     hasLoadedOnceRef.current = false;
-    getCachedMessagesMobile(conversationId, user?.id).then((cached) => {
+    getCachedChat(conversationId, user?.id).then((cached) => {
       if (cached && cached.messages.length > 0 && !hasLoadedOnceRef.current) {
         setMessages(cached.messages);
         setHasMore(cached.hasMore);
@@ -412,7 +356,7 @@ export default function ConversationScreen() {
         const combined = [...olderHistory, ...msgs];
 
         if (pending.length === 0) {
-          setCachedMessagesMobile(conversationId, combined, res.hasMore, res.nextCursor, user?.id);
+          setCachedChat(conversationId, combined, res.hasMore, res.nextCursor, user?.id);
           return combined;
         }
 
@@ -430,7 +374,7 @@ export default function ConversationScreen() {
             result.push(p);
           }
         }
-        setCachedMessagesMobile(conversationId, combined, res.hasMore, res.nextCursor, user?.id);
+        setCachedChat(conversationId, combined, res.hasMore, res.nextCursor, user?.id);
         return result;
       });
 
@@ -443,6 +387,12 @@ export default function ConversationScreen() {
           new Date().toISOString(),
           accessToken
         ).catch(() => { });
+
+        if (Notifications && typeof Notifications.getBadgeCountAsync === "function") {
+          Notifications.getBadgeCountAsync().then((count) => {
+            setAppBadgeCount(Math.max(0, count - 1));
+          }).catch(() => null);
+        }
       }
     } catch (err) {
       console.warn("Failed to load messages", err);
@@ -531,20 +481,15 @@ export default function ConversationScreen() {
 
   useEffect(() => {
     async function init() {
-      // If prefill was supplied, messages can load in background while header
-      // already shows the correct name/avatar — no blocking loading screen.
-      if (!prefillName) setLoading(true);
-      await Promise.all([loadMessages(), loadConversation()]);
+      // If prefill was supplied or cached messages exist, messages load in background while
+      // header already shows the correct name/avatar — no blocking loading screen.
+      if (!prefillName && messages.length === 0) setLoading(true);
+      await Promise.all([loadMessages(true), loadConversation()]);
       setLoading(false);
     }
     init();
-
-    // Fallback poll — reconciles anything missed if the socket drops.
-    pollRef.current = setInterval(() => loadMessages(true), POLL_INTERVAL_MS);
-    return () => {
-      if (pollRef.current) clearInterval(pollRef.current);
-    };
-  }, [loadMessages, loadConversation, prefillName]);
+    // No hard poll — socket onConnect below handles reconnect catch-up.
+  }, [loadMessages, loadConversation, prefillName, messages.length]);
 
   // Real-time delivery via Socket.io (same events as the web client).
   useEffect(() => {
@@ -579,7 +524,7 @@ export default function ConversationScreen() {
         } else {
           nextList = [...prev, incomingMsg];
         }
-        setCachedMessagesMobile(conversationId, nextList, hasMore, nextCursor, user?.id);
+        setCachedChat(conversationId, nextList, hasMore, nextCursor, user?.id);
         return nextList;
       });
       markConversationRead(conversationId, new Date().toISOString(), accessToken).catch(() => { });
@@ -649,7 +594,10 @@ export default function ConversationScreen() {
       socket.off("matchmaking:chat_expired", onMatchEnded);
       socket.off("connect", onConnect);
     };
-  }, [conversationId, accessToken, loadMessages, matchInfo?.id, convStreak]);
+    // NOTE: convStreak intentionally excluded from deps — it changes on every
+    // streak tick, which would cause the socket to re-attach constantly.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversationId, accessToken, loadMessages, matchInfo?.id]);
 
   // Midnight streak expiry is handled server-side (streakReminder.service.ts).
   // The backend emits 'conversation:streak_updated' with status:'inactive' and
@@ -727,7 +675,7 @@ export default function ConversationScreen() {
           } else {
             updated = prev.map((m) => (m.id === tempId ? { ...savedMsg, status: "sent" } : m));
           }
-          setCachedMessagesMobile(conversationId, updated, hasMore, nextCursor, user?.id);
+          setCachedChat(conversationId, updated, hasMore, nextCursor, user?.id);
           return updated;
         });
       } catch (err) {
@@ -910,11 +858,90 @@ export default function ConversationScreen() {
     }
   }, [matchInfo, conversationId, accessToken]);
 
+
   // ── Long press handler ────────────────────────────────────────────────
   const handleLongPress = (message: Message) => {
     setSelectedMessage(message);
     setShowReactions(true);
   };
+
+  // ── Memoized FlatList renderItem ──────────────────────────────────────
+  // Extracted so FlatList doesn't recreate the function reference on every render.
+  const renderChatItem = useCallback(
+    ({ item, index }: { item: ChatItem; index: number }) => {
+      if (item.type === 'streak_notice') {
+        return (
+          <View
+            style={{
+              paddingVertical: 16,
+              paddingHorizontal: 24,
+              alignItems: "center",
+              transform: [{ scaleY: -1 }],
+            }}
+          >
+            {canRestoreStreak ? (
+              <Text style={{ fontSize: 13, color: "#9CA3AF", textAlign: "center", lineHeight: 20 }}>
+                Your daily streak has ended.{" "}
+                <Text
+                  onPress={handleRestoreStreak}
+                  style={{ color: "#1A6B3C", fontWeight: "700", textDecorationLine: "underline" }}
+                >
+                  Restore Streak
+                </Text>
+                {restoreHoursRemaining > 0 && (
+                  <Text style={{ color: "#C4B8A8" }}>{` (${restoreHoursRemaining}h left)`}</Text>
+                )}
+              </Text>
+            ) : (
+              <Text style={{ fontSize: 13, color: "#9CA3AF", textAlign: "center", lineHeight: 20 }}>
+                Your streak has ended. Keep chatting to start a new one! 🔥
+              </Text>
+            )}
+          </View>
+        );
+      }
+
+      // In an inverted list, index 0 = newest. index+1 = older, index-1 = newer.
+      const olderItem = index < invertedChatItems.length - 1 ? invertedChatItems[index + 1] : null;
+      const newerItem = index > 0 ? invertedChatItems[index - 1] : null;
+      const older = olderItem?.type === 'message' ? olderItem.data : null;
+      const newer = newerItem?.type === 'message' ? newerItem.data : null;
+      const hasOlder = canGroupMessages(item.data, older);
+      const hasNewer = canGroupMessages(item.data, newer);
+
+      let groupPosition: MessageGroupPosition = "single";
+      if (!hasOlder && hasNewer) groupPosition = "first";
+      else if (hasOlder && hasNewer) groupPosition = "middle";
+      else if (hasOlder && !hasNewer) groupPosition = "last";
+
+      const isMine = item.data.sender_id === user?.id;
+      const partnerDisplayName = isAnonymous
+        ? (matchInfo?.partnerAlias || prefillName || "Anonymous Ally")
+        : (otherProfile?.username || otherProfile?.full_name || prefillName || "User");
+      const senderName = isMine ? "Me" : partnerDisplayName;
+
+      return (
+        <SwipeableChatBubble
+          message={item.data}
+          isMine={isMine}
+          groupPosition={groupPosition}
+          senderName={senderName}
+          onLongPress={handleLongPress}
+          onReply={(msg) => setReplyTo(msg)}
+          onRetry={handleRetry}
+          isActiveTime={activeTimeMessageId === item.data.id}
+          onToggleTime={handleToggleTime}
+        />
+      );
+    },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [
+      invertedChatItems, canRestoreStreak, restoreHoursRemaining, handleRestoreStreak,
+      user?.id, isAnonymous, matchInfo?.partnerAlias, otherProfile, prefillName,
+      handleRetry, activeTimeMessageId, handleToggleTime, setReplyTo,
+    ]
+  );
+
 
   if (loading && !prefillName) {
     return (
@@ -1121,7 +1148,11 @@ export default function ConversationScreen() {
             ref={flatListRef}
             data={invertedChatItems}
             style={{ flex: 1 }}
-            keyExtractor={(item, index) => (item.type === 'message' ? (item.data.id ? `${item.data.id}-${index}` : `msg-${index}`) : '__streak_notice__')}
+            keyExtractor={(item, index) =>
+              item.type === 'message'
+                ? (item.data.id ? `${item.data.id}-${index}` : `msg-${index}`)
+                : '__streak_notice__'
+            }
             initialNumToRender={15}
             maxToRenderPerBatch={10}
             windowSize={10}
@@ -1138,82 +1169,8 @@ export default function ConversationScreen() {
                 </View>
               ) : null
             }
-            contentContainerStyle={{
-              paddingVertical: 12,
-            }}
-            extraData={invertedChatItems}
-            renderItem={({ item, index }) => {
-              if (item.type === 'streak_notice') {
-                return (
-                  <View
-                    style={{
-                      paddingVertical: 16,
-                      paddingHorizontal: 24,
-                      alignItems: "center",
-                      transform: [{ scaleY: -1 }],
-                    }}
-                  >
-                    {canRestoreStreak ? (
-                      <Text style={{ fontSize: 13, color: "#9CA3AF", textAlign: "center", lineHeight: 20 }}>
-                        Your daily streak has ended.{" "}
-                        <Text
-                          onPress={handleRestoreStreak}
-                          style={{ color: "#1A6B3C", fontWeight: "700", textDecorationLine: "underline" }}
-                        >
-                          Restore Streak
-                        </Text>
-                        {restoreHoursRemaining > 0 && (
-                          <Text style={{ color: "#C4B8A8" }}>{` (${restoreHoursRemaining}h left)`}</Text>
-                        )}
-                      </Text>
-                    ) : (
-                      <Text style={{ fontSize: 13, color: "#9CA3AF", textAlign: "center", lineHeight: 20 }}>
-                        Your streak has ended. Keep chatting to start a new one! 🔥
-                      </Text>
-                    )}
-                  </View>
-                );
-              }
-
-              // Inverted list: index 0 is the newest message
-              // index - 1 is newer chronologically
-              // index + 1 is older chronologically
-              const olderItem = index < invertedChatItems.length - 1 ? invertedChatItems[index + 1] : null;
-              const newerItem = index > 0 ? invertedChatItems[index - 1] : null;
-              const older = olderItem?.type === 'message' ? olderItem.data : null;
-              const newer = newerItem?.type === 'message' ? newerItem.data : null;
-              const hasOlder = canGroupMessages(item.data, older);
-              const hasNewer = canGroupMessages(item.data, newer);
-
-              let groupPosition: MessageGroupPosition = "single";
-              if (!hasOlder && hasNewer) {
-                groupPosition = "first";
-              } else if (hasOlder && hasNewer) {
-                groupPosition = "middle";
-              } else if (hasOlder && !hasNewer) {
-                groupPosition = "last";
-              }
-
-              const isMine = item.data.sender_id === user?.id;
-              const partnerDisplayName = isAnonymous
-                ? (matchInfo?.partnerAlias || prefillName || "Anonymous Ally")
-                : (otherProfile?.username || otherProfile?.full_name || prefillName || "User");
-              const senderName = isMine ? "Me" : partnerDisplayName;
-
-              return (
-                <SwipeableChatBubble
-                  message={item.data}
-                  isMine={isMine}
-                  groupPosition={groupPosition}
-                  senderName={senderName}
-                  onLongPress={handleLongPress}
-                  onReply={(msg) => setReplyTo(msg)}
-                  onRetry={handleRetry}
-                  isActiveTime={activeTimeMessageId === item.data.id}
-                  onToggleTime={handleToggleTime}
-                />
-              );
-            }}
+            contentContainerStyle={{ paddingVertical: 12 }}
+            renderItem={renderChatItem}
             ListEmptyComponent={
               <View style={{ alignItems: "center", padding: 32, transform: [{ scaleY: -1 }] }}>
                 <Text style={{ fontSize: 14, color: "#9CA3AF", textAlign: "center" }}>

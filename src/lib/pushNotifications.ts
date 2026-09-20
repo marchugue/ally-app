@@ -101,6 +101,7 @@ export async function registerForPushNotificationsAsync(accessToken: string): Pr
         importance: Notifications.AndroidImportance.MAX,
         vibrationPattern: [0, 250, 250, 250],
         lightColor: "#1F663C",
+        showBadge: true,
       }).catch(() => null);
     }
 
@@ -136,6 +137,27 @@ export async function registerForPushNotificationsAsync(accessToken: string): Pr
     }
     return null;
   }
+}
+
+/**
+ * Sets the app icon badge count (0 removes the badge).
+ */
+export async function setAppBadgeCount(count: number): Promise<void> {
+  if (Platform.OS === "web" || isExpoGo) return;
+  try {
+    if (Notifications && typeof Notifications.setBadgeCountAsync === "function") {
+      await Notifications.setBadgeCountAsync(Math.max(0, Math.floor(count)));
+    }
+  } catch (e) {
+    console.warn("[PushNotifications] Could not set badge count:", e);
+  }
+}
+
+/**
+ * Clears the app icon badge count.
+ */
+export async function clearAppBadgeCount(): Promise<void> {
+  return setAppBadgeCount(0);
 }
 
 /**
@@ -175,6 +197,11 @@ export function setupNotificationListeners(
               console.warn("[PushNotifications] Failed to mark as read from notification:", err);
             }
           }
+          if (Notifications && typeof Notifications.getBadgeCountAsync === "function") {
+            Notifications.getBadgeCountAsync().then((count) => {
+              setAppBadgeCount(Math.max(0, count - 1));
+            }).catch(() => null);
+          }
           return;
         }
 
@@ -202,6 +229,11 @@ export function setupNotificationListeners(
               onNavigateToConversation(conversationId);
             }
           }
+          if (Notifications && typeof Notifications.getBadgeCountAsync === "function") {
+            Notifications.getBadgeCountAsync().then((count) => {
+              setAppBadgeCount(Math.max(0, count - 1));
+            }).catch(() => null);
+          }
           return;
         }
 
@@ -212,6 +244,11 @@ export function setupNotificationListeners(
           }
           if (onNavigateToConversation) {
             onNavigateToConversation(conversationId);
+          }
+          if (Notifications && typeof Notifications.getBadgeCountAsync === "function") {
+            Notifications.getBadgeCountAsync().then((count) => {
+              setAppBadgeCount(Math.max(0, count - 1));
+            }).catch(() => null);
           }
         }
       }

@@ -26,6 +26,8 @@ import {
 import { useAuth } from "@/lib/auth/AuthContext";
 import { UserAvatar } from "@/components/UserAvatar";
 import { getSocket } from "@/lib/socket";
+import * as Notifications from "expo-notifications";
+import { setAppBadgeCount } from "@/lib/pushNotifications";
 import {
   listNotifications,
   markNotificationRead,
@@ -159,6 +161,7 @@ export default function NotificationsScreen() {
     setNotifications((prev) =>
       prev.map((n) => ({ ...n, isRead: true, read: true }))
     );
+    setAppBadgeCount(0);
   }, [accessToken]);
 
   const handleClearAll = useCallback(() => {
@@ -179,6 +182,7 @@ export default function NotificationsScreen() {
               }
             }
             setNotifications([]);
+            setAppBadgeCount(0);
           },
         },
       ]
@@ -193,6 +197,11 @@ export default function NotificationsScreen() {
       );
       if (accessToken) {
         markNotificationRead(item.id, accessToken).catch(() => {});
+      }
+      if (Notifications && typeof Notifications.getBadgeCountAsync === "function") {
+        Notifications.getBadgeCountAsync().then((count) => {
+          setAppBadgeCount(Math.max(0, count - 1));
+        }).catch(() => null);
       }
 
       // 1. Direct Redirection from Backend (if provided)

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, useRef, useMemo } from "react";
+import React, { useCallback, useEffect, useState, useRef, useMemo } from "react";
 import {
   View,
   Text,
@@ -10,7 +10,12 @@ import {
   TextInput,
   Modal,
 } from "react-native";
-import AsyncStorage from "@react-native-async-storage/async-storage";
+import {
+  getMemoryConversations,
+  getCachedConversations,
+  setCachedConversations,
+  primeChatCacheFromConversation,
+} from "@/lib/chatCache";
 import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
 import { router, useFocusEffect } from "expo-router";
 import { Search, X, MessageCircle, Trash2, Drama, Flame } from "lucide-react-native";
@@ -23,6 +28,7 @@ import { useAuth } from "@/lib/auth/AuthContext";
 import { listConversations, clearConversation, createConversation } from "@/lib/api/conversation";
 import { usePresence } from "@/context/PresenceContext";
 import { getSocket } from "@/lib/socket";
+import { setAppBadgeCount } from "@/lib/pushNotifications";
 import { useChatBrowseUsers } from "@/hooks/useChatBrowseUsers";
 import {
   buildChatBrowseResults,
@@ -126,20 +132,24 @@ function BrowseRow({
   browseUser,
   onSelect,
   starting,
+  disabled,
+  isNavigatingThis,
   isOnline,
 }: {
   browseUser: ChatBrowseUser;
   onSelect: (user: ChatBrowseUser) => void;
   starting: boolean;
+  disabled: boolean;
+  isNavigatingThis: boolean;
   isOnline: boolean;
 }) {
   return (
     <Pressable
       onPress={() => onSelect(browseUser)}
-      disabled={starting}
+      disabled={disabled || starting}
       style={({ pressed }) => ({
-        opacity: starting ? 0.6 : 1,
-        backgroundColor: pressed ? "#F9FAFB" : "#FFFFFF",
+        opacity: disabled || starting ? 0.6 : 1,
+        backgroundColor: isNavigatingThis ? "#F3F4F6" : pressed ? "#F9FAFB" : "#FFFFFF",
       })}
     >
       <View
@@ -207,9 +217,12 @@ interface SwipeableRowProps {
   unreadInfo: { unreadCount: number; isUnread: boolean };
   swipeableRefs: React.MutableRefObject<Map<string, any>>;
   onDeletePrompt: (id: string, name: string) => void;
+  onOpen: (item: Conversation, info: ReturnType<typeof getParticipantInfo>) => void;
+  disabled: boolean;
+  isNavigatingThis: boolean;
 }
 
-function SwipeableRow({
+const SwipeableRow = React.memo(function SwipeableRow({
   item,
   info,
   lastMsg,
@@ -218,6 +231,9 @@ function SwipeableRow({
   unreadInfo,
   swipeableRefs,
   onDeletePrompt,
+  onOpen,
+  disabled,
+  isNavigatingThis,
 }: SwipeableRowProps) {
   const swipeRef = useRef<any>(null);
 
@@ -267,28 +283,18 @@ function SwipeableRow({
       )}
     >
       <Pressable
-        onPress={() =>
-          router.push({
-            pathname: "/pages/conversation" as any,
-            params: {
-              conversationId: item.id,
-              prefillName: info.participantName,
-              prefillAvatar: info.participantAvatar || "",
-              prefillUserId: info.isAnonymous ? "" : (info.participantId || ""),
-              isAnonymous: info.isAnonymous ? "true" : "false",
-              prefillDayStreak: String(info.dayStreak ?? 0),
-              prefillStreakActiveToday: info.streakActiveToday ? "true" : "false",
-              prefillStreakRestoreDeadline: (item.streakRestoreDeadline || item.matchInfo?.streakRestoreDeadline || "") as string,
-            },
-          })
-        }
+        disabled={disabled}
+        onPress={() => onOpen(item, info)}
         android_ripple={{ color: "rgba(0,0,0,0.04)" }}
         style={({ pressed }) => ({
-          backgroundColor: pressed
-            ? "#F9FAFB"
-            : unreadInfo.isUnread
-              ? "#F0FDF4"
-              : "#FFFFFF",
+          opacity: isNavigatingThis ? 0.65 : 1,
+          backgroundColor: isNavigatingThis
+            ? "#F3F4F6"
+            : pressed
+              ? "#F9FAFB"
+              : unreadInfo.isUnread
+                ? "#F0FDF4"
+                : "#FFFFFF",
         })}
       >
         <View
@@ -401,59 +407,54 @@ function SwipeableRow({
       </Pressable>
     </ReanimatedSwipeable>
   );
-}
+});
 
-const CONVERSATIONS_CACHE_KEY_PREFIX = "ally_conversations_cache_";
-const MAX_CACHE_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
-
-async function getCachedConversationsMobile(userId: string): Promise<Conversation[] | null> {
-  try {
-    const raw = await AsyncStorage.getItem(CONVERSATIONS_CACHE_KEY_PREFIX + userId);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed?.conversations)) {
-      const cachedAt = Number(parsed.cachedAt) || 0;
-      if (Date.now() - cachedAt > MAX_CACHE_AGE_MS) {
-        await AsyncStorage.removeItem(CONVERSATIONS_CACHE_KEY_PREFIX + userId);
-        return null;
-      }
-      return parsed.conversations;
-    }
-  } catch {
-    // ignore corrupted cache
-  }
-  return null;
-}
-
-async function setCachedConversationsMobile(userId: string, conversations: Conversation[]) {
-  try {
-    const toCache = conversations.slice(0, 30);
-    await AsyncStorage.setItem(
-      CONVERSATIONS_CACHE_KEY_PREFIX + userId,
-      JSON.stringify({
-        conversations: toCache,
-        cachedAt: Date.now(),
-      })
-    );
-  } catch {
-    // ignore storage errors
-  }
-}
+const PAGE_SIZE = 20; // conversations shown per page (client-side virtual pagination)
 
 export default function MessagesScreen() {
   const { user, accessToken } = useAuth();
-  const [conversations, setConversations] = useState<Conversation[]>([]);
+  const [conversations, setConversations] = useState<Conversation[]>(() =>
+    user?.id ? getMemoryConversations(user.id) || [] : []
+  );
   const { isOnline: checkIsOnline, refreshOnlineUsers } = usePresence();
-  const [loading, setLoading] = useState(true);
+  // If we already have cached conversations in memory, skip the full-screen loading spinner (0ms display)
+  const [loading, setLoading] = useState(() => !(user?.id && (getMemoryConversations(user.id)?.length || 0) > 0));
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
   const [browseMode, setBrowseMode] = useState(false);
   const [startingUserId, setStartingUserId] = useState<string | null>(null);
+  const [navigatingId, setNavigatingId] = useState<string | null>(null);
+  const isNavigatingRef = useRef(false);
+  const isNavigating = Boolean(navigatingId) || isNavigatingRef.current;
+
   const [variantFilter, setVariantFilter] = useState<"all" | "regular" | "anonymous">("all");
   const searchInputRef = useRef<TextInput>(null);
   const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
   const [deleteTargetName, setDeleteTargetName] = useState<string>("");
   const swipeableRefs = useRef<Map<string, any>>(new Map());
+
+  const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+
+  // Sync app icon badge count to total unread messages across conversations
+  const totalUnreadCount = useMemo(() => {
+    if (!user?.id) return 0;
+    return conversations.reduce((acc, conv) => acc + getUnreadInfo(conv, user.id).unreadCount, 0);
+  }, [conversations, user?.id]);
+
+  useEffect(() => {
+    setAppBadgeCount(totalUnreadCount);
+  }, [totalUnreadCount]);
+
+  // Safety fallback: ensure navigation lock auto-clears even if route transition stalls
+  useEffect(() => {
+    if (navigatingId) {
+      const timer = setTimeout(() => {
+        isNavigatingRef.current = false;
+        setNavigatingId(null);
+      }, 2500);
+      return () => clearTimeout(timer);
+    }
+  }, [navigatingId]);
 
   const closeAllSwipeables = useCallback(() => {
     swipeableRefs.current.forEach((ref) => ref?.close());
@@ -487,7 +488,7 @@ export default function MessagesScreen() {
       const finalConvs = Array.from(deduped.values());
       setConversations(finalConvs);
       if (user?.id) {
-        setCachedConversationsMobile(user.id, finalConvs);
+        void setCachedConversations(user.id, finalConvs);
       }
     } catch (err) {
       console.warn("Failed to load conversations", err);
@@ -498,33 +499,28 @@ export default function MessagesScreen() {
     let isMounted = true;
     async function init() {
       if (user?.id) {
-        const cached = await getCachedConversationsMobile(user.id);
+        const cached = await getCachedConversations(user.id);
         if (cached && cached.length > 0 && isMounted) {
           setConversations(cached);
           setLoading(false);
         }
       }
       await Promise.all([loadConversations(true), refreshOnlineUsers()]);
-      if (isMounted) {
-        setLoading(false);
-      }
+      if (isMounted) setLoading(false);
     }
     init();
-
-    // Passive fallback poll (60s instead of 15s; focusEffect + sockets handle active updates)
-    const interval = setInterval(() => {
-      loadConversations(true);
-      refreshOnlineUsers();
-    }, 60000);
-    return () => {
-      isMounted = false;
-      clearInterval(interval);
-    };
+    // No fallback poll — useFocusEffect + sockets handle active updates.
+    // 24h AsyncStorage cache covers cold starts.
+    return () => { isMounted = false; };
   }, [loadConversations, refreshOnlineUsers, user?.id]);
 
-  // Re-fetch when navigating back to the Messages tab to instantly reflect read status changes
+  // Re-fetch when navigating back to the Messages tab to instantly reflect read status changes,
+  // and immediately reset navigation lock so items are pressable again!
   useFocusEffect(
     useCallback(() => {
+      isNavigatingRef.current = false;
+      setNavigatingId(null);
+      setStartingUserId(null);
       void loadConversations(true);
       void refreshOnlineUsers();
     }, [loadConversations, refreshOnlineUsers])
@@ -537,16 +533,48 @@ export default function MessagesScreen() {
     const socket = getSocket(accessToken);
     if (!socket) return;
 
-    const onMessageNew = () => {
-      void loadConversations(true);
-      void refreshOnlineUsers();
+    // Optimistically merge an incoming message into the local conversations list
+    // so the last-message preview and unread badge update instantly without a
+    // round-trip to the server. Falls back to a full reload only when the
+    // conversation isn't already known locally.
+    const onMessageNew = (payload: any) => {
+      const incomingConvId: string = payload?.conversationId ?? payload?.message?.conversation_id ?? "";
+      const incomingMsg = payload?.message;
+      if (!incomingConvId || !incomingMsg) {
+        // Unknown payload shape — fall back to a full reload
+        void loadConversations(true);
+        return;
+      }
+      setConversations((prev) => {
+        const idx = prev.findIndex((c) => c.id === incomingConvId);
+        if (idx === -1) {
+          // New conversation not yet in list — reload to fetch it
+          void loadConversations(true);
+          return prev;
+        }
+        const updated = [...prev];
+        updated[idx] = {
+          ...updated[idx],
+          messages: [...(updated[idx].messages ?? []), incomingMsg],
+          updated_at: incomingMsg.created_at ?? updated[idx].updated_at,
+        };
+        // Re-sort: most recent first
+        updated.sort((a, b) => {
+          const aTime = getLastMessage(a)?.created_at || a.updated_at;
+          const bTime = getLastMessage(b)?.created_at || b.updated_at;
+          return new Date(bTime).getTime() - new Date(aTime).getTime();
+        });
+        return updated;
+      });
     };
+
     const onConnect = () => {
       void loadConversations(true);
       void refreshOnlineUsers();
     };
 
     const onStreakUpdated = (payload: any) => {
+      // Only update local state — no full reload needed for a streak change
       setConversations((prev) =>
         prev.map((c) => {
           const isMatch =
@@ -566,7 +594,6 @@ export default function MessagesScreen() {
           };
         })
       );
-      void loadConversations(true);
     };
 
     socket.on("conversation:message_new", onMessageNew);
@@ -630,18 +657,27 @@ export default function MessagesScreen() {
     [accessToken, closeAllSwipeables]
   );
 
-  const filteredConversations = conversations.filter((conv: any) => {
+  const filteredConversations = useMemo(() => conversations.filter((conv: any) => {
     const isAnonymous = Boolean(
       conv.variant ? conv.variant !== "regular" : (conv.is_anonymous || conv.type === "anonymous")
     );
     if (variantFilter === "regular" && isAnonymous) return false;
     if (variantFilter === "anonymous" && !isAnonymous) return false;
-
     if (!searchQuery.trim()) return true;
     const info = getParticipantInfo(conv, user?.id || "");
     const query = searchQuery.toLowerCase();
     return info.participantName.toLowerCase().includes(query);
-  });
+  }), [conversations, variantFilter, searchQuery, user?.id]);
+
+  // Virtual pagination: show first visibleCount items, expand on scroll
+  const paginatedConversations = useMemo(
+    () => filteredConversations.slice(0, visibleCount),
+    [filteredConversations, visibleCount]
+  );
+
+  const handleLoadMore = useCallback(() => {
+    setVisibleCount((prev) => Math.min(prev + PAGE_SIZE, filteredConversations.length));
+  }, [filteredConversations.length]);
 
   const showBrowse = browseMode || searchQuery.trim().length > 0;
   const { allies: browseAllies, profiles: browseProfiles, isLoading: loadingBrowse } =
@@ -670,12 +706,71 @@ export default function MessagesScreen() {
   const hasBrowseResults =
     browseResults.allies.length > 0 || browseResults.others.length > 0;
 
+  const handleOpenConversation = useCallback(
+    (item: Conversation, info: ReturnType<typeof getParticipantInfo>) => {
+      if (isNavigatingRef.current) return;
+      isNavigatingRef.current = true;
+      setNavigatingId(item.id);
+
+      // Prime chat cache with whatever messages this conversation already has
+      if (item.messages && item.messages.length > 0) {
+        primeChatCacheFromConversation(item.id, item.messages, user?.id);
+      }
+
+      router.push({
+        pathname: "/pages/conversation" as any,
+        params: {
+          conversationId: item.id,
+          prefillName: info.participantName,
+          prefillAvatar: info.participantAvatar || "",
+          prefillUserId: info.isAnonymous ? "" : (info.participantId || ""),
+          isAnonymous: info.isAnonymous ? "true" : "false",
+          prefillDayStreak: String(info.dayStreak ?? 0),
+          prefillStreakActiveToday: info.streakActiveToday ? "true" : "false",
+          prefillStreakRestoreDeadline: (item.streakRestoreDeadline || item.matchInfo?.streakRestoreDeadline || "") as string,
+        },
+      });
+    },
+    [user?.id]
+  );
+
   const handleBrowseSelect = useCallback(
     async (browseUser: ChatBrowseUser) => {
-      if (!accessToken || startingUserId) return;
-
+      if (!accessToken || isNavigatingRef.current) return;
+      isNavigatingRef.current = true;
+      setNavigatingId(browseUser.id);
       setStartingUserId(browseUser.id);
+
       try {
+        // Fast path: if conversation already exists locally, open instantly with 0ms delay!
+        const existingConv = conversations.find((conv) => {
+          const info = getParticipantInfo(conv, user?.id || "");
+          return info.participantId === browseUser.id;
+        });
+
+        if (existingConv) {
+          const info = getParticipantInfo(existingConv, user?.id || "");
+          if (existingConv.messages && existingConv.messages.length > 0) {
+            primeChatCacheFromConversation(existingConv.id, existingConv.messages, user?.id);
+          }
+          setBrowseMode(false);
+          setSearchQuery("");
+          router.push({
+            pathname: "/pages/conversation" as any,
+            params: {
+              conversationId: existingConv.id,
+              prefillName: info.participantName,
+              prefillAvatar: info.participantAvatar || "",
+              prefillUserId: info.participantId || "",
+              isAnonymous: "false",
+              prefillDayStreak: String(info.dayStreak ?? 0),
+              prefillStreakActiveToday: info.streakActiveToday ? "true" : "false",
+              prefillStreakRestoreDeadline: (existingConv.streakRestoreDeadline || existingConv.matchInfo?.streakRestoreDeadline || "") as string,
+            },
+          });
+          return;
+        }
+
         const { conversationId } = await createConversation(browseUser.id, accessToken);
         setBrowseMode(false);
         setSearchQuery("");
@@ -691,13 +786,44 @@ export default function MessagesScreen() {
         });
       } catch (err) {
         console.warn("Failed to start conversation", err);
+        isNavigatingRef.current = false;
+        setNavigatingId(null);
       } finally {
         setStartingUserId(null);
       }
     },
-    [accessToken, startingUserId, loadConversations],
+    [accessToken, conversations, user?.id, loadConversations]
   );
 
+  // ── Memoized FlatList renderItem ──────────────────────────────────────
+  const renderConversationItem = useCallback(
+    ({ item }: { item: Conversation }) => {
+      const info = getParticipantInfo(item, user?.id || "");
+      const lastMsg = getLastMessage(item);
+      const isOnline = !info.isAnonymous && checkIsOnline(info.participantId);
+      const isMine = lastMsg?.sender_id === user?.id;
+      const unreadInfo = getUnreadInfo(item, user?.id || "");
+      return (
+        <SwipeableRow
+          item={item}
+          info={info}
+          lastMsg={lastMsg}
+          isOnline={isOnline}
+          isMine={isMine}
+          unreadInfo={unreadInfo}
+          swipeableRefs={swipeableRefs}
+          onDeletePrompt={(id, name) => {
+            setDeleteTargetId(id);
+            setDeleteTargetName(name);
+          }}
+          onOpen={handleOpenConversation}
+          disabled={isNavigating}
+          isNavigatingThis={navigatingId === item.id}
+        />
+      );
+    },
+    [user?.id, checkIsOnline, swipeableRefs, handleOpenConversation, isNavigating, navigatingId]
+  );
 
   const renderBrowseSection = () => {
     if (!showBrowse) return null;
@@ -759,6 +885,8 @@ export default function MessagesScreen() {
                   browseUser={browseUser}
                   onSelect={handleBrowseSelect}
                   starting={startingUserId === browseUser.id}
+                  disabled={isNavigating}
+                  isNavigatingThis={navigatingId === browseUser.id}
                   isOnline={checkIsOnline(browseUser.id)}
                 />
               ))}
@@ -769,7 +897,7 @@ export default function MessagesScreen() {
     );
   };
 
-  if (loading) {
+  if (loading && conversations.length === 0) {
     return (
       <View className="flex-1 bg-background items-center justify-center">
         <ActivityIndicator color="#1A6B3C" />
@@ -921,7 +1049,7 @@ export default function MessagesScreen() {
           contentContainerStyle={{ paddingHorizontal: 16, gap: 8 }}
         >
           {([
-            { key: "all", label: "AllSS chats" },
+            { key: "all", label: "All Chats" },
             { key: "regular", label: "Chatmates" },
             { key: "anonymous", label: "Anonymous" },
           ] as const).map((opt) => (
@@ -937,7 +1065,7 @@ export default function MessagesScreen() {
 
       <FlatList
         style={{ flex: 1 }}
-        data={filteredConversations}
+        data={paginatedConversations}
         keyExtractor={(item, index) => (item.id ? `${item.id}-${index}` : String(index))}
         refreshControl={
           <RefreshControl
@@ -947,10 +1075,16 @@ export default function MessagesScreen() {
           />
         }
         contentContainerStyle={
-          filteredConversations.length === 0 && !showBrowse
+          paginatedConversations.length === 0 && !showBrowse
             ? { flex: 1 }
             : { paddingBottom: 20 }
         }
+        onEndReached={handleLoadMore}
+        onEndReachedThreshold={0.3}
+        initialNumToRender={PAGE_SIZE}
+        maxToRenderPerBatch={10}
+        windowSize={7}
+        removeClippedSubviews
         ListHeaderComponent={
           showBrowse ? (
             <View>
@@ -963,29 +1097,7 @@ export default function MessagesScreen() {
             </View>
           ) : null
         }
-        renderItem={({ item }) => {
-          const info = getParticipantInfo(item, user?.id || "");
-          const lastMsg = getLastMessage(item);
-          const isOnline = !info.isAnonymous && checkIsOnline(info.participantId);
-          const isMine = lastMsg?.sender_id === user?.id;
-          const unreadInfo = getUnreadInfo(item, user?.id || "");
-
-          return (
-            <SwipeableRow
-              item={item}
-              info={info}
-              lastMsg={lastMsg}
-              isOnline={isOnline}
-              isMine={isMine}
-              unreadInfo={unreadInfo}
-              swipeableRefs={swipeableRefs}
-              onDeletePrompt={(id, name) => {
-                setDeleteTargetId(id);
-                setDeleteTargetName(name);
-              }}
-            />
-          );
-        }}
+        renderItem={renderConversationItem}
 
         ListEmptyComponent={
           showBrowse ? null : (
