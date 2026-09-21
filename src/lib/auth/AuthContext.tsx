@@ -23,6 +23,10 @@ interface AuthContextValue {
   deleteAccount: () => Promise<void>;
   /** Apply a session obtained externally (e.g., after OTP verify). */
   completeLogin: (session: AuthSession) => Promise<void>;
+  /** Refresh the current user and session from the backend. */
+  refreshSession: () => Promise<AuthSession | undefined>;
+  /** Update user metadata locally and in persistent cache. */
+  updateUserMetadata: (metadata: Partial<AuthUser['user_metadata']>) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -152,6 +156,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     await applySession(session);
   }
 
+  async function refreshSession(): Promise<AuthSession | undefined> {
+    if (!accessToken) return undefined;
+    try {
+      const session = await authApi.getSession(accessToken);
+      await applySession(session);
+      return session;
+    } catch (err) {
+      console.warn("[AuthContext] Failed to refresh session:", err);
+      return undefined;
+    }
+  }
+
+  async function updateUserMetadata(metadata: Partial<AuthUser['user_metadata']>): Promise<void> {
+    setUser((prev) => {
+      if (!prev) return null;
+      const updatedUser: AuthUser = {
+        ...prev,
+        user_metadata: {
+          ...prev.user_metadata,
+          ...metadata,
+        },
+      };
+      AsyncStorage.setItem(USER_CACHE_KEY, JSON.stringify(updatedUser)).catch(() => {});
+      return updatedUser;
+    });
+  }
+
   async function signOut() {
     try {
       if (accessToken) {
@@ -178,7 +209,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <AuthContext.Provider value={{ user, accessToken, isLoading, signIn, signOut, deleteAccount, signUp, completeLogin }}>
+    <AuthContext.Provider
+      value={{
+        user,
+        accessToken,
+        isLoading,
+        signIn,
+        signOut,
+        deleteAccount,
+        signUp,
+        completeLogin,
+        refreshSession,
+        updateUserMetadata,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

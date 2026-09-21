@@ -97,7 +97,16 @@ function RootLayoutNav() {
       AsyncStorage.setItem("onboarding_done", "1").catch(() => {});
 
       // Authenticated but profile incomplete (Steps 2-4 not yet done)
-      const needsOnboarding = Boolean(!user.user_metadata?.onboarding_complete);
+      const hasAcademicMetadata = Boolean(
+        (user.user_metadata?.course || user.user_metadata?.department) &&
+        user.user_metadata?.year_level
+      );
+      const isComplete = Boolean(
+        user.user_metadata?.onboarding_complete === true ||
+        user.user_metadata?.onboarding_complete === "true" ||
+        hasAcademicMetadata
+      );
+      const needsOnboarding = !isComplete;
       if (needsOnboarding) {
         if (!onRegisterPage) {
           router.replace({

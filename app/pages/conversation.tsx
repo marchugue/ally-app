@@ -997,7 +997,6 @@ export default function ConversationScreen() {
               paddingVertical: 16,
               paddingHorizontal: 24,
               alignItems: "center",
-              transform: [{ scaleY: -1 }],
             }}
           >
             {canRestoreStreak ? (

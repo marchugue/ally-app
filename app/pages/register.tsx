@@ -178,7 +178,7 @@ function FieldError({ msg }: { msg?: string }) {
 export default function RegisterScreen() {
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams();
-  const { signUp, completeLogin, accessToken } = useAuth();
+  const { user, signUp, completeLogin, accessToken, refreshSession, updateUserMetadata } = useAuth();
   const scrollViewRef = useRef<ScrollView>(null);
   const [step, setStep] = useState(() => {
     // If redirected from the incomplete-profile guard, start at the specified step.
@@ -228,6 +228,25 @@ export default function RegisterScreen() {
       }));
     }
   }, [params.emailType, params.studentIdFrontUri, params.studentIdBackUri, params.email, params.username]);
+
+  // Sync existing user metadata into form if user arrived from incomplete profile guard
+  useEffect(() => {
+    if (user?.user_metadata) {
+      const meta = user.user_metadata;
+      setForm((prev) => ({
+        ...prev,
+        username: prev.username || (meta.username as string) || (meta.full_name as string) || "",
+        email: prev.email || user.email || "",
+        department: prev.department || (meta.department as string) || "",
+        course: prev.course || (meta.course as string) || "",
+        yearLevel: prev.yearLevel || (meta.year_level as string) || "",
+        bio: prev.bio || (meta.bio as string) || "",
+        avatar: prev.avatar && prev.avatar !== "😊" ? prev.avatar : ((meta.avatar_url as string) || prev.avatar || "😊"),
+        interests: prev.interests.length > 0 ? prev.interests : (Array.isArray(meta.interests) ? (meta.interests as string[]) : []),
+        organizations: prev.organizations.length > 0 ? prev.organizations : (Array.isArray(meta.organizations) ? (meta.organizations as string[]) : []),
+      }));
+    }
+  }, [user]);
 
   // custom interests
   const [customInterest, setCustomInterest] = useState("");
@@ -544,9 +563,16 @@ export default function RegisterScreen() {
     setIsSubmitting(true);
     try {
       if (accessToken) {
+        const finalUsername = (
+          form.username.trim() ||
+          (user?.user_metadata?.username as string) ||
+          (user?.user_metadata?.full_name as string) ||
+          ""
+        ).toLowerCase();
+
         await updateMyProfile(
           {
-            username: form.username.toLowerCase(),
+            username: finalUsername,
             bio: form.bio,
             avatar_url: form.avatar,
             department: form.department,
@@ -557,6 +583,22 @@ export default function RegisterScreen() {
           },
           accessToken
         );
+
+        // Update in-memory and cached user immediately so router guards don't loop back
+        await updateUserMetadata({
+          onboarding_complete: true,
+          username: finalUsername,
+          bio: form.bio,
+          avatar_url: form.avatar,
+          department: form.department,
+          course: form.course,
+          year_level: form.yearLevel,
+          interests: form.interests,
+          organizations: form.organizations,
+        });
+
+        // Silently sync fresh session from backend
+        void refreshSession();
       }
       setIsDone(true);
     } catch (err: any) {

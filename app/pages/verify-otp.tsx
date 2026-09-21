@@ -87,7 +87,13 @@ export default function VerifyOtpPage() {
       const session = await authApi.verifyOtp(userId, code);
       await completeLogin(session);
 
-      const userNeedsOnboarding = !session.user?.user_metadata?.onboarding_complete;
+      const hasMetadata = Boolean(
+        (session.user?.user_metadata?.course || session.user?.user_metadata?.department) &&
+        session.user?.user_metadata?.year_level
+      );
+      const userNeedsOnboarding = Boolean(
+        !session.user?.user_metadata?.onboarding_complete && !hasMetadata
+      );
       if (userNeedsOnboarding) {
         router.replace({ pathname: '/pages/register' as any, params: { startStep: '2' } });
         return;
