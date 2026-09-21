@@ -3,9 +3,11 @@ import {
   View,
   Text,
   Pressable,
+  TouchableOpacity,
   RefreshControl,
   ScrollView,
   Alert,
+  Modal,
 } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -22,9 +24,15 @@ import {
   Trash2,
   Flame,
   Reply,
+  Check,
+  X,
+  Filter,
+  ChevronDown,
 } from "lucide-react-native";
 import { useAuth } from "@/lib/auth/AuthContext";
 import { UserAvatar } from "@/components/UserAvatar";
+import { AnonymousAvatar } from "@/components/AnonymousAvatar";
+import { acceptConnection, rejectConnection } from "@/lib/api/interaction";
 import { getSocket } from "@/lib/socket";
 import * as Notifications from "expo-notifications";
 import { setAppBadgeCount } from "@/lib/pushNotifications";
@@ -53,22 +61,144 @@ function formatTimestamp(dateStr?: string): string {
   if (diffHr < 24) return `${diffHr}h ago`;
   const diffDay = Math.floor(diffHr / 24);
   if (diffDay < 7) return `${diffDay}d ago`;
-  return `${Math.floor(diffDay / 7)}w ago`;
+  if (diffDay < 30) return `${Math.floor(diffDay / 7)}w ago`;
+  const diffMo = Math.floor(diffDay / 30);
+  if (diffMo < 12) return `${diffMo}mo ago`;
+  return `${Math.floor(diffMo / 12)}y ago`;
 }
 
-function isTodayDate(dateStr?: string): boolean {
-  if (!dateStr) return true;
+type DateGroupKey = "today" | "earlier" | "last_month" | "last_year";
+
+function getDateGroup(dateStr?: string): DateGroupKey {
+  if (!dateStr) return "earlier";
   const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return true;
+  if (isNaN(d.getTime())) return "earlier";
   const now = new Date();
-  return (
-    d.getFullYear() === now.getFullYear() &&
-    d.getMonth() === now.getMonth() &&
-    d.getDate() === now.getDate()
-  );
+
+  const currentYear = now.getFullYear();
+  const currentMonth = now.getMonth();
+  const dYear = d.getFullYear();
+  const dMonth = d.getMonth();
+
+  if (
+    d.getDate() === now.getDate() &&
+    dMonth === currentMonth &&
+    dYear === currentYear
+  ) {
+    return "today";
+  }
+
+  // Last Month (previous calendar month)
+  const isLastMonth =
+    (currentMonth > 0 && dYear === currentYear && dMonth === currentMonth - 1) ||
+    (currentMonth === 0 && dYear === currentYear - 1 && dMonth === 11);
+
+  if (isLastMonth) {
+    return "last_month";
+  }
+
+  // Last Year (previous calendar year or older)
+  if (dYear < currentYear) {
+    return "last_year";
+  }
+
+  // Earlier (earlier this month or earlier this year)
+  return "earlier";
 }
 
 const EXCLUDED_NOTIFICATION_TYPES = ["message"];
+
+const ANIMAL_KEYS = [
+  "fox", "wolf", "whale", "owl", "panda", "otter", "falcon", "koala", "lynx", "dolphin", "raven", "badger"
+];
+
+export function getAnonymousInfo(item: NotificationItem) {
+  const isExplicitAnonType =
+    item.type === "anon_match" ||
+    item.type === "match" ||
+    item.type === "friend_request" ||
+    item.type === "connection_request";
+
+  const nameContainsAnon = Boolean(
+    (item.username && /anonymous/i.test(item.username)) ||
+    (item.author_name && /anonymous/i.test(item.author_name))
+  );
+  const titleContainsAnon = Boolean(
+    item.title && (/anonymous/i.test(item.title) || /messaged you/i.test(item.title))
+  );
+  const descContainsAnon = Boolean(
+    item.description && /anonymous/i.test(item.description)
+  );
+
+  const rawAvatar = (item as any).avatarKey || (item as any).avatar_key || (item as any).avatar || (item as any).from_user_avatar;
+  const avatarIsAnimal = Boolean(
+    rawAvatar &&
+    ANIMAL_KEYS.includes(String(rawAvatar).toLowerCase().trim())
+  );
+
+  const isAnon =
+    isExplicitAnonType ||
+    nameContainsAnon ||
+    titleContainsAnon ||
+    descContainsAnon ||
+    avatarIsAnimal ||
+    Boolean((item as any).is_anonymous || (item as any).isAnonymous);
+
+  if (!isAnon) {
+    return { isAnon: false, avatarKey: null, anonName: null };
+  }
+
+  // Determine animal avatar key
+  let avatarKey: string | null = null;
+  if (avatarIsAnimal && rawAvatar) {
+    avatarKey = String(rawAvatar).toLowerCase().trim();
+  } else if (item.author_name) {
+    const match = item.author_name.match(/anonymous\s+(\w+)/i);
+    if (match && ANIMAL_KEYS.includes(match[1].toLowerCase())) {
+      avatarKey = match[1].toLowerCase();
+    }
+  } else if (item.username) {
+    const match = item.username.match(/anonymous\s+(\w+)/i);
+    if (match && ANIMAL_KEYS.includes(match[1].toLowerCase())) {
+      avatarKey = match[1].toLowerCase();
+    }
+  }
+  if (!avatarKey && item.title) {
+    const match = item.title.match(/anonymous\s+(\w+)/i);
+    if (match && ANIMAL_KEYS.includes(match[1].toLowerCase())) {
+      avatarKey = match[1].toLowerCase();
+    }
+  }
+
+  // Derive deterministically from from_user_id or id
+  if (!avatarKey) {
+    const seed = item.from_user_id || item.id || "default";
+    let hash = 0;
+    for (let i = 0; i < seed.length; i++) {
+      hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
+    }
+    avatarKey = ANIMAL_KEYS[hash % ANIMAL_KEYS.length];
+  }
+
+  // Determine anonymous name
+  let anonName = "Anonymous Ally";
+  if (nameContainsAnon && (item.author_name || item.username)) {
+    anonName = item.author_name || item.username || "Anonymous Ally";
+  } else if (titleContainsAnon && item.title && item.title.includes("messaged you")) {
+    anonName = item.title.replace(/\s*messaged you.*$/i, "").trim();
+  } else if (titleContainsAnon && item.title && item.title.includes("sent an anonymous")) {
+    anonName = item.title.replace(/\s*sent an anonymous.*$/i, "").trim();
+  } else if (avatarKey) {
+    const capitalized = avatarKey.charAt(0).toUpperCase() + avatarKey.slice(1);
+    anonName = `Anonymous ${capitalized}`;
+  }
+
+  return {
+    isAnon: true,
+    avatarKey,
+    anonName,
+  };
+}
 
 export default function NotificationsScreen() {
   const insets = useSafeAreaInsets();
@@ -78,6 +208,9 @@ export default function NotificationsScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [activeFilter, setActiveFilter] = useState<FilterCategory>("all");
+  const [busyIds, setBusyIds] = useState<Record<string, boolean>>({});
+  const [handledRequests, setHandledRequests] = useState<Record<string, "accepted" | "declined">>({});
+  const [showFilterDropdown, setShowFilterDropdown] = useState(false);
 
   const loadNotifications = useCallback(
     async (showSkeleton = false) => {
@@ -189,6 +322,59 @@ export default function NotificationsScreen() {
     );
   }, [accessToken]);
 
+  const handleAcceptInline = useCallback(
+    async (item: NotificationItem) => {
+      const requesterId = item.from_user_id || item.fromUserId;
+      if (!accessToken || !requesterId || busyIds[item.id]) return;
+
+      setBusyIds((prev) => ({ ...prev, [item.id]: true }));
+      try {
+        const res = await acceptConnection(requesterId, accessToken);
+        await markNotificationRead(item.id, accessToken).catch(() => {});
+        setHandledRequests((prev) => ({ ...prev, [item.id]: "accepted" }));
+        setNotifications((prev) =>
+          prev.map((n) =>
+            n.id === item.id
+              ? {
+                  ...n,
+                  isRead: true,
+                  read: true,
+                  target_id: res?.conversationId || n.target_id,
+                }
+              : n
+          )
+        );
+      } catch (err) {
+        console.warn("Failed to accept request inline:", err);
+      } finally {
+        setBusyIds((prev) => ({ ...prev, [item.id]: false }));
+      }
+    },
+    [accessToken, busyIds]
+  );
+
+  const handleDeclineInline = useCallback(
+    async (item: NotificationItem) => {
+      const requesterId = item.from_user_id || item.fromUserId;
+      if (!accessToken || !requesterId || busyIds[item.id]) return;
+
+      setBusyIds((prev) => ({ ...prev, [item.id]: true }));
+      try {
+        await rejectConnection(requesterId, accessToken);
+        await markNotificationRead(item.id, accessToken).catch(() => {});
+        setHandledRequests((prev) => ({ ...prev, [item.id]: "declined" }));
+        setNotifications((prev) =>
+          prev.map((n) => (n.id === item.id ? { ...n, isRead: true, read: true } : n))
+        );
+      } catch (err) {
+        console.warn("Failed to decline request inline:", err);
+      } finally {
+        setBusyIds((prev) => ({ ...prev, [item.id]: false }));
+      }
+    },
+    [accessToken, busyIds]
+  );
+
   const handleTapNotification = useCallback(
     async (item: NotificationItem) => {
       // Mark as read locally and remote
@@ -215,7 +401,19 @@ export default function NotificationsScreen() {
 
       // 2. Fallback navigate by type
       if (item.type === "friend_request" || item.type === "connection_request") {
-        router.push("/pages/requests" as any);
+        if (handledRequests[item.id] === "accepted") {
+          const targetConvId = item.target_id || item.post_id;
+          if (targetConvId) {
+            router.push({
+              pathname: "/pages/conversation" as any,
+              params: { conversationId: targetConvId },
+            });
+          } else {
+            router.push("/(tabs)/messages" as any);
+          }
+        } else {
+          router.push("/pages/requests" as any);
+        }
       } else if (item.type === "streak_reminder") {
         const targetConvId = item.target_id || item.post_id;
         if (targetConvId) {
@@ -292,17 +490,24 @@ export default function NotificationsScreen() {
     });
   }, [notifications, activeFilter]);
 
-  const { todayList, earlierList } = useMemo(() => {
+  const { todayList, earlierList, lastMonthList, lastYearList } = useMemo(() => {
     const today: NotificationItem[] = [];
     const earlier: NotificationItem[] = [];
+    const lastMonth: NotificationItem[] = [];
+    const lastYear: NotificationItem[] = [];
     for (const item of filteredNotifications) {
-      if (isTodayDate(item.created_at || item.timestamp)) {
+      const grp = getDateGroup(item.created_at || item.timestamp);
+      if (grp === "today") {
         today.push(item);
+      } else if (grp === "last_month") {
+        lastMonth.push(item);
+      } else if (grp === "last_year") {
+        lastYear.push(item);
       } else {
         earlier.push(item);
       }
     }
-    return { todayList: today, earlierList: earlier };
+    return { todayList: today, earlierList: earlier, lastMonthList: lastMonth, lastYearList: lastYear };
   }, [filteredNotifications]);
 
   const renderNotificationAvatar = (item: NotificationItem) => {
@@ -332,8 +537,8 @@ export default function NotificationsScreen() {
         break;
       case "friend_request":
       case "connection_request":
-        badgeIcon = <UserPlus size={10} color="#FFFFFF" />;
-        badgeBg = "#2563EB";
+        badgeIcon = <Sparkles size={10} color="#FFFFFF" />;
+        badgeBg = "#1A6B3C";
         break;
       case "accepted":
       case "connection_accepted":
@@ -394,13 +599,22 @@ export default function NotificationsScreen() {
       );
     }
 
+    const anonInfo = getAnonymousInfo(item);
+
     return (
       <View style={{ width: 44, height: 44, position: "relative" }}>
-        <UserAvatar
-          avatar={item.type === "anon_match" ? "🎭" : avatarUri}
-          fallback={item.type === "anon_match" ? "🎭" : "👤"}
-          size="md"
-        />
+        {anonInfo.isAnon ? (
+          <AnonymousAvatar
+            avatarKey={anonInfo.avatarKey || "fox"}
+            size={40}
+          />
+        ) : (
+          <UserAvatar
+            avatar={avatarUri}
+            fallback="👤"
+            size="md"
+          />
+        )}
         <View
           style={{
             position: "absolute",
@@ -425,21 +639,10 @@ export default function NotificationsScreen() {
   const renderRow = (item: NotificationItem, key?: string) => {
     const isUnread = !(item.is_read ?? item.isRead ?? item.read ?? false);
     const fromUser = Array.isArray(item.from_user) ? item.from_user[0] : item.from_user;
-    const isAnon = item.type === "anon_match";
-    const anonName = isAnon
-      ? item.author_name ||
-        item.username ||
-        (item.title && item.title.includes("messaged you")
-          ? item.title.replace(/\s*messaged you.*$/i, "").trim()
-          : null) ||
-        (item.title && item.title.includes("sent an anonymous")
-          ? item.title.replace(/\s*sent an anonymous.*$/i, "").trim()
-          : null) ||
-        "Anonymous Ally"
-      : null;
+    const anonInfo = getAnonymousInfo(item);
 
-    const name = isAnon
-      ? anonName!
+    const name = anonInfo.isAnon
+      ? anonInfo.anonName!
       : item.type === "streak_reminder"
       ? "Streak Reminder"
       : item.username || item.author_name || fromUser?.username || fromUser?.full_name || "Someone";
@@ -455,7 +658,7 @@ export default function NotificationsScreen() {
     } else if (item.type === "comment_like") {
       actionText = "liked your comment";
     } else if (item.type === "friend_request" || item.type === "connection_request") {
-      actionText = "sent you a connection request";
+      actionText = "sent you a match request";
     } else if (item.type === "accepted" || item.type === "connection_accepted") {
       actionText = "accepted your connection request";
     } else if (item.type === "match") {
@@ -468,11 +671,15 @@ export default function NotificationsScreen() {
       actionText = item.title || "interacted with your post";
     }
 
+    const isMatchReq = item.type === "friend_request" || item.type === "connection_request";
+    const reqStatus = handledRequests[item.id];
+    const isBusy = busyIds[item.id];
+
     // 2. Extract Subtitle / Description content (e.g. comment text "asd")
     let subtext = "";
     if (item.type === "streak_reminder") {
       subtext = (item.description || item.message || "Your streak is not yet activated! Send a message to activate.").trim();
-    } else {
+    } else if (!isMatchReq) {
       const rawDesc = (item.description || item.message || "").trim();
       if (rawDesc) {
         if (rawDesc.includes('commented: "')) {
@@ -494,13 +701,13 @@ export default function NotificationsScreen() {
     }
 
     return (
-      <Pressable
+      <TouchableOpacity
         key={key || item.id}
         onPress={() => handleTapNotification(item)}
-        android_ripple={{ color: "rgba(0,0,0,0.04)" }}
+        activeOpacity={0.8}
         style={{
           flexDirection: "row",
-          alignItems: "center",
+          alignItems: "flex-start",
           paddingHorizontal: 16,
           paddingVertical: 14,
           backgroundColor: isUnread ? "rgba(26,107,60,0.03)" : "#FFFFFF",
@@ -512,79 +719,163 @@ export default function NotificationsScreen() {
         {renderNotificationAvatar(item)}
 
         <View style={{ flex: 1 }}>
-          <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
-            <Text
-              style={{
-                fontSize: 13.5,
-                color: "#111827",
-                lineHeight: 18,
-                flex: 1,
-              }}
-              numberOfLines={2}
-            >
-              <Text style={{ fontWeight: "700", color: "#111827" }}>
-                {name}
-              </Text>
-              <Text style={{ fontWeight: isUnread ? "600" : "400", color: isUnread ? "#111827" : "#374151" }}>
-                {` ${actionText}`}
-              </Text>
+          <Text
+            style={{
+              fontSize: 13.5,
+              color: "#111827",
+              lineHeight: 18,
+            }}
+            numberOfLines={2}
+          >
+            <Text style={{ fontWeight: "700", color: "#111827" }}>
+              {name}
             </Text>
-            <Text style={{ fontSize: 11, color: "#9CA3AF", fontWeight: "500" }}>
-              {formatTimestamp(item.created_at || item.timestamp)}
+            <Text style={{ fontWeight: isUnread ? "600" : "400", color: isUnread ? "#111827" : "#374151" }}>
+              {` ${actionText}`}
             </Text>
+          </Text>
+
+          {/* Inline match request accept/decline action buttons */}
+          {isMatchReq ? (
+            reqStatus === "accepted" ? (
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 6 }}>
+                <Check size={13} color="#1A6B3C" />
+                <Text style={{ fontSize: 12, fontWeight: "700", color: "#1A6B3C" }}>
+                  Match Request Accepted
+                </Text>
+              </View>
+            ) : reqStatus === "declined" ? (
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 6 }}>
+                <X size={13} color="#6B7280" />
+                <Text style={{ fontSize: 12, fontWeight: "600", color: "#6B7280" }}>
+                  Match Request Declined
+                </Text>
+              </View>
+            ) : (
+              <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
+                <TouchableOpacity
+                  onPress={() => handleAcceptInline(item)}
+                  disabled={isBusy}
+                  activeOpacity={0.7}
+                  style={{
+                    flex: 1,
+                    backgroundColor: "#1A6B3C",
+                    paddingVertical: 7,
+                    paddingHorizontal: 10,
+                    borderRadius: 10,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 4,
+                    opacity: isBusy ? 0.6 : 1,
+                  }}
+                >
+                  <Check size={13} color="#FFFFFF" />
+                  <Text style={{ fontSize: 12, fontWeight: "700", color: "#FFFFFF" }}>
+                    {isBusy ? "Accepting..." : "Accept Request"}
+                  </Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  onPress={() => handleDeclineInline(item)}
+                  disabled={isBusy}
+                  activeOpacity={0.7}
+                  style={{
+                    flex: 1,
+                    backgroundColor: "#F3F4F6",
+                    paddingVertical: 7,
+                    paddingHorizontal: 10,
+                    borderRadius: 10,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 4,
+                    borderWidth: 1,
+                    borderColor: "#E5E7EB",
+                    opacity: isBusy ? 0.6 : 1,
+                  }}
+                >
+                  <X size={13} color="#4B5563" />
+                  <Text style={{ fontSize: 12, fontWeight: "600", color: "#4B5563" }}>
+                    {isBusy ? "Declining..." : "Decline Request"}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            )
+          ) : (
+            Boolean(subtext) && (
+              <Text
+                style={{
+                  fontSize: 13.5,
+                  color: isUnread ? "#4B5563" : "#6B7280",
+                  marginTop: 3,
+                  lineHeight: 19,
+                  fontWeight: "400",
+                }}
+                numberOfLines={2}
+              >
+                {subtext}
+              </Text>
+            )
+          )}
+        </View>
+
+        {/* Right side: Top-right justified time & status badges, no arrow icon */}
+        <View
+          style={{
+            alignItems: "flex-end",
+            alignSelf: "flex-start",
+            paddingTop: 2,
+            gap: 6,
+            flexShrink: 0,
+          }}
+        >
+          <Text
+            style={{
+              fontSize: 11,
+              fontWeight: "500",
+              color: "#9CA3AF",
+            }}
+          >
+            {formatTimestamp(item.created_at || item.timestamp)}
+          </Text>
+
+          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+            {(item.type === "message" || item.type === "anon_match") && (
+              <TouchableOpacity
+                onPress={() => handleTapNotification(item)}
+                hitSlop={8}
+                activeOpacity={0.7}
+                style={{
+                  backgroundColor: "rgba(26, 107, 60, 0.08)",
+                  paddingHorizontal: 8,
+                  paddingVertical: 3.5,
+                  borderRadius: 10,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 3,
+                }}
+              >
+                <Reply size={11} color="#1A6B3C" />
+                <Text style={{ fontSize: 11, fontWeight: "700", color: "#1A6B3C" }}>
+                  Reply
+                </Text>
+              </TouchableOpacity>
+            )}
+
+            {isUnread && (
+              <View
+                style={{
+                  width: 7,
+                  height: 7,
+                  borderRadius: 4,
+                  backgroundColor: "#1A6B3C",
+                }}
+              />
+            )}
           </View>
-
-          {Boolean(subtext) && (
-            <Text
-              style={{
-                fontSize: 13.5,
-                color: isUnread ? "#4B5563" : "#6B7280",
-                marginTop: 3,
-                lineHeight: 19,
-                fontWeight: "400",
-              }}
-              numberOfLines={2}
-            >
-              {subtext}
-            </Text>
-          )}
         </View>
-
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-          {(item.type === "message" || item.type === "anon_match") && (
-            <Pressable
-              onPress={() => handleTapNotification(item)}
-              hitSlop={8}
-              style={{
-                backgroundColor: "rgba(26, 107, 60, 0.08)",
-                paddingHorizontal: 9,
-                paddingVertical: 4.5,
-                borderRadius: 12,
-                flexDirection: "row",
-                alignItems: "center",
-                gap: 4,
-              }}
-            >
-              <Reply size={12} color="#1A6B3C" />
-              <Text style={{ fontSize: 11.5, fontWeight: "700", color: "#1A6B3C" }}>
-                Reply
-              </Text>
-            </Pressable>
-          )}
-
-          {isUnread && (
-            <View
-              style={{
-                width: 8,
-                height: 8,
-                borderRadius: 4,
-                backgroundColor: "#1A6B3C",
-              }}
-            />
-          )}
-          <ChevronRight size={16} color="#D1D5DB" />
-        </View>
-      </Pressable>
+      </TouchableOpacity>
     );
   };
 
@@ -633,9 +924,10 @@ export default function NotificationsScreen() {
 
         <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
           {unreadCount > 0 && (
-            <Pressable
+            <TouchableOpacity
               onPress={handleMarkAllRead}
               hitSlop={8}
+              activeOpacity={0.7}
               style={{
                 flexDirection: "row",
                 alignItems: "center",
@@ -650,13 +942,14 @@ export default function NotificationsScreen() {
               <Text style={{ fontSize: 11, fontWeight: "700", color: "#1A6B3C" }}>
                 Read All
               </Text>
-            </Pressable>
+            </TouchableOpacity>
           )}
 
           {notifications.length > 0 && (
-            <Pressable
+            <TouchableOpacity
               onPress={handleClearAll}
               hitSlop={8}
+              activeOpacity={0.7}
               style={{
                 width: 32,
                 height: 32,
@@ -667,12 +960,12 @@ export default function NotificationsScreen() {
               }}
             >
               <Trash2 size={16} color="#6B7280" />
-            </Pressable>
+            </TouchableOpacity>
           )}
         </View>
       </View>
 
-      {/* ═══ Category Segment Filter Tabs ═══ */}
+      {/* ═══ Category Segment Filter Tabs & view all match request ═══ */}
       <View
         style={{
           backgroundColor: "#FFFFFF",
@@ -680,40 +973,82 @@ export default function NotificationsScreen() {
           borderBottomColor: "#E5E7EB",
           paddingVertical: 10,
           paddingHorizontal: 16,
+          flexDirection: "row",
+          alignItems: "center",
+          justifyContent: "space-between",
+          gap: 8,
         }}
       >
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={{ gap: 8 }}>
-          {[
-            { id: "all", label: "All" },
-            { id: "unread", label: "Unread" },
-            { id: "requests", label: "Requests" },
-            { id: "matches", label: "Matches" },
-          ].map((tab) => {
-            const isActive = activeFilter === tab.id;
-            return (
-              <Pressable
-                key={tab.id}
-                onPress={() => setActiveFilter(tab.id as FilterCategory)}
-                style={{
-                  backgroundColor: isActive ? "#1A6B3C" : "#F3F4F6",
-                  paddingHorizontal: 14,
-                  paddingVertical: 7,
-                  borderRadius: 14,
-                }}
-              >
-                <Text
-                  style={{
-                    fontSize: 12,
-                    fontWeight: isActive ? "800" : "600",
-                    color: isActive ? "#FFFFFF" : "#4B5563",
-                  }}
-                >
-                  {tab.label}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
+        {/* Filter Dropdown Button */}
+        <TouchableOpacity
+          onPress={() => setShowFilterDropdown(true)}
+          hitSlop={6}
+          activeOpacity={0.7}
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 6,
+            backgroundColor: "#F3F4F6",
+            paddingHorizontal: 11,
+            paddingVertical: 6,
+            borderRadius: 12,
+            borderWidth: 1,
+            borderColor: "#E5E7EB",
+          }}
+        >
+          <Filter size={13} color="#1A6B3C" />
+          <Text style={{ fontSize: 12, fontWeight: "700", color: "#111827" }}>
+            {activeFilter === "all"
+              ? "All"
+              : activeFilter === "unread"
+              ? "Unread"
+              : activeFilter === "requests"
+              ? "Requests"
+              : "Matches"}
+          </Text>
+          <View
+            style={{
+              backgroundColor: "rgba(26,107,60,0.1)",
+              paddingHorizontal: 6,
+              paddingVertical: 1,
+              borderRadius: 8,
+            }}
+          >
+            <Text style={{ fontSize: 10, fontWeight: "700", color: "#1A6B3C" }}>
+              {activeFilter === "all"
+                ? notifications.filter((n) => n.type !== "message").length
+                : activeFilter === "unread"
+                ? notifications.filter((n) => n.type !== "message" && !(n.is_read ?? n.isRead ?? n.read ?? false)).length
+                : activeFilter === "requests"
+                ? notifications.filter((n) => n.type === "friend_request" || n.type === "accepted" || n.type === "connection_request").length
+                : notifications.filter((n) => n.type === "match" || n.type === "anon_match").length}
+            </Text>
+          </View>
+          <ChevronDown size={13} color="#6B7280" />
+        </TouchableOpacity>
+
+        {/* "view all match request" Link */}
+        <TouchableOpacity
+          onPress={() => router.push("/pages/requests" as any)}
+          hitSlop={6}
+          activeOpacity={0.7}
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 2,
+          }}
+        >
+          <Text
+            style={{
+              fontSize: 12,
+              fontWeight: "700",
+              color: "#1A6B3C",
+            }}
+          >
+            view all match request
+          </Text>
+          <ChevronRight size={13} color="#1A6B3C" />
+        </TouchableOpacity>
       </View>
 
       {/* ═══ Content List ═══ */}
@@ -723,54 +1058,6 @@ export default function NotificationsScreen() {
         }
         contentContainerStyle={{ paddingBottom: 40 }}
       >
-        {/* Quick Requests Card */}
-        <View style={{ paddingHorizontal: 16, paddingTop: 14, paddingBottom: 6 }}>
-          <Pressable
-            onPress={() => router.push("/pages/requests" as any)}
-            style={{
-              backgroundColor: "#FFFFFF",
-              borderRadius: 18,
-              padding: 14,
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "space-between",
-              borderWidth: 1,
-              borderColor: "rgba(26,107,60,0.15)",
-              shadowColor: "#000",
-              shadowOffset: { width: 0, height: 2 },
-              shadowOpacity: 0.05,
-              shadowRadius: 6,
-              elevation: 2,
-            }}
-          >
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-              <View
-                style={{
-                  width: 40,
-                  height: 40,
-                  borderRadius: 14,
-                  backgroundColor: "rgba(26,107,60,0.1)",
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <UserPlus size={20} color="#1A6B3C" />
-              </View>
-              <View>
-                <Text style={{ fontSize: 14, fontWeight: "800", color: "#111827" }}>
-                  Connection Requests
-                </Text>
-                <Text style={{ fontSize: 12, color: "#6B7280", marginTop: 1 }}>
-                  Review pending campus allies & invites
-                </Text>
-              </View>
-            </View>
-
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-              <ChevronRight size={18} color="#9CA3AF" />
-            </View>
-          </Pressable>
-        </View>
 
         {loading ? (
           <View style={{ padding: 20, gap: 16 }}>
@@ -810,75 +1097,182 @@ export default function NotificationsScreen() {
           </View>
         ) : (
           <View style={{ marginTop: 8 }}>
-            {/* Today Section */}
-            {todayList.length > 0 && (
-              <View>
-                <View
-                  style={{
-                    backgroundColor: "#F3F4F6",
-                    paddingHorizontal: 20,
-                    paddingVertical: 6,
-                    borderBottomWidth: 1,
-                    borderBottomColor: "#E5E7EB",
-                  }}
-                >
-                  <Text
+            {[
+              { key: "today", label: "Today", items: todayList },
+              { key: "earlier", label: "Earlier", items: earlierList },
+              { key: "last_month", label: "Last Month", items: lastMonthList },
+              { key: "last_year", label: "Last Year", items: lastYearList },
+            ]
+              .filter((sec) => sec.items.length > 0)
+              .map((sec, secIdx) => (
+                <View key={sec.key} style={{ marginTop: secIdx > 0 ? 12 : 0 }}>
+                  <View
                     style={{
-                      fontSize: 10,
-                      fontWeight: "800",
-                      color: "#6B7280",
-                      letterSpacing: 1.2,
-                      textTransform: "uppercase",
+                      backgroundColor: "#F3F4F6",
+                      paddingHorizontal: 20,
+                      paddingVertical: 6,
+                      borderBottomWidth: 1,
+                      borderBottomColor: "#E5E7EB",
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: "space-between",
                     }}
                   >
-                    Today
-                  </Text>
+                    <Text
+                      style={{
+                        fontSize: 10,
+                        fontWeight: "800",
+                        color: "#6B7280",
+                        letterSpacing: 1.2,
+                        textTransform: "uppercase",
+                      }}
+                    >
+                      {sec.label}
+                    </Text>
+                    <Text style={{ fontSize: 10, fontWeight: "700", color: "#9CA3AF" }}>
+                      {sec.items.length}
+                    </Text>
+                  </View>
+                  <View style={{ backgroundColor: "#FFFFFF" }}>
+                    {sec.items.map((item, idx) => renderRow(item, `${sec.key}-${item.id || idx}`))}
+                  </View>
                 </View>
-                <View style={{ backgroundColor: "#FFFFFF" }}>
-                  {todayList.map((item, idx) => renderRow(item, `today-${item.id || idx}`))}
-                </View>
-              </View>
-            )}
+              ))}
 
-            {/* Earlier Section */}
-            {earlierList.length > 0 && (
-              <View style={{ marginTop: todayList.length > 0 ? 12 : 0 }}>
-                <View
-                  style={{
-                    backgroundColor: "#F3F4F6",
-                    paddingHorizontal: 20,
-                    paddingVertical: 6,
-                    borderBottomWidth: 1,
-                    borderBottomColor: "#E5E7EB",
-                  }}
-                >
-                  <Text
-                    style={{
-                      fontSize: 10,
-                      fontWeight: "800",
-                      color: "#6B7280",
-                      letterSpacing: 1.2,
-                      textTransform: "uppercase",
-                    }}
-                  >
-                    Earlier
-                  </Text>
-                </View>
+            {todayList.length === 0 &&
+              earlierList.length === 0 &&
+              lastMonthList.length === 0 &&
+              lastYearList.length === 0 &&
+              filteredNotifications.length > 0 && (
                 <View style={{ backgroundColor: "#FFFFFF" }}>
-                  {earlierList.map((item, idx) => renderRow(item, `earlier-${item.id || idx}`))}
+                  {filteredNotifications.map((item, idx) => renderRow(item, `all-${item.id || idx}`))}
                 </View>
-              </View>
-            )}
-
-            {/* Fallback Section if date categorization produces empty lists */}
-            {todayList.length === 0 && earlierList.length === 0 && filteredNotifications.length > 0 && (
-              <View style={{ backgroundColor: "#FFFFFF" }}>
-                {filteredNotifications.map((item, idx) => renderRow(item, `all-${item.id || idx}`))}
-              </View>
-            )}
+              )}
           </View>
         )}
       </ScrollView>
+      {/* ═══ Filter Dropdown Modal ═══ */}
+      <Modal
+        visible={showFilterDropdown}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowFilterDropdown(false)}
+      >
+        <Pressable
+          style={{
+            flex: 1,
+            backgroundColor: "rgba(0,0,0,0.3)",
+            justifyContent: "flex-start",
+            paddingTop: insets.top + 105,
+            paddingHorizontal: 16,
+          }}
+          onPress={() => setShowFilterDropdown(false)}
+        >
+          <View
+            style={{
+              backgroundColor: "#FFFFFF",
+              borderRadius: 16,
+              padding: 8,
+              borderWidth: 1,
+              borderColor: "#E5E7EB",
+              shadowColor: "#000",
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.1,
+              shadowRadius: 10,
+              elevation: 5,
+              width: 200,
+            }}
+          >
+            {[
+              {
+                id: "all",
+                label: "All",
+                count: notifications.filter((n) => n.type !== "message").length,
+              },
+              {
+                id: "unread",
+                label: "Unread",
+                count: notifications.filter(
+                  (n) => n.type !== "message" && !(n.is_read ?? n.isRead ?? n.read ?? false)
+                ).length,
+              },
+              {
+                id: "requests",
+                label: "Requests",
+                count: notifications.filter(
+                  (n) =>
+                    n.type === "friend_request" ||
+                    n.type === "accepted" ||
+                    n.type === "connection_request"
+                ).length,
+              },
+              {
+                id: "matches",
+                label: "Matches",
+                count: notifications.filter(
+                  (n) => n.type === "match" || n.type === "anon_match"
+                ).length,
+              },
+            ].map((option) => {
+              const isSelected = activeFilter === option.id;
+              return (
+                <TouchableOpacity
+                  key={option.id}
+                  onPress={() => {
+                    setActiveFilter(option.id as FilterCategory);
+                    setShowFilterDropdown(false);
+                  }}
+                  activeOpacity={0.7}
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    paddingVertical: 10,
+                    paddingHorizontal: 12,
+                    borderRadius: 10,
+                    backgroundColor: isSelected ? "rgba(26,107,60,0.08)" : "transparent",
+                  }}
+                >
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                    {isSelected ? (
+                      <Check size={14} color="#1A6B3C" />
+                    ) : (
+                      <View style={{ width: 14 }} />
+                    )}
+                    <Text
+                      style={{
+                        fontSize: 13,
+                        fontWeight: isSelected ? "700" : "500",
+                        color: isSelected ? "#1A6B3C" : "#374151",
+                      }}
+                    >
+                      {option.label}
+                    </Text>
+                  </View>
+                  <View
+                    style={{
+                      backgroundColor: isSelected ? "#1A6B3C" : "#F3F4F6",
+                      paddingHorizontal: 6,
+                      paddingVertical: 1,
+                      borderRadius: 10,
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 10,
+                        fontWeight: "700",
+                        color: isSelected ? "#FFFFFF" : "#6B7280",
+                      }}
+                    >
+                      {option.count}
+                    </Text>
+                  </View>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </Pressable>
+      </Modal>
     </View>
   );
 }

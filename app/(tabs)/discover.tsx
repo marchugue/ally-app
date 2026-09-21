@@ -31,6 +31,7 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { UserAvatar } from "@/components/UserAvatar";
+import { AnonymousAvatar } from "@/components/AnonymousAvatar";
 import { usePresence } from "@/context/PresenceContext";
 import { EmptyState } from "@/components/EmptyState";
 import { MatchmakingOverlayModal } from "@/components/MatchmakingOverlayModal";
@@ -525,7 +526,7 @@ export default function DiscoverScreen() {
             ? { flex: 1, paddingHorizontal: 16 }
             : { paddingHorizontal: 16, paddingBottom: 24, paddingTop: 6 }
         }
-        renderItem={({ item }) => {
+        renderItem={({ item, index }) => {
           const p = item.profile;
           const status = connections[p.id] || "none";
 
@@ -556,20 +557,22 @@ export default function DiscoverScreen() {
                 }}
               >
                 <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-                  <Pressable
-                    onPress={() => handleNavigateProfile(p.id)}
-                    style={{ flexDirection: "row", alignItems: "center", gap: 12, flex: 1 }}
-                  >
-                    <UserAvatar avatar={p.avatar_url} size="lg" online={isOnline(p.id)} />
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 12, flex: 1 }}>
+                    <AnonymousAvatar
+                      avatarKey={index % 4 === 0 ? "fox" : index % 4 === 1 ? "panda" : index % 4 === 2 ? "owl" : "wolf"}
+                      size={48}
+                    />
                     <View style={{ flex: 1 }}>
                       <Text style={{ fontSize: 16, fontWeight: "700", color: "#111827" }} numberOfLines={1}>
-                        {p.full_name || `@${p.username}`}
+                        Anonymous Peer
                       </Text>
-                      <Text style={{ fontSize: 12, color: "#6B7280", marginTop: 1 }}>
-                        @{p.username}
-                      </Text>
+                      {Boolean(p.course) && (
+                        <Text style={{ fontSize: 12, color: "#6B7280", marginTop: 1 }} numberOfLines={1}>
+                          {p.course}
+                        </Text>
+                      )}
                     </View>
-                  </Pressable>
+                  </View>
 
                   {/* Match Percentage Badge */}
                   <View
@@ -718,10 +721,10 @@ export default function DiscoverScreen() {
                     }}
                   >
                     {status === "none"
-                      ? "Connect"
+                      ? "Request Match"
                       : status === "pending"
-                        ? "Request Sent"
-                        : "Connected"}
+                        ? "Match Requested"
+                        : "Matched"}
                   </Text>
                 </Pressable>
 
@@ -889,10 +892,9 @@ export default function DiscoverScreen() {
               <View style={{ backgroundColor: "#1A6B3C", borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20 }}>
                 <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
                   <View style={{ flexDirection: "row", gap: 14, flex: 1 }}>
-                    <UserAvatar avatar={selectedMatch.profile.avatar_url} size="xl" online={isOnline(selectedMatch.profile.id)} />
+                    <AnonymousAvatar avatarKey="fox" size={56} />
                     <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 20, fontWeight: "700", color: "#FFFFFF" }}>{selectedMatch.profile.full_name || `@${selectedMatch.profile.username}`}</Text>
-                      <Text style={{ fontSize: 13, color: "rgba(255,255,255,0.8)" }}>@{selectedMatch.profile.username}</Text>
+                      <Text style={{ fontSize: 20, fontWeight: "700", color: "#FFFFFF" }}>Anonymous Peer</Text>
                       {Boolean(selectedMatch.profile.course) && (
                         <Text style={{ fontSize: 12, color: "#FFFFFF", marginTop: 4, opacity: 0.9 }}>{selectedMatch.profile.course}</Text>
                       )}
@@ -926,25 +928,19 @@ export default function DiscoverScreen() {
                   </View>
                 )}
 
-                {/* Action Button */}
+                {/* Close Preview Button */}
                 <Pressable
-                  onPress={() => {
-                    handleConnect(selectedMatch.profile.id);
-                    setSelectedMatch(null);
-                  }}
+                  onPress={() => setSelectedMatch(null)}
                   style={{
-                    backgroundColor: "#1A6B3C",
+                    backgroundColor: "#F3F4F6",
                     paddingVertical: 14,
                     borderRadius: 14,
                     alignItems: "center",
-                    flexDirection: "row",
                     justifyContent: "center",
-                    gap: 8,
                     marginTop: 8,
                   }}
                 >
-                  <UserPlus size={16} color="#FFFFFF" />
-                  <Text style={{ fontSize: 15, fontWeight: "700", color: "#FFFFFF" }}>Send Connection Request</Text>
+                  <Text style={{ fontSize: 14, fontWeight: "600", color: "#4B5563" }}>Close Preview</Text>
                 </Pressable>
               </ScrollView>
             </View>

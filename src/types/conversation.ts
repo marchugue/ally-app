@@ -41,6 +41,9 @@ export interface Message {
   replied_message: Message | null;
   reactions: MessageReaction[];
   status?: "sending" | "sent" | "failed";
+  /** True when the sender deleted the message for everyone (tombstone). */
+  is_deleted?: boolean;
+  deleted_at?: string | null;
 }
 
 export interface Conversation {

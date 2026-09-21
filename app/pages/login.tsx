@@ -159,6 +159,7 @@ export default function LoginScreen() {
               onChangeText={setPassword}
               onBlur={() => setTouched(true)}
               error={passError}
+              showStrength={false}
             />
 
             <Pressable onPress={() => router.push("/pages/forgot-password" as any)} style={{ alignSelf: "flex-end", marginBottom: 24 }}>

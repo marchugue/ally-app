@@ -1,11 +1,19 @@
 import { Platform } from "react-native";
 import { API_BASE_URL } from "@/constants";
 import { ApiError } from "./apiError";
+import { apiRequest } from "./client";
 
 export interface LocalFile { uri: string; name: string; type: string; }
 export interface ChatMediaUploadResult { url: string; }
 export interface PostMediaUploadResult { urls: string[]; }
 export interface AvatarUploadResult { url: string; }
+
+export interface PresetAvatarRow {
+  id: string;
+  url: string;
+  label: string | null;
+  created_at?: string;
+}
 
 /**
  * Normalizes filenames and MIME types for React Native uploads.
@@ -188,4 +196,9 @@ export async function uploadStudentIdFile(
   await appendFileToFormData(formData, "file", { uri: localUri, name: filename, type: "image/jpeg" });
 
   return uploadViaXHR<{ url: string; side: string }>("/auth/student-id/upload", formData);
+}
+
+/** GET /api/media/avatars/presets — public, no auth required */
+export async function getPresetAvatars(): Promise<{ avatars: PresetAvatarRow[] }> {
+  return apiRequest<{ avatars: PresetAvatarRow[] }>("/media/avatars/presets");
 }

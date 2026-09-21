@@ -7,6 +7,7 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Platform,
+  Alert,
 } from "react-native";
 import { Send, Plus, X, Camera, Image as ImageIcon } from "lucide-react-native";
 import type { Message } from "@/types/conversation";
@@ -22,6 +23,7 @@ interface ChatInputProps {
   draftText?: string;
   placeholder?: string;
   maxLength?: number;
+  canUploadImages?: boolean;
 }
 
 export function ChatInput({
@@ -35,6 +37,7 @@ export function ChatInput({
   draftText,
   placeholder = "Type a message…",
   maxLength = 1000,
+  canUploadImages = true,
 }: ChatInputProps) {
   const [text, setText] = useState(draftText || "");
   const [showMenu, setShowMenu] = useState(false);
@@ -81,9 +84,8 @@ export function ChatInput({
   return (
     <View
       style={{
-        borderTopWidth: 1,
-        borderTopColor: "#E2DED7",
-        backgroundColor: "#FFFFFF",
+        borderTopWidth: 0,
+        backgroundColor: "transparent",
         position: "relative",
         zIndex: 20,
       }}
@@ -97,10 +99,18 @@ export function ChatInput({
             paddingHorizontal: 14,
             paddingTop: 8,
             paddingBottom: 6,
-            backgroundColor: "#FAF8F5",
-            borderBottomWidth: 1,
-            borderBottomColor: "#E2DED7",
+            marginHorizontal: 10,
+            marginBottom: 4,
+            backgroundColor: "rgba(255, 255, 255, 0.95)",
+            borderRadius: 14,
+            borderWidth: 1,
+            borderColor: "#E2DED7",
             gap: 8,
+            shadowColor: "#000",
+            shadowOffset: { width: 0, height: 1 },
+            shadowOpacity: 0.05,
+            shadowRadius: 3,
+            elevation: 1,
           }}
         >
           <View
@@ -249,25 +259,44 @@ export function ChatInput({
       >
         {/* Plus button on the left */}
         <TouchableOpacity
-          onPress={() => setShowMenu((prev) => !prev)}
+          onPress={() => {
+            if (!canUploadImages) {
+              Alert.alert(
+                "Feature Locked",
+                "Photo and media sharing unlocks at Stage 3 of your roadmap."
+              );
+              return;
+            }
+            setShowMenu((prev) => !prev);
+          }}
           hitSlop={6}
           activeOpacity={0.75}
           style={{
-            width: 36,
-            height: 36,
-            borderRadius: 18,
-            backgroundColor: showMenu ? "#E8F5EE" : "#F7F4EF",
-            borderWidth: showMenu ? 1 : 0,
-            borderColor: "#1A6B3C",
+            width: 38,
+            height: 38,
+            borderRadius: 19,
+            backgroundColor: !canUploadImages
+              ? "#F3F4F6"
+              : showMenu
+                ? "#E8F5EE"
+                : "#FFFFFF",
+            borderWidth: 1,
+            borderColor: showMenu && canUploadImages ? "#1A6B3C" : "#E2DED7",
             alignItems: "center",
             justifyContent: "center",
             marginBottom: 2,
+            opacity: !canUploadImages ? 0.6 : 1,
+            shadowColor: "#000",
+            shadowOffset: { width: 0, height: 1 },
+            shadowOpacity: 0.06,
+            shadowRadius: 2,
+            elevation: 1,
           }}
         >
           {showMenu ? (
             <X size={18} color="#1A6B3C" />
           ) : (
-            <Plus size={20} color="#1A6B3C" />
+            <Plus size={20} color={!canUploadImages ? "#9CA3AF" : "#1A6B3C"} />
           )}
         </TouchableOpacity>
 
@@ -279,13 +308,18 @@ export function ChatInput({
             alignItems: "flex-end",
             minHeight: 40,
             maxHeight: 120,
-            backgroundColor: "#F7F4EF",
-            borderRadius: 20,
+            backgroundColor: "#FFFFFF",
+            borderRadius: 22,
             borderWidth: 1,
             borderColor: "#E2DED7",
             paddingLeft: 14,
             paddingRight: 5,
             paddingVertical: Platform.OS === "ios" ? 3 : 2,
+            shadowColor: "#000",
+            shadowOffset: { width: 0, height: 1 },
+            shadowOpacity: 0.06,
+            shadowRadius: 2,
+            elevation: 1,
           }}
         >
           <TextInput

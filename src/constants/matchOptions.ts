@@ -46,13 +46,13 @@ export function avatarColorFor(avatarKey: string | null | undefined): string {
 
 export const STAGE_NAMES = [
   "Stranger",
-  "Comfortable",
-  "Trust Building",
-  "Familiar",
-  "Close Connection",
+  "Anonymous Chat",
+  "Play Games Together",
+  "Image Sharing",
+  "Campus Allies",
 ] as const;
 
-export const STAGE_THRESHOLDS = [0, 3, 5, 7, 10];
+export const STAGE_THRESHOLDS = [0, 0, 3, 7, 10];
 
 export function stageForStreak(days: number): number {
   let stage = 0;

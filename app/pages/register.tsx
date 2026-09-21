@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
   Keyboard,
   TouchableOpacity,
   Dimensions,
+  ActivityIndicator,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
@@ -44,7 +45,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth, ApiError } from "@/lib/auth/AuthContext";
 import * as authApi from "@/lib/api/auth";
 import { updateMyProfile } from "@/lib/api/profiles";
-import { uploadStudentIdFile } from "@/lib/api/media";
+import { uploadStudentIdFile, getPresetAvatars, PresetAvatarRow } from "@/lib/api/media";
+import { UserAvatar } from "@/components/UserAvatar";
 import { DiagonalStripes } from "@/components/DiagonalStripes";
 import { SlideIn } from "@/components/SlideIn";
 import { Button } from "@/components/Button";
@@ -152,6 +154,7 @@ interface FormData {
   username: string;
   email: string;
   password: string;
+  confirmPassword: string;
   department: string;
   course: string;
   yearLevel: string;
@@ -176,11 +179,17 @@ export default function RegisterScreen() {
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams();
   const { signUp, completeLogin, accessToken } = useAuth();
+  const scrollViewRef = useRef<ScrollView>(null);
   const [step, setStep] = useState(() => {
     // If redirected from the incomplete-profile guard, start at the specified step.
     const startStep = Number(params.startStep);
     return startStep >= 2 && startStep <= 4 ? startStep : 1;
   });
+
+  // Scroll to top on step changes so user starts at the top of each onboarding step
+  useEffect(() => {
+    scrollViewRef.current?.scrollTo({ y: 0, animated: false });
+  }, [step]);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDone, setIsDone] = useState(false);
   const [submitError, setSubmitError] = useState("");
@@ -241,10 +250,15 @@ export default function RegisterScreen() {
   const { isKeyboardVisible } = useKeyboard();
 
 
+  const [presetAvatars, setPresetAvatars] = useState<PresetAvatarRow[]>([]);
+  const [isLoadingPresets, setIsLoadingPresets] = useState(false);
+  const [avatarTab, setAvatarTab] = useState<"presets" | "emojis">("presets");
+
   const [form, setForm] = useState<FormData>({
     username: "",
     email: "",
     password: "",
+    confirmPassword: "",
     department: "",
     course: "",
     yearLevel: "",
@@ -254,15 +268,37 @@ export default function RegisterScreen() {
     bio: "",
   });
 
+  // Load admin-curated preset avatars
+  useEffect(() => {
+    let isMounted = true;
+    setIsLoadingPresets(true);
+    getPresetAvatars()
+      .then((res) => {
+        if (isMounted && res?.avatars) {
+          setPresetAvatars(res.avatars);
+        }
+      })
+      .catch((err) => {
+        console.warn("[register] Failed to load preset avatars:", err);
+      })
+      .finally(() => {
+        if (isMounted) setIsLoadingPresets(false);
+      });
+    return () => {
+      isMounted = false;
+    };
+  }, []);
+
   const [errors, setErrors] = useState<{
     username?: string;
     email?: string;
     password?: string;
+    confirmPassword?: string;
     department?: string;
     course?: string;
     yearLevel?: string;
     interests?: string;
-  }>({});
+  }>({}); 
 
   const set = (key: keyof FormData, val: any) => setForm(prev => ({ ...prev, [key]: val }));
 
@@ -288,6 +324,13 @@ export default function RegisterScreen() {
   const passwordError =
     Touched && form.password.trim().length > 0
       ? validatePass(form.password)
+      : null;
+
+  const confirmPasswordError =
+    Touched && form.confirmPassword.trim().length > 0
+      ? form.confirmPassword !== form.password
+        ? 'Passwords do not match.'
+        : null
       : null;
 
   const departmentError =
@@ -317,6 +360,12 @@ export default function RegisterScreen() {
 
       const pErr = validatePass(form.password);
       if (pErr) errs.password = pErr;
+
+      if (!form.confirmPassword) {
+        errs.confirmPassword = 'Please confirm your password.';
+      } else if (form.confirmPassword !== form.password) {
+        errs.confirmPassword = 'Passwords do not match.';
+      }
     }
 
     if (step === 2) {
@@ -696,6 +745,7 @@ export default function RegisterScreen() {
 
           {/* ── Scrollable Content (Upper input positioned directly under header page) ── */}
           <ScrollView
+            ref={scrollViewRef}
             showsVerticalScrollIndicator={false}
             style={{ flex: 1, backgroundColor: "#FFFFFF" }}
             contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 24, paddingTop: 16 }}
@@ -791,6 +841,15 @@ export default function RegisterScreen() {
                     onChangeText={(text) => setForm((prev) => ({ ...prev, password: text }))}
                     onBlur={() => setTouched(true)}
                     error={passwordError}
+                  />
+
+                  <PasswordInput
+                    value={form.confirmPassword}
+                    onChangeText={(text) => setForm((prev) => ({ ...prev, confirmPassword: text }))}
+                    onBlur={() => setTouched(true)}
+                    error={confirmPasswordError}
+                    placeholder="Confirm your password"
+                    showStrength={false}
                   />
                 </View>
               )
@@ -1022,27 +1081,141 @@ export default function RegisterScreen() {
             {/* ── STEP 4: Avatar & Bio ── */}
             {step === 4 && (
               <View>
-                <Text style={[labelStyle, { marginBottom: 10 }]}>Select Avatar</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -4, marginBottom: 22 }}>
-                  <View style={{ flexDirection: "row", gap: 8, paddingHorizontal: 4 }}>
-                    {AVATAR_OPTIONS.map((opt, i) => (
-                      <Pressable
-                        key={i}
-                        onPress={() => set("avatar", opt)}
+                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+                  <Text style={labelStyle}>Select Avatar</Text>
+                  <View style={{ flexDirection: "row", backgroundColor: "#EDE8E1", borderRadius: 12, padding: 3 }}>
+                    <Pressable
+                      onPress={() => setAvatarTab("presets")}
+                      style={{
+                        paddingHorizontal: 12,
+                        paddingVertical: 5,
+                        borderRadius: 9,
+                        backgroundColor: avatarTab === "presets" ? "#FFFFFF" : "transparent",
+                      }}
+                    >
+                      <Text
                         style={{
-                          width: 52, height: 52, borderRadius: 16,
-                          alignItems: "center", justifyContent: "center",
-                          borderWidth: 1.5,
-                          borderColor: form.avatar === opt ? "#1A6B3C" : "#E2DED7",
-                          backgroundColor: form.avatar === opt ? "#1A6B3C12" : "#FFFFFF",
-                          transform: [{ scale: form.avatar === opt ? 1.08 : 1 }],
+                          fontSize: 11,
+                          fontWeight: "700",
+                          color: avatarTab === "presets" ? "#1A6B3C" : "#6B7280",
                         }}
                       >
-                        <Text style={{ fontSize: 26 }}>{opt}</Text>
-                      </Pressable>
-                    ))}
+                        Presets
+                      </Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => setAvatarTab("emojis")}
+                      style={{
+                        paddingHorizontal: 12,
+                        paddingVertical: 5,
+                        borderRadius: 9,
+                        backgroundColor: avatarTab === "emojis" ? "#FFFFFF" : "transparent",
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontSize: 11,
+                          fontWeight: "700",
+                          color: avatarTab === "emojis" ? "#1A6B3C" : "#6B7280",
+                        }}
+                      >
+                        Emojis
+                      </Text>
+                    </Pressable>
                   </View>
-                </ScrollView>
+                </View>
+
+                {avatarTab === "presets" ? (
+                  isLoadingPresets ? (
+                    <View style={{ height: 68, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 8, marginBottom: 22 }}>
+                      <ActivityIndicator size="small" color="#1A6B3C" />
+                      <Text style={{ fontSize: 12, color: "#6B7280" }}>Loading preset avatars...</Text>
+                    </View>
+                  ) : presetAvatars.length === 0 ? (
+                    <View style={{ backgroundColor: "#F9F8F6", borderRadius: 16, padding: 16, alignItems: "center", marginBottom: 22, borderWidth: 1, borderColor: "#E5E1D8" }}>
+                      <Text style={{ fontSize: 12, color: "#6B7280", textAlign: "center", marginBottom: 8 }}>
+                        No preset avatars found. You can choose an emoji below!
+                      </Text>
+                      <Pressable
+                        onPress={() => setAvatarTab("emojis")}
+                        style={{ backgroundColor: "#1A6B3C12", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10 }}
+                      >
+                        <Text style={{ fontSize: 12, fontWeight: "700", color: "#1A6B3C" }}>Switch to Emojis</Text>
+                      </Pressable>
+                    </View>
+                  ) : (
+                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -4, marginBottom: 22 }}>
+                      <View style={{ flexDirection: "row", gap: 10, paddingHorizontal: 4, paddingVertical: 4 }}>
+                        {presetAvatars.map((preset) => {
+                          const isSelected = form.avatar === preset.url;
+                          return (
+                            <Pressable
+                              key={preset.id}
+                              onPress={() => set("avatar", preset.url)}
+                              style={{
+                                width: 62,
+                                height: 62,
+                                borderRadius: 18,
+                                alignItems: "center",
+                                justifyContent: "center",
+                                borderWidth: 2,
+                                borderColor: isSelected ? "#1A6B3C" : "#E2DED7",
+                                backgroundColor: isSelected ? "#1A6B3C12" : "#FFFFFF",
+                                transform: [{ scale: isSelected ? 1.06 : 1 }],
+                                position: "relative",
+                                overflow: "hidden",
+                              }}
+                            >
+                              <Image
+                                source={{ uri: preset.url }}
+                                style={{ width: "100%", height: "100%", borderRadius: 16 }}
+                                resizeMode="cover"
+                              />
+                              {isSelected && (
+                                <View
+                                  style={{
+                                    position: "absolute",
+                                    top: 3,
+                                    right: 3,
+                                    width: 18,
+                                    height: 18,
+                                    borderRadius: 9,
+                                    backgroundColor: "#1A6B3C",
+                                    alignItems: "center",
+                                    justifyContent: "center",
+                                  }}
+                                >
+                                  <Check size={11} color="#FFFFFF" strokeWidth={3} />
+                                </View>
+                              )}
+                            </Pressable>
+                          );
+                        })}
+                      </View>
+                    </ScrollView>
+                  )
+                ) : (
+                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -4, marginBottom: 22 }}>
+                    <View style={{ flexDirection: "row", gap: 8, paddingHorizontal: 4, paddingVertical: 4 }}>
+                      {AVATAR_OPTIONS.map((opt, i) => (
+                        <Pressable
+                          key={i}
+                          onPress={() => set("avatar", opt)}
+                          style={{
+                            width: 52, height: 52, borderRadius: 16,
+                            alignItems: "center", justifyContent: "center",
+                            borderWidth: 1.5,
+                            borderColor: form.avatar === opt ? "#1A6B3C" : "#E2DED7",
+                            backgroundColor: form.avatar === opt ? "#1A6B3C12" : "#FFFFFF",
+                            transform: [{ scale: form.avatar === opt ? 1.08 : 1 }],
+                          }}
+                        >
+                          <Text style={{ fontSize: 26 }}>{opt}</Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                  </ScrollView>
+                )}
 
                 <Text style={labelStyle}>
                   Bio <Text style={{ color: "#9CA3AF", fontWeight: "400" }}>(optional)</Text>
@@ -1067,9 +1240,7 @@ export default function RegisterScreen() {
                     PROFILE PREVIEW
                   </Text>
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-                    <View style={{ width: 48, height: 48, borderRadius: 14, backgroundColor: "#1A6B3C12", alignItems: "center", justifyContent: "center" }}>
-                      <Text style={{ fontSize: 26 }}>{form.avatar}</Text>
-                    </View>
+                    <UserAvatar avatar={form.avatar} size="lg" />
                     <View style={{ flex: 1 }}>
                       <Text style={{ fontSize: 15, fontWeight: "700", color: "#111827" }}>
                         {form.username || "your_username"}

@@ -25,16 +25,10 @@ import { AnonymousAvatar } from "@/components/AnonymousAvatar";
 import { FilterChip } from "@/components/FilterChip";
 import { EmptyState } from "@/components/EmptyState";
 import { useAuth } from "@/lib/auth/AuthContext";
-import { listConversations, clearConversation, createConversation } from "@/lib/api/conversation";
+import { listConversations, hideConversation } from "@/lib/api/conversation";
 import { usePresence } from "@/context/PresenceContext";
 import { getSocket } from "@/lib/socket";
 import { setAppBadgeCount } from "@/lib/pushNotifications";
-import { useChatBrowseUsers } from "@/hooks/useChatBrowseUsers";
-import {
-  buildChatBrowseResults,
-  CHAT_LIST_DEFAULT_MAX,
-  type ChatBrowseUser,
-} from "@/lib/chatUserSearch";
 import type { Conversation } from "@/types/conversation";
 
 function getParticipantInfo(conv: any, myId: string) {
@@ -127,85 +121,6 @@ function formatRelativeTime(dateStr: string): string {
 }
 
 const POLL_INTERVAL_MS = 5000;
-
-function BrowseRow({
-  browseUser,
-  onSelect,
-  starting,
-  disabled,
-  isNavigatingThis,
-  isOnline,
-}: {
-  browseUser: ChatBrowseUser;
-  onSelect: (user: ChatBrowseUser) => void;
-  starting: boolean;
-  disabled: boolean;
-  isNavigatingThis: boolean;
-  isOnline: boolean;
-}) {
-  return (
-    <Pressable
-      onPress={() => onSelect(browseUser)}
-      disabled={disabled || starting}
-      style={({ pressed }) => ({
-        opacity: disabled || starting ? 0.6 : 1,
-        backgroundColor: isNavigatingThis ? "#F3F4F6" : pressed ? "#F9FAFB" : "#FFFFFF",
-      })}
-    >
-      <View
-        className="w-full flex-row items-center px-5 py-3.5"
-        style={{ flexDirection: "row", width: "100%" }}
-      >
-        <View style={{ flexShrink: 0 }}>
-          <UserAvatar avatar={browseUser.avatar} size="lg" online={isOnline} />
-        </View>
-        <View style={{ flex: 1, minWidth: 0, marginLeft: 16, marginRight: 8 }}>
-          <Text
-            className="text-[15px] font-bold text-[#111827]"
-            numberOfLines={1}
-            ellipsizeMode="tail"
-          >
-            {browseUser.name}
-          </Text>
-          <Text
-            className="text-[13px] text-[#6B7280] mt-0.5"
-            numberOfLines={1}
-            ellipsizeMode="tail"
-          >
-            {browseUser.course ?? (browseUser.isAlly ? "Your ally" : "Start a conversation")}
-          </Text>
-        </View>
-        <MessageCircle size={18} color="#1A6B3C" />
-      </View>
-    </Pressable>
-  );
-}
-
-function SectionLabel({ title }: { title: string }) {
-  return (
-    <View
-      style={{
-        paddingHorizontal: 20,
-        paddingVertical: 8,
-        backgroundColor: "#FFFFFF",
-        borderBottomWidth: 1,
-        borderBottomColor: "#F9FAFB",
-      }}
-    >
-      <Text
-        style={{
-          fontSize: 10,
-          fontWeight: "700",
-          letterSpacing: 0.8,
-          textTransform: "uppercase",
-          color: "#9CA3AF",
-        }}
-      >
-        {title}
-      </Text>
-    </View>
-  );
-}
 
 /* ─── Extracted SwipeableRow ─── */
 interface SwipeableRowProps {
@@ -358,13 +273,15 @@ const SwipeableRow = React.memo(function SwipeableRow({
               style={{
                 color: unreadInfo.isUnread ? "#111827" : lastMsg ? "#6B7280" : "#9CA3AF",
                 fontWeight: unreadInfo.isUnread ? "700" : "400",
-                fontStyle: lastMsg ? "normal" : "italic",
+                fontStyle: (lastMsg && lastMsg.is_deleted) ? "italic" : lastMsg ? "normal" : "italic",
               }}
               numberOfLines={1}
               ellipsizeMode="tail"
             >
               {lastMsg
-                ? `${isMine ? "You: " : ""}${lastMsg.content || (lastMsg.image_url ? "📷 Photo" : "")}`
+                ? lastMsg.is_deleted
+                  ? "Message deleted"
+                  : `${isMine ? "You: " : ""}${lastMsg.content || (lastMsg.image_url ? "📷 Photo" : "")}`
                 : "Start the conversation"}
             </Text>
           </View>
@@ -421,8 +338,6 @@ export default function MessagesScreen() {
   const [loading, setLoading] = useState(() => !(user?.id && (getMemoryConversations(user.id)?.length || 0) > 0));
   const [refreshing, setRefreshing] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [browseMode, setBrowseMode] = useState(false);
-  const [startingUserId, setStartingUserId] = useState<string | null>(null);
   const [navigatingId, setNavigatingId] = useState<string | null>(null);
   const isNavigatingRef = useRef(false);
   const isNavigating = Boolean(navigatingId) || isNavigatingRef.current;
@@ -520,7 +435,6 @@ export default function MessagesScreen() {
     useCallback(() => {
       isNavigatingRef.current = false;
       setNavigatingId(null);
-      setStartingUserId(null);
       void loadConversations(true);
       void refreshOnlineUsers();
     }, [loadConversations, refreshOnlineUsers])
@@ -649,9 +563,11 @@ export default function MessagesScreen() {
       setDeleteTargetId(null);
       setDeleteTargetName("");
       closeAllSwipeables();
+      // Optimistic remove from local list
       setConversations((prev) => prev.filter((c) => c.id !== id));
       if (accessToken) {
-        clearConversation(id, accessToken).catch(() => { });
+        // hideConversation removes from YOUR list only — does not wipe message history
+        hideConversation(id, accessToken).catch(() => {});
       }
     },
     [accessToken, closeAllSwipeables]
@@ -665,8 +581,12 @@ export default function MessagesScreen() {
     if (variantFilter === "anonymous" && !isAnonymous) return false;
     if (!searchQuery.trim()) return true;
     const info = getParticipantInfo(conv, user?.id || "");
+    const lastMsg = getLastMessage(conv);
     const query = searchQuery.toLowerCase();
-    return info.participantName.toLowerCase().includes(query);
+    return (
+      info.participantName.toLowerCase().includes(query) ||
+      (lastMsg?.content || "").toLowerCase().includes(query)
+    );
   }), [conversations, variantFilter, searchQuery, user?.id]);
 
   // Virtual pagination: show first visibleCount items, expand on scroll
@@ -678,33 +598,6 @@ export default function MessagesScreen() {
   const handleLoadMore = useCallback(() => {
     setVisibleCount((prev) => Math.min(prev + PAGE_SIZE, filteredConversations.length));
   }, [filteredConversations.length]);
-
-  const showBrowse = browseMode || searchQuery.trim().length > 0;
-  const { allies: browseAllies, profiles: browseProfiles, isLoading: loadingBrowse } =
-    useChatBrowseUsers(user?.id ?? null, accessToken, showBrowse);
-
-  const existingParticipantIds = useMemo(
-    () =>
-      new Set(
-        conversations.map((conv) => getParticipantInfo(conv, user?.id || "").participantId),
-      ),
-    [conversations, user?.id],
-  );
-
-  const browseResults = useMemo(
-    () =>
-      buildChatBrowseResults({
-        query: searchQuery,
-        allies: browseAllies,
-        allProfiles: browseProfiles,
-        existingParticipantIds,
-        maxItems: CHAT_LIST_DEFAULT_MAX,
-      }),
-    [searchQuery, browseAllies, browseProfiles, existingParticipantIds],
-  );
-
-  const hasBrowseResults =
-    browseResults.allies.length > 0 || browseResults.others.length > 0;
 
   const handleOpenConversation = useCallback(
     (item: Conversation, info: ReturnType<typeof getParticipantInfo>) => {
@@ -732,67 +625,6 @@ export default function MessagesScreen() {
       });
     },
     [user?.id]
-  );
-
-  const handleBrowseSelect = useCallback(
-    async (browseUser: ChatBrowseUser) => {
-      if (!accessToken || isNavigatingRef.current) return;
-      isNavigatingRef.current = true;
-      setNavigatingId(browseUser.id);
-      setStartingUserId(browseUser.id);
-
-      try {
-        // Fast path: if conversation already exists locally, open instantly with 0ms delay!
-        const existingConv = conversations.find((conv) => {
-          const info = getParticipantInfo(conv, user?.id || "");
-          return info.participantId === browseUser.id;
-        });
-
-        if (existingConv) {
-          const info = getParticipantInfo(existingConv, user?.id || "");
-          if (existingConv.messages && existingConv.messages.length > 0) {
-            primeChatCacheFromConversation(existingConv.id, existingConv.messages, user?.id);
-          }
-          setBrowseMode(false);
-          setSearchQuery("");
-          router.push({
-            pathname: "/pages/conversation" as any,
-            params: {
-              conversationId: existingConv.id,
-              prefillName: info.participantName,
-              prefillAvatar: info.participantAvatar || "",
-              prefillUserId: info.participantId || "",
-              isAnonymous: "false",
-              prefillDayStreak: String(info.dayStreak ?? 0),
-              prefillStreakActiveToday: info.streakActiveToday ? "true" : "false",
-              prefillStreakRestoreDeadline: (existingConv.streakRestoreDeadline || existingConv.matchInfo?.streakRestoreDeadline || "") as string,
-            },
-          });
-          return;
-        }
-
-        const { conversationId } = await createConversation(browseUser.id, accessToken);
-        setBrowseMode(false);
-        setSearchQuery("");
-        void loadConversations(true);
-        router.push({
-          pathname: "/pages/conversation" as any,
-          params: {
-            conversationId,
-            prefillName: browseUser.name,
-            prefillAvatar: browseUser.avatar || "",
-            prefillUserId: browseUser.id,
-          },
-        });
-      } catch (err) {
-        console.warn("Failed to start conversation", err);
-        isNavigatingRef.current = false;
-        setNavigatingId(null);
-      } finally {
-        setStartingUserId(null);
-      }
-    },
-    [accessToken, conversations, user?.id, loadConversations]
   );
 
   // ── Memoized FlatList renderItem ──────────────────────────────────────
@@ -825,77 +657,7 @@ export default function MessagesScreen() {
     [user?.id, checkIsOnline, swipeableRefs, handleOpenConversation, isNavigating, navigatingId]
   );
 
-  const renderBrowseSection = () => {
-    if (!showBrowse) return null;
 
-    if (loadingBrowse) {
-      return (
-        <View style={{ paddingVertical: 24, alignItems: "center" }}>
-          <ActivityIndicator color="#1A6B3C" />
-          <Text style={{ marginTop: 8, fontSize: 13, color: "#9CA3AF" }}>Loading people…</Text>
-        </View>
-      );
-    }
-
-    if (!hasBrowseResults) {
-      if (searchQuery.trim()) {
-        return (
-          <View style={{ paddingHorizontal: 20, paddingVertical: 24 }}>
-            <Text style={{ textAlign: "center", fontSize: 14, color: "#6B7280" }}>
-              No people found.
-            </Text>
-            <Text style={{ textAlign: "center", fontSize: 12, color: "#9CA3AF", marginTop: 4 }}>
-              Try a different name or connect on Discover.
-            </Text>
-          </View>
-        );
-      }
-      if (filteredConversations.length === 0) {
-        return (
-          <View style={{ paddingHorizontal: 20, paddingVertical: 24 }}>
-            <Text style={{ textAlign: "center", fontSize: 14, color: "#6B7280" }}>
-              All your allies already have chats.
-            </Text>
-            <Text style={{ textAlign: "center", fontSize: 12, color: "#9CA3AF", marginTop: 4 }}>
-              Search above to message someone new.
-            </Text>
-          </View>
-        );
-      }
-      return null;
-    }
-
-    const showSections = Boolean(searchQuery.trim());
-    const rows = showSections
-      ? [
-        { title: "Allies", users: browseResults.allies },
-        { title: "Others", users: browseResults.others },
-      ]
-      : [{ title: searchQuery.trim() ? "Start a chat" : "Allies to message", users: [...browseResults.allies, ...browseResults.others] }];
-
-    return (
-      <>
-        {rows.map((section) =>
-          section.users.length > 0 ? (
-            <View key={section.title}>
-              <SectionLabel title={section.title} />
-              {section.users.map((browseUser) => (
-                <BrowseRow
-                  key={browseUser.id}
-                  browseUser={browseUser}
-                  onSelect={handleBrowseSelect}
-                  starting={startingUserId === browseUser.id}
-                  disabled={isNavigating}
-                  isNavigatingThis={navigatingId === browseUser.id}
-                  isOnline={checkIsOnline(browseUser.id)}
-                />
-              ))}
-            </View>
-          ) : null,
-        )}
-      </>
-    );
-  };
 
   if (loading && conversations.length === 0) {
     return (
@@ -1028,7 +790,7 @@ export default function MessagesScreen() {
             ref={searchInputRef}
             value={searchQuery}
             onChangeText={setSearchQuery}
-            placeholder="Search chats or people…"
+            placeholder="Search chats..."
             placeholderTextColor="#9CA3AF"
             className="flex-1 ml-2 text-textPrimary text-sm font-jakarta"
             style={{ paddingVertical: 0 }}
@@ -1075,7 +837,7 @@ export default function MessagesScreen() {
           />
         }
         contentContainerStyle={
-          paginatedConversations.length === 0 && !showBrowse
+          paginatedConversations.length === 0
             ? { flex: 1 }
             : { paddingBottom: 20 }
         }
@@ -1085,28 +847,14 @@ export default function MessagesScreen() {
         maxToRenderPerBatch={10}
         windowSize={7}
         removeClippedSubviews
-        ListHeaderComponent={
-          showBrowse ? (
-            <View>
-              {renderBrowseSection()}
-              {filteredConversations.length > 0 ? (
-                <SectionLabel
-                  title={searchQuery.trim() ? "Matching chats" : "Your chats"}
-                />
-              ) : null}
-            </View>
-          ) : null
-        }
         renderItem={renderConversationItem}
 
         ListEmptyComponent={
-          showBrowse ? null : (
-            <EmptyState
-              icon={<MessageCircle size={28} color="#1A6B3C" />}
-              title="No conversations yet"
-              description="Start connecting with classmates and your conversations will appear here."
-            />
-          )
+          <EmptyState
+            icon={<MessageCircle size={28} color="#1A6B3C" />}
+            title="No conversations yet"
+            description="Start connecting with classmates and your conversations will appear here."
+          />
         }
       />
     </View>

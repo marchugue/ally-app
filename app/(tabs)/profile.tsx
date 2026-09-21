@@ -56,14 +56,6 @@ const COLORS = {
   bg: "#FFFFFF",
 };
 
-// Sample fallback suggested allies if backend list is short
-const FALLBACK_SUGGESTED: ProfileSummary[] = [
-  { id: "s1", username: "maria_santos", full_name: "Maria Santos", avatar_url: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150", course: "BSIT 3rd Year" },
-  { id: "s2", username: "juan_dela_cruz", full_name: "Juan Dela Cruz", avatar_url: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150", course: "BSCE 2nd Year" },
-  { id: "s3", username: "anna_reyes", full_name: "Anna Reyes", avatar_url: "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=150", course: "BSED 4th Year" },
-  { id: "s4", username: "mark_tan", full_name: "Mark Tan", avatar_url: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150", course: "BSBA 1st Year" },
-  { id: "s5", username: "claire_gomez", full_name: "Claire Gomez", avatar_url: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150", course: "BSN 3rd Year" },
-];
 
 export default function ProfileScreen() {
   const { user, accessToken, signOut } = useAuth();
@@ -83,8 +75,6 @@ export default function ProfileScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const cursorRef = useRef<string | undefined>(undefined);
 
-  const [suggested, setSuggested] = useState<ProfileSummary[]>([]);
-  const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [relationModalOpen, setRelationModalOpen] = useState(false);
@@ -93,19 +83,14 @@ export default function ProfileScreen() {
   const loadProfileData = useCallback(async () => {
     if (!accessToken || !user) return;
     try {
-      const [current, relationshipData, others] = await Promise.all([
+      const [current, relationshipData] = await Promise.all([
         getMyProfile(accessToken),
         getProfileRelationship(user.id, accessToken).catch(() => null),
-        listProfiles(accessToken, user.id).catch(() => []),
       ]);
       setProfile(current);
       setRelationship(relationshipData);
-
-      const list = others && others.length > 0 ? others : FALLBACK_SUGGESTED;
-      setSuggested(list);
     } catch (err) {
       console.warn("Failed to load profile", err);
-      setSuggested(FALLBACK_SUGGESTED);
     } finally {
       setProfileLoading(false);
     }
@@ -189,41 +174,6 @@ export default function ProfileScreen() {
     [accessToken]
   );
 
-  const toggleFollowSuggested = useCallback(
-    async (targetId: string) => {
-      const currentlyFollowing = followingIds.has(targetId);
-      setFollowingIds((prev) => {
-        const next = new Set(prev);
-        if (currentlyFollowing) {
-          next.delete(targetId);
-        } else {
-          next.add(targetId);
-        }
-        return next;
-      });
-
-      if (accessToken) {
-        try {
-          if (currentlyFollowing) {
-            await unfollowUser(targetId, accessToken);
-          } else {
-            await followUser(targetId, accessToken);
-          }
-        } catch (err) {
-          setFollowingIds((prev) => {
-            const next = new Set(prev);
-            if (currentlyFollowing) {
-              next.add(targetId);
-            } else {
-              next.delete(targetId);
-            }
-            return next;
-          });
-        }
-      }
-    },
-    [accessToken, followingIds]
-  );
 
   const mediaPosts = useMemo(() => {
     return posts.filter(
@@ -510,85 +460,6 @@ export default function ProfileScreen() {
               {/* Tab View Contents */}
               {activeTab === "about" ? (
                 <AboutTabSection profile={profile} />
-              ) : activeTab === "feed" && suggested && suggested.length > 0 ? (
-                <View style={{ marginTop: 14, marginBottom: 4 }}>
-                  {/* Suggested Allies Section Header */}
-                  <View
-                    style={{
-                      flexDirection: "row",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      paddingHorizontal: 16,
-                      marginBottom: 10,
-                    }}
-                  >
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                      <Text style={{ fontSize: 14, fontWeight: "700", color: "#111827" }}>
-                        Suggested Allies
-                      </Text>
-                      <View
-                        style={{
-                          backgroundColor: "#F0FDF4",
-                          paddingHorizontal: 6,
-                          paddingVertical: 1.5,
-                          borderRadius: 6,
-                          borderWidth: 1,
-                          borderColor: "#BBF7D0",
-                        }}
-                      >
-                        <Text style={{ fontSize: 9.5, fontWeight: "700", color: "#15803D" }}>
-                          Campus
-                        </Text>
-                      </View>
-                    </View>
-
-                    <Pressable
-                      onPress={() => router.push("/(tabs)/discover" as any)}
-                      hitSlop={6}
-                      style={{ flexDirection: "row", alignItems: "center", gap: 2 }}
-                    >
-                      <Text style={{ fontSize: 12, fontWeight: "700", color: COLORS.forest }}>
-                        See All
-                      </Text>
-                      <ChevronRight size={14} color={COLORS.forest} strokeWidth={2.4} />
-                    </Pressable>
-                  </View>
-
-                  {/* Horizontal Carousel */}
-                  <FlatList
-                    data={suggested}
-                    keyExtractor={(item) => item.id}
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={{ paddingHorizontal: 16, gap: 10 }}
-                    renderItem={({ item }) => (
-                      <SuggestedAllyCard
-                        item={item}
-                        isFollowing={followingIds.has(item.id)}
-                        onPressProfile={() =>
-                          router.push({
-                            pathname: "/pages/user-profile",
-                            params: { userId: item.id },
-                          } as any)
-                        }
-                        onToggleFollow={() => toggleFollowSuggested(item.id)}
-                        onDismiss={() => {
-                          setSuggested((prev) => prev.filter((p) => p.id !== item.id));
-                        }}
-                      />
-                    )}
-                  />
-
-                  {/* Subtle divider before posts */}
-                  <View
-                    style={{
-                      height: 8,
-                      backgroundColor: "#F3F4F6",
-                      marginTop: 14,
-                      marginBottom: 4,
-                    }}
-                  />
-                </View>
               ) : null}
             </View>
           }
@@ -991,124 +862,6 @@ function AboutTabSection({ profile }: { profile: Profile }) {
   );
 }
 
-/**
- * Suggested Ally Card Component (Vertical Layout inside container)
- */
-function SuggestedAllyCard({
-  item,
-  onPressProfile,
-  onToggleFollow,
-  isFollowing,
-  onDismiss,
-}: {
-  item: ProfileSummary;
-  onPressProfile: () => void;
-  onToggleFollow: () => void;
-  isFollowing?: boolean;
-  onDismiss?: () => void;
-}) {
-  const { isOnline } = usePresence();
-
-  return (
-    <Pressable
-      onPress={onPressProfile}
-      style={{
-        width: 142,
-        backgroundColor: "#FFFFFF",
-        borderRadius: 16,
-        borderWidth: 1,
-        borderColor: "#E8E6E1",
-        padding: 12,
-        alignItems: "center",
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.05,
-        shadowRadius: 4,
-        elevation: 2,
-        position: "relative",
-      }}
-    >
-      {/* Upper Right X Icon */}
-      {onDismiss && (
-        <Pressable
-          onPress={(e) => {
-            e.stopPropagation();
-            onDismiss();
-          }}
-          hitSlop={6}
-          style={{
-            position: "absolute",
-            top: 8,
-            right: 8,
-            zIndex: 10,
-            padding: 2,
-          }}
-        >
-          <X size={14} color="#9CA3AF" />
-        </Pressable>
-      )}
-
-      <UserAvatar
-        avatar={item.avatar_url}
-        size="lg"
-        online={isOnline ? isOnline(item.id) : false}
-      />
-
-      <Text
-        style={{
-          fontSize: 13,
-          fontWeight: "700",
-          color: "#111827",
-          textAlign: "center",
-          marginTop: 8,
-        }}
-        numberOfLines={1}
-      >
-        {item.full_name || `@${item.username}`}
-      </Text>
-
-      <Text
-        style={{
-          fontSize: 11,
-          color: "#6B7280",
-          textAlign: "center",
-          marginTop: 2,
-        }}
-        numberOfLines={1}
-      >
-        {item.course || `@${item.username}`}
-      </Text>
-
-      <Pressable
-        onPress={(e) => {
-          e.stopPropagation();
-          onToggleFollow();
-        }}
-        style={{
-          marginTop: 12,
-          width: "100%",
-          height: 32,
-          borderRadius: 10,
-          backgroundColor: isFollowing ? "#F3F4F6" : COLORS.forest,
-          borderWidth: isFollowing ? 1 : 0,
-          borderColor: "#D1D5DB",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <Text
-          style={{
-            fontSize: 12,
-            fontWeight: "600",
-            color: isFollowing ? "#374151" : "#FFFFFF",
-          }}
-        >
-          {isFollowing ? "Following" : "Follow"}
-        </Text>
-      </Pressable>
-    </Pressable>
-  );
-}
 
 function AccountSheet({
   visible,

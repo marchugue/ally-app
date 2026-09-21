@@ -80,7 +80,45 @@ export const ANIMATED_FLUENT_EMOJI_MAP: Record<string, string> = {
   '💡': `${ANIMATED_BASE}/Objects/Light%20Bulb.png`,
   '⚡': `${ANIMATED_BASE}/Travel%20and%20places/High%20Voltage.png`,
   '👑': `${ANIMATED_BASE}/Objects/Crown.png`,
+
+  // Anonymous Match Animals & Mask
+  '🦊': `${ANIMATED_BASE}/Animals/Fox.png`,
+  '🐺': `${ANIMATED_BASE}/Animals/Wolf.png`,
+  '🐋': `${ANIMATED_BASE}/Animals/Spouting%20Whale.png`,
+  '🦉': `${ANIMATED_BASE}/Animals/Owl.png`,
+  '🐼': `${ANIMATED_BASE}/Animals/Panda.png`,
+  '🦦': `${ANIMATED_BASE}/Animals/Otter.png`,
+  '🦅': `${ANIMATED_BASE}/Animals/Eagle.png`,
+  '🐨': `${ANIMATED_BASE}/Animals/Koala.png`,
+  '🐱': `${ANIMATED_BASE}/Animals/Cat%20Face.png`,
+  '🐬': `${ANIMATED_BASE}/Animals/Dolphin.png`,
+  '🐦‍⬛': `${ANIMATED_BASE}/Animals/Black%20Bird.png`,
+  '🐦': `${ANIMATED_BASE}/Animals/Bird.png`,
+  '🦡': `${ANIMATED_BASE}/Animals/Badger.png`,
+  '🎭': `${ANIMATED_BASE}/Activities/Performing%20Arts.png`,
 };
+
+export const ANONYMOUS_ANIMATED_EMOJI_MAP: Record<string, string> = {
+  fox: `${ANIMATED_BASE}/Animals/Fox.png`,
+  wolf: `${ANIMATED_BASE}/Animals/Wolf.png`,
+  whale: `${ANIMATED_BASE}/Animals/Spouting%20Whale.png`,
+  owl: `${ANIMATED_BASE}/Animals/Owl.png`,
+  panda: `${ANIMATED_BASE}/Animals/Panda.png`,
+  otter: `${ANIMATED_BASE}/Animals/Otter.png`,
+  falcon: `${ANIMATED_BASE}/Animals/Eagle.png`,
+  koala: `${ANIMATED_BASE}/Animals/Koala.png`,
+  lynx: `${ANIMATED_BASE}/Animals/Cat%20Face.png`,
+  dolphin: `${ANIMATED_BASE}/Animals/Dolphin.png`,
+  raven: `${ANIMATED_BASE}/Animals/Black%20Bird.png`,
+  badger: `${ANIMATED_BASE}/Animals/Badger.png`,
+  default: `${ANIMATED_BASE}/Activities/Performing%20Arts.png`,
+};
+
+export function getAnonymousAnimalAnimatedUrl(avatarKey?: string | null): string {
+  if (!avatarKey) return ANONYMOUS_ANIMATED_EMOJI_MAP.default;
+  const key = avatarKey.toLowerCase().trim();
+  return ANONYMOUS_ANIMATED_EMOJI_MAP[key] || ANONYMOUS_ANIMATED_EMOJI_MAP.default;
+}
 
 /**
  * Official Microsoft Fluent 3D static renders from microsoft/fluentui-emoji.

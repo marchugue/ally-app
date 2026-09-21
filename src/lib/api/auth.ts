@@ -22,16 +22,28 @@ export function getSession(accessToken: string): Promise<AuthSession> {
   return apiRequest<AuthSession>("/auth/session", { accessToken });
 }
 
-export function forgotPassword(email: string): Promise<void> {
-  return apiRequest<void>("/auth/forgot-password", { method: "POST", body: { email }, noContent: true });
+type ForgotPasswordResponse = {
+  trackingToken?: string;
+  tracking_token?: string;
+};
+
+/** Returns trackingToken when the backend supports live completion watch; null on legacy 204 responses. */
+export async function forgotPassword(email: string): Promise<{ trackingToken: string | null }> {
+  const data = await apiRequest<ForgotPasswordResponse | undefined>("/auth/forgot-password", {
+    method: "POST",
+    body: { email, source: "mobile" },
+  });
+
+  const trackingToken = data?.trackingToken ?? data?.tracking_token ?? null;
+  return { trackingToken };
 }
 
-export function resetPassword(token: string, password: string): Promise<void> {
-  return apiRequest<void>("/auth/reset-password", {
-    method: "POST",
-    body: { token, password },
-    noContent: true,
-  });
+export function getPasswordResetStatus(trackingToken: string): Promise<{
+  status: "pending" | "completed" | "unknown";
+  source?: "web" | "mobile";
+  completedAt?: string | null;
+}> {
+  return apiRequest(`/auth/password-reset/status/${encodeURIComponent(trackingToken)}`);
 }
 
 export function getEmailVerificationStatus(

@@ -13,6 +13,7 @@ import {
 import { X, Search, Users, ArrowUpDown } from "lucide-react-native";
 import { router } from "expo-router";
 import { UserAvatar } from "./UserAvatar";
+import { AnonymousAvatar } from "./AnonymousAvatar";
 import { listFollowers, listFollowing } from "@/lib/api/follow";
 import { listAllies } from "@/lib/api/interaction";
 import { useAuth } from "@/lib/auth/AuthContext";
@@ -306,31 +307,38 @@ export function RelationshipListModal({
             onEndReached={handleLoadMore}
             onEndReachedThreshold={0.3}
             contentContainerStyle={{ paddingBottom: 32 }}
-            renderItem={({ item }) => (
-              <Pressable
-                onPress={() => handleSelectMember(item.id)}
-                android_ripple={{ color: "rgba(0,0,0,0.04)" }}
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  paddingHorizontal: 18,
-                  paddingVertical: 12,
-                  borderBottomWidth: 1,
-                  borderBottomColor: "#F3F4F6",
-                  gap: 12,
-                }}
-              >
-                <UserAvatar avatar={item.avatarUrl} size="md" />
-                <View style={{ flex: 1 }}>
-                  <Text style={{ fontSize: 14, fontWeight: "700", color: "#111827" }} numberOfLines={1}>
-                    {item.fullName || `@${item.username}`}
-                  </Text>
-                  <Text style={{ fontSize: 12, color: "#6B7280", marginTop: 2 }} numberOfLines={1}>
-                    {item.course ? `${item.course}` : `@${item.username}`}
-                  </Text>
-                </View>
-              </Pressable>
-            )}
+            renderItem={({ item }) => {
+              const isAlly = activeKind === "allies" || (item as any).isAlly || (item as any).is_ally;
+              return (
+                <Pressable
+                  onPress={() => handleSelectMember(item.id)}
+                  android_ripple={{ color: "rgba(0,0,0,0.04)" }}
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    paddingHorizontal: 18,
+                    paddingVertical: 12,
+                    borderBottomWidth: 1,
+                    borderBottomColor: "#F3F4F6",
+                    gap: 12,
+                  }}
+                >
+                  {isAlly ? (
+                    <UserAvatar avatar={item.avatarUrl} size="md" />
+                  ) : (
+                    <AnonymousAvatar avatarKey={(item as any).avatarKey || "fox"} size={40} />
+                  )}
+                  <View style={{ flex: 1 }}>
+                    <Text style={{ fontSize: 14, fontWeight: "700", color: "#111827" }} numberOfLines={1}>
+                      {isAlly ? (item.fullName || `@${item.username}`) : "Anonymous Peer"}
+                    </Text>
+                    <Text style={{ fontSize: 12, color: "#6B7280", marginTop: 2 }} numberOfLines={1}>
+                      {isAlly ? (item.course ? `${item.course}` : `@${item.username}`) : "Protected · Campus Student"}
+                    </Text>
+                  </View>
+                </Pressable>
+              );
+            }}
             ListEmptyComponent={
               <View style={{ paddingVertical: 48, alignItems: "center", paddingHorizontal: 32 }}>
                 <View

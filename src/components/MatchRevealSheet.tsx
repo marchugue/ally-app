@@ -20,6 +20,8 @@ import {
   ChevronRight,
   LogOut,
   Compass,
+  Gamepad2,
+  Image as ImageIcon,
 } from "lucide-react-native";
 import { useAuth } from "@/lib/auth/AuthContext";
 import { AnonymousAvatar } from "@/components/AnonymousAvatar";
@@ -28,7 +30,6 @@ import {
   RevealData,
   endMatch as apiEndMatch,
 } from "@/lib/api/matchmaking";
-import { requestConnection } from "@/lib/api/interaction";
 import { STAGE_NAMES, STAGE_THRESHOLDS, stageName, avatarColorFor } from "@/constants/matchOptions";
 
 interface MatchRevealSheetProps {
@@ -85,20 +86,6 @@ export function MatchRevealSheet({
   const streak = revealData?.dayStreak ?? initialStreak;
   const partner = revealData?.partner;
   const matchColor = avatarColorFor(partnerAvatar);
-
-  const handleSendFriendRequest = async () => {
-    if (!partner?.userId || !accessToken || sendingRequest || friendRequestSent) return;
-    setSendingRequest(true);
-    try {
-      await requestConnection(partner.userId, accessToken);
-      setFriendRequestSent(true);
-      Alert.alert("Request Sent", `Connection request sent to ${partner.fullName || partnerAlias}!`);
-    } catch (err: any) {
-      Alert.alert("Error", err?.message || "Failed to send connection request.");
-    } finally {
-      setSendingRequest(false);
-    }
-  };
 
   const handleEndMatch = () => {
     Alert.alert(
@@ -170,8 +157,8 @@ export function MatchRevealSheet({
                 <AnonymousAvatar
                   avatarKey={partnerAvatar}
                   size={42}
-                  photoUrl={stage >= 2 ? partner?.blurredAvatarUrl || partner?.avatarUrl : null}
-                  isBlurred={stage < 4}
+                  photoUrl={stage >= 4 ? partner?.avatarUrl : null}
+                  isBlurred={false}
                 />
                 <View>
                   <Text style={{ fontSize: 17, fontWeight: "800", color: "#0F172A" }}>
@@ -319,101 +306,94 @@ export function MatchRevealSheet({
                   </View>
                 )}
 
-                {/* ═══ UNLOCKED CLUES (Stage 2+) ═══ */}
-                {stage >= 2 ? (
-                  <View
-                    style={{
-                      backgroundColor: "#FFFFFF",
-                      borderRadius: 18,
-                      borderWidth: 1,
-                      borderColor: "#E2E8F0",
-                      padding: 16,
-                      marginBottom: 20,
-                      gap: 10,
-                    }}
-                  >
-                    <Text style={{ fontSize: 13, fontWeight: "800", color: "#0F172A", marginBottom: 4 }}>
-                      Unlocked Ally Clues
-                    </Text>
+                {/* ═══ STAGE 2: PLAY GAMES TOGETHER ═══ */}
+                <View
+                  style={{
+                    backgroundColor: stage >= 2 ? "#FFFFFF" : "#F8FAFC",
+                    borderRadius: 18,
+                    borderWidth: 1,
+                    borderColor: stage >= 2 ? "#E2E8F0" : "#E2E8F0",
+                    padding: 16,
+                    marginBottom: 20,
+                  }}
+                >
+                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                      <Gamepad2 size={18} color={stage >= 2 ? "#1A6B3C" : "#94A3B8"} />
+                      <Text style={{ fontSize: 13, fontWeight: "800", color: stage >= 2 ? "#0F172A" : "#64748B" }}>
+                        Stage 2: Play Games Together
+                      </Text>
+                    </View>
+                    <View
+                      style={{
+                        backgroundColor: "#FEF3C7",
+                        paddingHorizontal: 8,
+                        paddingVertical: 2,
+                        borderRadius: 8,
+                      }}
+                    >
+                      <Text style={{ fontSize: 10, fontWeight: "700", color: "#D97706" }}>
+                        Coming Soon
+                      </Text>
+                    </View>
+                  </View>
+                  <Text style={{ fontSize: 12, color: "#64748B", lineHeight: 16 }}>
+                    {stage >= 2
+                      ? "You reached Stage 2! Interactive mini-games are currently in development."
+                      : "Reach a 3-day streak to unlock interactive games and activities."}
+                  </Text>
+                  {stage >= 2 && partner?.studyCategory && (
+                    <View style={{ marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: "#F1F5F9", flexDirection: "row", justifyContent: "space-between" }}>
+                      <Text style={{ fontSize: 12, color: "#64748B" }}>Academic Program</Text>
+                      <Text style={{ fontSize: 12, fontWeight: "700", color: "#0F172A" }}>{partner.studyCategory}</Text>
+                    </View>
+                  )}
+                </View>
 
-                    {partner?.studyCategory && (
-                      <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                        <Text style={{ fontSize: 13, color: "#64748B" }}>Academic Program</Text>
-                        <Text style={{ fontSize: 13, fontWeight: "700", color: "#0F172A" }}>
-                          {partner.studyCategory}
+                {/* ═══ STAGE 3: IMAGE & MEDIA SHARING ═══ */}
+                <View
+                  style={{
+                    backgroundColor: stage >= 3 ? "#FFFFFF" : "#F8FAFC",
+                    borderRadius: 18,
+                    borderWidth: 1,
+                    borderColor: stage >= 3 ? "#E2E8F0" : "#E2E8F0",
+                    padding: 16,
+                    marginBottom: 20,
+                  }}
+                >
+                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                      <ImageIcon size={18} color={stage >= 3 ? "#1A6B3C" : "#94A3B8"} />
+                      <Text style={{ fontSize: 13, fontWeight: "800", color: stage >= 3 ? "#0F172A" : "#64748B" }}>
+                        Stage 3: Image & Media Sharing
+                      </Text>
+                    </View>
+                    {stage >= 3 ? (
+                      <View
+                        style={{
+                          backgroundColor: "#E8F5EE",
+                          paddingHorizontal: 8,
+                          paddingVertical: 2,
+                          borderRadius: 8,
+                        }}
+                      >
+                        <Text style={{ fontSize: 10, fontWeight: "700", color: "#1A6B3C" }}>
+                          Unlocked
                         </Text>
                       </View>
-                    )}
-
-                    {partner?.personalityType && (
-                      <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                        <Text style={{ fontSize: 13, color: "#64748B" }}>Personality</Text>
-                        <Text style={{ fontSize: 13, fontWeight: "700", color: "#0F172A" }}>
-                          {partner.personalityType}
-                        </Text>
-                      </View>
-                    )}
-
-                    {partner?.zodiacSign && (
-                      <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                        <Text style={{ fontSize: 13, color: "#64748B" }}>Zodiac Sign</Text>
-                        <Text style={{ fontSize: 13, fontWeight: "700", color: "#0F172A" }}>
-                          {partner.zodiacSign}
-                        </Text>
-                      </View>
-                    )}
-
-                    {partner?.ageRange && (
-                      <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                        <Text style={{ fontSize: 13, color: "#64748B" }}>Age Range</Text>
-                        <Text style={{ fontSize: 13, fontWeight: "700", color: "#0F172A" }}>
-                          {partner.ageRange}
-                        </Text>
-                      </View>
-                    )}
-
-                    {stage >= 3 && partner?.firstNameLetter && (
-                      <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                        <Text style={{ fontSize: 13, color: "#64748B" }}>Name Starts With</Text>
-                        <Text style={{ fontSize: 13, fontWeight: "800", color: "#1A6B3C" }}>
-                          Letter "{partner.firstNameLetter}"
-                        </Text>
-                      </View>
-                    )}
-
-                    {stage >= 3 && partner?.favoriteHobby && (
-                      <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
-                        <Text style={{ fontSize: 13, color: "#64748B" }}>Top Hobby</Text>
-                        <Text style={{ fontSize: 13, fontWeight: "700", color: "#0F172A" }}>
-                          {partner.favoriteHobby}
-                        </Text>
-                      </View>
+                    ) : (
+                      <Lock size={14} color="#94A3B8" />
                     )}
                   </View>
-                ) : (
-                  <View
-                    style={{
-                      backgroundColor: "#F8FAFC",
-                      borderRadius: 18,
-                      padding: 20,
-                      alignItems: "center",
-                      borderWidth: 1,
-                      borderColor: "#E2E8F0",
-                      marginBottom: 20,
-                    }}
-                  >
-                    <Lock size={26} color="#94A3B8" />
-                    <Text style={{ fontSize: 14, fontWeight: "700", color: "#334155", marginTop: 8 }}>
-                      Stage 2 Clues Locked
-                    </Text>
-                    <Text style={{ fontSize: 12, color: "#64748B", textAlign: "center", marginTop: 4 }}>
-                      Reach a 3-day streak to unlock personality, zodiac, and study department clues.
-                    </Text>
-                  </View>
-                )}
+                  <Text style={{ fontSize: 12, color: "#64748B", lineHeight: 16 }}>
+                    {stage >= 3
+                      ? "Photos and camera uploads are unlocked! Share campus moments and notes."
+                      : "Reach a 7-day streak to unlock sending photos and camera uploads in chat."}
+                  </Text>
+                </View>
 
-                {/* ═══ STAGE 4: FULL REVEAL & ADD ALLY ═══ */}
-                {stage >= 4 && partner?.userId && (
+                {/* ═══ STAGE 4: ALLIES UNLOCKED ═══ */}
+                {stage >= 4 ? (
                   <View
                     style={{
                       backgroundColor: "rgba(26, 107, 60, 0.08)",
@@ -427,34 +407,35 @@ export function MatchRevealSheet({
                   >
                     <Sparkles size={24} color="#1A6B3C" />
                     <Text style={{ fontSize: 16, fontWeight: "800", color: "#0F172A", marginTop: 6 }}>
-                      Identity Revealed!
+                      Campus Allies Unlocked!
                     </Text>
-                    <Text style={{ fontSize: 12, color: "#64748B", textAlign: "center", marginTop: 4, marginBottom: 14 }}>
-                      You have built a Close Connection. Connect officially to become permanent Allies.
+                    <Text style={{ fontSize: 12, color: "#64748B", textAlign: "center", marginTop: 4 }}>
+                      You completed the Ally Roadmap! You are now official campus allies with full profile access.
                     </Text>
-
-                    <Pressable
-                      onPress={handleSendFriendRequest}
-                      disabled={sendingRequest || friendRequestSent}
-                      style={{
-                        backgroundColor: friendRequestSent ? "#059669" : "#1A6B3C",
-                        paddingVertical: 12,
-                        paddingHorizontal: 24,
-                        borderRadius: 16,
-                        flexDirection: "row",
-                        alignItems: "center",
-                        gap: 8,
-                      }}
-                    >
-                      {sendingRequest ? (
-                        <ActivityIndicator color="#FFFFFF" size="small" />
-                      ) : (
-                        <UserPlus size={16} color="#FFFFFF" />
-                      )}
-                      <Text style={{ fontSize: 14, fontWeight: "800", color: "#FFFFFF" }}>
-                        {friendRequestSent ? "Ally Request Sent" : "Connect as Ally"}
-                      </Text>
-                    </Pressable>
+                  </View>
+                ) : (
+                  <View
+                    style={{
+                      backgroundColor: "#F8FAFC",
+                      borderRadius: 18,
+                      borderWidth: 1,
+                      borderColor: "#E2E8F0",
+                      padding: 16,
+                      marginBottom: 20,
+                    }}
+                  >
+                    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                        <Shield size={18} color="#94A3B8" />
+                        <Text style={{ fontSize: 13, fontWeight: "800", color: "#64748B" }}>
+                          Stage 4: Campus Allies
+                        </Text>
+                      </View>
+                      <Lock size={14} color="#94A3B8" />
+                    </View>
+                    <Text style={{ fontSize: 12, color: "#64748B", lineHeight: 16 }}>
+                      Reach a 10-day streak to reveal real identities and become confirmed campus allies.
+                    </Text>
                   </View>
                 )}
 

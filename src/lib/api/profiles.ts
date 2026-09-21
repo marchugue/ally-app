@@ -87,8 +87,12 @@ export interface ProfileRelationshipSummary {
   mutualFollowersCount: number;
 }
 
-export function getProfileRelationship(userId: string, accessToken: string): Promise<ProfileRelationshipSummary> {
-  return apiRequest<ProfileRelationshipSummary>(`/profiles/${userId}/relationship`, { accessToken });
+export async function getProfileRelationship(userId: string, accessToken: string): Promise<ProfileRelationshipSummary> {
+  const data = await apiRequest<any>(`/profiles/${userId}/relationship`, { accessToken });
+  if (data?.allyStatus === 'allies') {
+    data.allyStatus = 'accepted';
+  }
+  return data as ProfileRelationshipSummary;
 }
 
 export { followUser, unfollowUser } from "./follow";

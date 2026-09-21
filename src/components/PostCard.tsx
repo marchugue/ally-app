@@ -12,6 +12,7 @@ import {
   ChevronRight,
 } from "lucide-react-native";
 import { UserAvatar, resolveImageUri } from "./UserAvatar";
+import { AnonymousAvatar } from "./AnonymousAvatar";
 import { ReportModal } from "./ReportModal";
 import type { FeedPost } from "@/types/feed";
 import { router } from "expo-router";
@@ -78,6 +79,7 @@ export function PostCard({
 
   const hasMedia = post.media && post.media.length > 0;
   const isOwnPost = user?.id === post.author?.id;
+  const isAlly = Boolean(post.author?.is_ally || isOwnPost);
 
   const handleAuthorPress = () => {
     if (onPressAuthor) {
@@ -146,9 +148,11 @@ export function PostCard({
         initialIndex: String(index),
         postId: post.id,
         caption: post.content || "",
-        authorName: post.author.full_name || `@${post.author.username}`,
-        authorUsername: post.author.username || "",
-        authorAvatar: post.author.avatar_url || "",
+        authorName: isAlly ? (post.author.full_name || `@${post.author.username}`) : "Anonymous Peer",
+        authorUsername: isAlly ? (post.author.username || "") : "anonymous",
+        authorAvatar: isAlly ? (post.author.avatar_url || "") : "",
+        authorId: post.author.id,
+        isAlly: isAlly ? "true" : "false",
         createdAt: post.created_at || "",
         likesCount: String(post.likes_count || 0),
         commentsCount: String(post.comments_count || 0),
@@ -185,23 +189,30 @@ export function PostCard({
           onPress={handleAuthorPress}
           style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}
         >
-          <UserAvatar avatar={post.author.avatar_url} size="md" />
+          {isAlly ? (
+            <UserAvatar avatar={post.author?.avatar_url} size="md" />
+          ) : (
+            <AnonymousAvatar avatarKey={post.author?.avatarKey || "fox"} size={40} />
+          )}
 
           <View style={{ flex: 1 }}>
             <Text
               style={{ fontSize: 14, fontWeight: "600", color: "#111827" }}
               numberOfLines={1}
             >
-              {post.author.full_name || `@${post.author.username}`}
+              {isAlly
+                ? (post.author?.full_name || `@${post.author?.username}`)
+                : "Anonymous Peer"}
             </Text>
             <Text style={{ fontSize: 11, color: "#9CA3AF" }}>
-              @{post.author.username} · {timeAgo(post.created_at)}
+              {isAlly && post.author?.username ? `@${post.author.username} · ` : ""}
+              {timeAgo(post.created_at)}
             </Text>
           </View>
         </Pressable>
 
         {/* Follow / Following Button next to author name on right side */}
-        {!isOwnPost && post.author?.id ? (
+        {!isOwnPost && isAlly && post.author?.id ? (
           <Pressable
             onPress={handleToggleFollow}
             disabled={followLoading}

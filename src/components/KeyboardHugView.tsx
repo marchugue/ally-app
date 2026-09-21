@@ -12,6 +12,11 @@ type KeyboardHugViewProps = {
    * part of the keyboard height so you don't double-compensate.
    */
   keyboardVerticalOffset?: number;
+  /**
+   * Extra gap (in px) added when the keyboard is active.
+   * Defaults to 6px.
+   */
+  activeKeyboardGap?: number;
 };
 
 /**
@@ -29,6 +34,7 @@ export function KeyboardHugView({
   children,
   style,
   keyboardVerticalOffset = 0,
+  activeKeyboardGap = 10,
 }: KeyboardHugViewProps) {
   const height = useSharedValue(0);
 
@@ -38,14 +44,25 @@ export function KeyboardHugView({
     {
       onMove: (e) => {
         "worklet";
-        height.value = Math.max(0, e.height - keyboardVerticalOffset);
+        const raw = e.height - keyboardVerticalOffset;
+        if (raw <= 0) {
+          height.value = 0;
+        } else {
+          const progress = Math.min(1, raw / 20);
+          height.value = raw + activeKeyboardGap * progress;
+        }
       },
       onEnd: (e) => {
         "worklet";
-        height.value = Math.max(0, e.height - keyboardVerticalOffset);
+        const raw = e.height - keyboardVerticalOffset;
+        if (raw <= 0) {
+          height.value = 0;
+        } else {
+          height.value = raw + activeKeyboardGap;
+        }
       },
     },
-    [keyboardVerticalOffset]
+    [keyboardVerticalOffset, activeKeyboardGap]
   );
 
   const animatedStyle = useAnimatedStyle(() => {

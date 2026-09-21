@@ -2,50 +2,74 @@
 //
 // Shown to external-email students whose student ID is pending admin review.
 // They are hard-locked here via _layout.tsx routing until approved.
-// Polls every 30s and auto-redirects to main tabs on approval.
+// Fast-polls every 5s + fires immediately on app foreground for near-realtime detection.
 
 import { useEffect, useRef, useState } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, ScrollView } from 'react-native';
+import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator, ScrollView, AppState, type AppStateStatus } from 'react-native';
 import { router } from 'expo-router';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useAuth } from '@/lib/auth/AuthContext';
 import * as authApi from '@/lib/api/auth';
 
+const POLL_INTERVAL_MS = 5_000; // 5s — fast enough to feel realtime
+
 export default function PendingApprovalPage() {
-  const { user, accessToken, signOut } = useAuth();
+  const { user, accessToken, completeLogin, signOut } = useAuth();
   const [checking, setChecking] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const isCheckingRef = useRef(false); // guard against concurrent checks
 
   const status: string = (user?.user_metadata?.student_verification_status as string) ?? 'pending';
   const isPending = status === 'pending' || !status;
   const isRejected = status === 'rejected';
 
   const checkStatus = async () => {
-    if (checking || !accessToken) return;
+    if (isCheckingRef.current || !accessToken) return;
+    isCheckingRef.current = true;
     setChecking(true);
     try {
       const session = await authApi.getSession(accessToken);
       const updatedStatus = session.user?.user_metadata?.student_verification_status;
       const stillPending = session.user?.user_metadata?.pending_student_verification;
+      const isApproved = session.user?.user_metadata?.is_approved;
 
-      if (!stillPending || updatedStatus === 'approved') {
-        // Approved — navigate to main app
+      if (isApproved || !stillPending || updatedStatus === 'approved') {
+        // ✅ Approved — persist updated session then navigate to main app
+        await completeLogin(session);
         router.replace('/(tabs)');
       }
     } catch {
-      // Silently ignore — try again next tick
+      // Silently ignore network errors — try again next tick
     } finally {
+      isCheckingRef.current = false;
       setChecking(false);
     }
   };
 
+  // Fast poll every 5s
   useEffect(() => {
-    intervalRef.current = setInterval(checkStatus, 30_000);
+    // Run immediately on mount
+    void checkStatus();
+    intervalRef.current = setInterval(checkStatus, POLL_INTERVAL_MS);
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [accessToken]);
+
+  // Also check immediately when user foregrounds the app
+  useEffect(() => {
+    const handleAppState = (nextState: AppStateStatus) => {
+      if (nextState === 'active') {
+        void checkStatus();
+      }
+    };
+    const sub = AppState.addEventListener('change', handleAppState);
+    return () => sub.remove();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [accessToken]);
+
+
 
   const handleSignOut = async () => {
     await signOut();

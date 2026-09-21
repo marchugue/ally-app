@@ -3,41 +3,37 @@ import {
   View,
   Text,
   TextInput,
-  Platform,
   ScrollView,
   Pressable,
   StatusBar,
+  ActivityIndicator,
 } from "react-native";
-import { router, useLocalSearchParams } from "expo-router";
-import { Mail, Lock, Eye, EyeOff, CheckCircle, ArrowLeft } from "lucide-react-native";
+import { router } from "expo-router";
+import { Mail, CheckCircle, ArrowLeft, KeyRound, Shield } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Button } from "@/components/Button";
-import { apiRequest } from "@/lib/api/client";
+import * as authApi from "@/lib/api/auth";
+import { usePasswordResetWatch } from "@/hooks/usePasswordResetWatch";
+import { KeyboardHugView } from "@/components/KeyboardHugView";
+
+const GREEN = "#1A6B3C";
+const GOLD = "#E8A838";
 
 export default function ForgotPasswordScreen() {
   const insets = useSafeAreaInsets();
-  const params = useLocalSearchParams<{ token?: string; type?: string }>();
-
-  // If a recovery token arrives via deep-link query params, enter reset mode
-  const [recoveryToken] = useState<string | null>(
-    params.token && params.type === "recovery" ? params.token : null
-  );
-
-  // ── Request email form ───────────────────────────────────────────────────
   const [email, setEmail] = useState("");
-  const [requestSent, setRequestSent] = useState(false);
-
-  // ── Set new password form ────────────────────────────────────────────────
-  const [password, setPassword] = useState("");
-  const [confirmPassword, setConfirmPassword] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-  const [resetSuccess, setResetSuccess] = useState(false);
-
-  // ── Shared ───────────────────────────────────────────────────────────────
+  const [emailSent, setEmailSent] = useState(false);
+  const [trackingToken, setTrackingToken] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
-  const mode: "request" | "reset" = recoveryToken ? "reset" : "request";
+  const { completed } = usePasswordResetWatch(trackingToken);
+
+  useEffect(() => {
+    if (completed) {
+      router.replace("/pages/password-reset-success" as any);
+    }
+  }, [completed]);
 
   async function handleRequestReset() {
     if (!email.trim()) {
@@ -47,71 +43,32 @@ export default function ForgotPasswordScreen() {
     setLoading(true);
     setError("");
     try {
-      await apiRequest("/auth/forgot-password", {
-        method: "POST",
-        body: { email: email.trim().toLowerCase() },
-        noContent: true,
-      });
-      setRequestSent(true);
+      const { trackingToken: token } = await authApi.forgotPassword(email.trim().toLowerCase());
+      setEmailSent(true);
+      setTrackingToken(token);
     } catch (err: any) {
-      // Intentionally generic to avoid leaking registered emails
       setError(err?.message || "Something went wrong. Please try again.");
     } finally {
       setLoading(false);
     }
   }
 
-  async function handleSetNewPassword() {
-    if (!password || !confirmPassword) {
-      setError("Please fill in both fields.");
-      return;
-    }
-    if (password.length < 8) {
-      setError("Password must be at least 8 characters.");
-      return;
-    }
-    if (password !== confirmPassword) {
-      setError("Passwords do not match.");
-      return;
-    }
-    if (!recoveryToken) {
-      setError("Reset link is invalid or has expired. Please request a new one.");
-      return;
-    }
-    setLoading(true);
-    setError("");
-    try {
-      await apiRequest("/auth/reset-password", {
-        method: "POST",
-        body: { token: recoveryToken, password },
-        noContent: true,
-      });
-      setResetSuccess(true);
-    } catch (err: any) {
-      setError(err?.message || "Reset link is invalid or has expired. Please request a new one.");
-    } finally {
-      setLoading(false);
-    }
-  }
+  const waiting = emailSent;
+  const canWatchCompletion = Boolean(trackingToken);
 
   return (
-    <View
-      className="flex-1 bg-background"
-    >
+    <KeyboardHugView style={{ flex: 1, backgroundColor: "#F7F4EF" }}>
       <StatusBar barStyle="dark-content" />
       <ScrollView
         contentContainerStyle={{
           flexGrow: 1,
-          paddingTop: insets.top + 16,
+          paddingTop: insets.top + 12,
           paddingHorizontal: 24,
-          paddingBottom: 32,
+          paddingBottom: insets.bottom + 32,
         }}
         keyboardShouldPersistTaps="handled"
-        automaticallyAdjustKeyboardInsets={true}
-        keyboardDismissMode="on-drag"
         showsVerticalScrollIndicator={false}
       >
-        {/* Back button */}
         <Pressable
           onPress={() => router.back()}
           style={({ pressed }) => ({
@@ -121,58 +78,82 @@ export default function ForgotPasswordScreen() {
             alignSelf: "flex-start",
             paddingVertical: 8,
             opacity: pressed ? 0.6 : 1,
-            marginBottom: 32,
+            marginBottom: 28,
           })}
         >
-          <ArrowLeft size={18} color="#1A6B3C" />
-          <Text style={{ color: "#1A6B3C", fontSize: 14, fontWeight: "500" }}>Back</Text>
+          <ArrowLeft size={18} color={GREEN} />
+          <Text style={{ color: GREEN, fontSize: 14, fontWeight: "600" }}>Back</Text>
         </Pressable>
 
-        {/* Brand mark */}
-        <View className="flex-row items-center gap-2 mb-8">
+        <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 32 }}>
           <View
             style={{
-              width: 36,
-              height: 36,
-              borderRadius: 10,
-              backgroundColor: "#1A6B3C",
+              width: 44,
+              height: 44,
+              borderRadius: 14,
+              backgroundColor: GREEN,
               alignItems: "center",
               justifyContent: "center",
             }}
           >
-            <Text style={{ color: "#fff", fontWeight: "800", fontSize: 18 }}>A</Text>
+            <Text style={{ color: "#fff", fontWeight: "900", fontSize: 22 }}>A</Text>
           </View>
-          <Text style={{ fontSize: 20, fontWeight: "800", color: "#1A6B3C", letterSpacing: -0.5 }}>
-            lly<Text style={{ color: "#E8A838" }}>-jis</Text>
-          </Text>
+          <View>
+            <Text style={{ fontSize: 22, fontWeight: "800", color: GREEN, letterSpacing: -0.5 }}>
+              lly<Text style={{ color: GOLD }}>-jis</Text>
+            </Text>
+            <Text style={{ fontSize: 11, color: "#6B7280", letterSpacing: 1, textTransform: "uppercase" }}>
+              Account recovery
+            </Text>
+          </View>
         </View>
 
-        {/* ── REQUEST MODE: enter email ──────────────────────────────────── */}
-        {mode === "request" && !requestSent && (
+        {!waiting ? (
           <>
-            <Text
-              style={{ fontSize: 26, fontWeight: "800", color: "#111827", letterSpacing: -0.8, marginBottom: 4 }}
-            >
-              Forgot your password?
+            <Text style={{ fontSize: 32, fontWeight: "800", color: "#111827", letterSpacing: -1, marginBottom: 8 }}>
+              Forgot password?
             </Text>
-            <Text style={{ color: "#6B7280", fontSize: 14, marginBottom: 28 }}>
-              No worries — we'll send you a reset link.
+            <Text style={{ color: "#6B7280", fontSize: 15, lineHeight: 22, marginBottom: 24 }}>
+              We&apos;ll email you a secure link. Open it in your browser to set a new password — the app will update
+              automatically when you&apos;re done.
             </Text>
 
+            <View style={{ flexDirection: "row", gap: 12, marginBottom: 28 }}>
+              <View style={{ flex: 1, backgroundColor: "#fff", borderRadius: 16, padding: 14, borderWidth: 1, borderColor: "#E5E7EB" }}>
+                <Shield size={18} color={GOLD} style={{ marginBottom: 6 }} />
+                <Text style={{ fontSize: 12, fontWeight: "700", color: "#374151" }}>Secure link</Text>
+                <Text style={{ fontSize: 11, color: "#9CA3AF", marginTop: 4 }}>Single-use token via Resend</Text>
+              </View>
+              <View style={{ flex: 1, backgroundColor: "#fff", borderRadius: 16, padding: 14, borderWidth: 1, borderColor: "#E5E7EB" }}>
+                <KeyRound size={18} color={GOLD} style={{ marginBottom: 6 }} />
+                <Text style={{ fontSize: 12, fontWeight: "700", color: "#374151" }}>Reset on web</Text>
+                <Text style={{ fontSize: 11, color: "#9CA3AF", marginTop: 4 }}>Same rules as registration</Text>
+              </View>
+            </View>
+
             {error ? (
-              <View className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 mb-4">
-                <Text className="text-danger text-sm">{error}</Text>
+              <View style={{ backgroundColor: "#FEF2F2", borderColor: "#FECACA", borderWidth: 1, borderRadius: 14, padding: 14, marginBottom: 16 }}>
+                <Text style={{ color: "#B91C1C", fontSize: 13 }}>{error}</Text>
               </View>
             ) : null}
 
-            <Text style={{ fontSize: 12, fontWeight: "600", color: "#374151", marginBottom: 6 }}>
+            <Text style={{ fontSize: 12, fontWeight: "700", color: "#374151", marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 }}>
               Email
             </Text>
             <View
-              className="flex-row items-center bg-surface border border-border rounded-xl px-3.5"
-              style={{ paddingVertical: 14, marginBottom: 20 }}
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                backgroundColor: "#FFFFFF",
+                borderWidth: 1.5,
+                borderColor: "#E5E7EB",
+                borderRadius: 16,
+                paddingHorizontal: 14,
+                paddingVertical: 16,
+                marginBottom: 24,
+              }}
             >
-              <Mail size={17} color="#9CA3AF" />
+              <Mail size={18} color="#9CA3AF" />
               <TextInput
                 value={email}
                 onChangeText={setEmail}
@@ -180,150 +161,51 @@ export default function ForgotPasswordScreen() {
                 placeholderTextColor="#9CA3AF"
                 autoCapitalize="none"
                 keyboardType="email-address"
-                textContentType="emailAddress"
-                className="flex-1 ml-2.5 text-textPrimary text-sm"
+                style={{ flex: 1, marginLeft: 10, fontSize: 15, color: "#111827" }}
               />
             </View>
 
             <Button label="Send reset link" onPress={handleRequestReset} loading={loading} />
           </>
-        )}
-
-        {/* ── REQUEST MODE: sent confirmation ───────────────────────────── */}
-        {mode === "request" && requestSent && (
-          <View className="flex-1 items-center justify-center pb-16">
+        ) : (
+          <View style={{ flex: 1, alignItems: "center", paddingTop: 24 }}>
             <View
               style={{
-                width: 72,
-                height: 72,
-                borderRadius: 36,
-                backgroundColor: "#1A6B3C12",
+                width: 88,
+                height: 88,
+                borderRadius: 44,
+                backgroundColor: `${GREEN}14`,
                 alignItems: "center",
                 justifyContent: "center",
-                marginBottom: 20,
+                marginBottom: 24,
               }}
             >
-              <CheckCircle size={36} color="#1A6B3C" />
+              <CheckCircle size={44} color={GREEN} />
             </View>
-            <Text
-              style={{ fontSize: 22, fontWeight: "800", color: "#111827", letterSpacing: -0.5, marginBottom: 8, textAlign: "center" }}
-            >
+            <Text style={{ fontSize: 24, fontWeight: "800", color: "#111827", textAlign: "center", marginBottom: 10 }}>
               Check your email
             </Text>
-            <Text
-              style={{ color: "#6B7280", fontSize: 14, textAlign: "center", lineHeight: 20, paddingHorizontal: 8 }}
-            >
+            <Text style={{ fontSize: 15, color: "#6B7280", textAlign: "center", lineHeight: 22, marginBottom: 8 }}>
               If an account exists for{" "}
-              <Text style={{ fontWeight: "600", color: "#374151" }}>{email}</Text>, we've sent a
-              link to reset your password.
+              <Text style={{ fontWeight: "700", color: "#374151" }}>{email}</Text>, tap the link in your inbox.
             </Text>
-
-            <Pressable
-              onPress={() => router.replace("/pages/login")}
-              style={{ marginTop: 32 }}
-            >
-              <Text style={{ color: "#1A6B3C", fontWeight: "700", fontSize: 14 }}>
-                Back to sign in
-              </Text>
+            <Text style={{ fontSize: 14, color: "#6B7280", textAlign: "center", lineHeight: 21, marginBottom: 28 }}>
+              {canWatchCompletion
+                ? "Complete the reset in your browser. This screen will move to success when your new password is saved."
+                : "Complete the reset in your browser, then return here and sign in with your new password."}
+            </Text>
+            {canWatchCompletion ? (
+              <>
+                <ActivityIndicator size="small" color={GREEN} />
+                <Text style={{ marginTop: 12, fontSize: 12, color: "#9CA3AF" }}>Listening for completion…</Text>
+              </>
+            ) : null}
+            <Pressable onPress={() => router.replace("/pages/login")} style={{ marginTop: 36 }}>
+              <Text style={{ color: GREEN, fontWeight: "700", fontSize: 14 }}>Back to sign in</Text>
             </Pressable>
           </View>
         )}
-
-        {/* ── RESET MODE: set new password ──────────────────────────────── */}
-        {mode === "reset" && !resetSuccess && (
-          <>
-            <Text
-              style={{ fontSize: 26, fontWeight: "800", color: "#111827", letterSpacing: -0.8, marginBottom: 4 }}
-            >
-              Set a new password
-            </Text>
-            <Text style={{ color: "#6B7280", fontSize: 14, marginBottom: 28 }}>
-              Choose a new password for your account.
-            </Text>
-
-            {error ? (
-              <View className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 mb-4">
-                <Text className="text-danger text-sm">{error}</Text>
-              </View>
-            ) : null}
-
-            <Text style={{ fontSize: 12, fontWeight: "600", color: "#374151", marginBottom: 6 }}>
-              New password
-            </Text>
-            <View
-              className="flex-row items-center bg-surface border border-border rounded-xl px-3.5"
-              style={{ paddingVertical: 14, marginBottom: 14 }}
-            >
-              <Lock size={17} color="#9CA3AF" />
-              <TextInput
-                value={password}
-                onChangeText={setPassword}
-                placeholder="At least 8 characters"
-                placeholderTextColor="#9CA3AF"
-                secureTextEntry={!showPassword}
-                className="flex-1 ml-2.5 text-textPrimary text-sm"
-              />
-              <Pressable onPress={() => setShowPassword((v) => !v)} hitSlop={8}>
-                {showPassword ? <EyeOff size={18} color="#9CA3AF" /> : <Eye size={18} color="#9CA3AF" />}
-              </Pressable>
-            </View>
-
-            <Text style={{ fontSize: 12, fontWeight: "600", color: "#374151", marginBottom: 6 }}>
-              Confirm new password
-            </Text>
-            <View
-              className="flex-row items-center bg-surface border border-border rounded-xl px-3.5"
-              style={{ paddingVertical: 14, marginBottom: 20 }}
-            >
-              <Lock size={17} color="#9CA3AF" />
-              <TextInput
-                value={confirmPassword}
-                onChangeText={setConfirmPassword}
-                placeholder="Re-enter your new password"
-                placeholderTextColor="#9CA3AF"
-                secureTextEntry={!showPassword}
-                className="flex-1 ml-2.5 text-textPrimary text-sm"
-              />
-            </View>
-
-            <Button label="Reset password" onPress={handleSetNewPassword} loading={loading} />
-          </>
-        )}
-
-        {/* ── RESET MODE: success ───────────────────────────────────────── */}
-        {mode === "reset" && resetSuccess && (
-          <View className="flex-1 items-center justify-center pb-16">
-            <View
-              style={{
-                width: 72,
-                height: 72,
-                borderRadius: 36,
-                backgroundColor: "#1A6B3C12",
-                alignItems: "center",
-                justifyContent: "center",
-                marginBottom: 20,
-              }}
-            >
-              <CheckCircle size={36} color="#1A6B3C" />
-            </View>
-            <Text
-              style={{ fontSize: 22, fontWeight: "800", color: "#111827", letterSpacing: -0.5, marginBottom: 8, textAlign: "center" }}
-            >
-              Password updated
-            </Text>
-            <Text
-              style={{ color: "#6B7280", fontSize: 14, textAlign: "center", lineHeight: 20, paddingHorizontal: 8, marginBottom: 32 }}
-            >
-              Your password has been reset. Sign in with your new password.
-            </Text>
-
-            <Button
-              label="Go to sign in"
-              onPress={() => router.replace("/pages/login")}
-            />
-          </View>
-        )}
       </ScrollView>
-    </View>
+    </KeyboardHugView>
   );
 }

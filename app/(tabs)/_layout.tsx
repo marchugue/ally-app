@@ -1,4 +1,5 @@
 import { Tabs } from "expo-router";
+import { Pressable } from "react-native";
 import {
   Home,
   Compass,
@@ -31,6 +32,17 @@ export default function TabsLayout() {
 
         tabBarActiveTintColor: TAB_THEME.activeColor,
         tabBarInactiveTintColor: TAB_THEME.inactiveColor,
+
+        tabBarButton: (props) => {
+          const { ref: _ref, ...rest } = props as any;
+          return (
+            <Pressable
+              {...rest}
+              android_ripple={null}
+              style={props.style}
+            />
+          );
+        },
 
         tabBarStyle: {
           backgroundColor: TAB_THEME.backgroundColor,

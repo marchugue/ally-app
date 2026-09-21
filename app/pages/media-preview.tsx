@@ -4,6 +4,7 @@ import {
   Text,
   Image,
   Pressable,
+  TouchableOpacity,
   Dimensions,
   StyleSheet,
   FlatList,
@@ -30,12 +31,14 @@ import {
   Flag,
   Share2,
   Trash2,
+  Reply,
 } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { KeyboardGestureArea } from "react-native-keyboard-controller";
 import { useKeyboard } from "@/hooks/useKeyboard";
 import { KeyboardHugView } from "@/components/KeyboardHugView";
 import { resolveImageUri, UserAvatar } from "@/components/UserAvatar";
+import { AnonymousAvatar } from "@/components/AnonymousAvatar";
 import { useAuth } from "@/lib/auth/AuthContext";
 import {
   likePost,
@@ -63,6 +66,8 @@ export default function MediaPreviewScreen() {
     authorName,
     authorUsername,
     authorAvatar,
+    authorId,
+    isAlly,
     createdAt,
     likesCount: rawLikes,
     commentsCount: rawComments,
@@ -78,6 +83,8 @@ export default function MediaPreviewScreen() {
     authorName?: string;
     authorUsername?: string;
     authorAvatar?: string;
+    authorId?: string;
+    isAlly?: string;
     createdAt?: string;
     likesCount?: string;
     commentsCount?: string;
@@ -202,10 +209,10 @@ export default function MediaPreviewScreen() {
       prev.map((c) =>
         c.id === commentItem.id
           ? {
-              ...c,
-              liked_by_me: !wasLiked,
-              likes_count: c.likes_count + (wasLiked ? -1 : 1),
-            }
+            ...c,
+            liked_by_me: !wasLiked,
+            likes_count: c.likes_count + (wasLiked ? -1 : 1),
+          }
           : c
       )
     );
@@ -221,6 +228,24 @@ export default function MediaPreviewScreen() {
         prev.map((c) => (c.id === commentItem.id ? commentItem : c))
       );
     }
+  };
+
+  const handleReplyToComment = (target: Comment) => {
+    const isOwn = target.author?.id === user?.id;
+    const isAlly = Boolean(target.author?.is_ally || isOwn);
+    const targetHandle = isAlly ? (target.author?.username || "ally") : "anonymous";
+
+    // If replying to a child comment, root parent is the comment's parent_comment_id
+    const rootParent = target.parent_comment_id
+      ? comments.find((c) => c.id === target.parent_comment_id) || target
+      : target;
+
+    setReplyingToComment(rootParent);
+    setCommentInput((prev) => {
+      const mentionTag = `@${targetHandle} `;
+      if (prev.startsWith(mentionTag)) return prev;
+      return `${mentionTag}${prev}`;
+    });
   };
 
   const handleSendComment = async () => {
@@ -256,7 +281,7 @@ export default function MediaPreviewScreen() {
       flatListRef.current?.scrollToIndex({ index: next, animated: true });
       try {
         thumbnailListRef.current?.scrollToIndex({ index: next, animated: true, viewPosition: 0.5 });
-      } catch {}
+      } catch { }
     }
   };
 
@@ -267,7 +292,7 @@ export default function MediaPreviewScreen() {
       flatListRef.current?.scrollToIndex({ index: prev, animated: true });
       try {
         thumbnailListRef.current?.scrollToIndex({ index: prev, animated: true, viewPosition: 0.5 });
-      } catch {}
+      } catch { }
     }
   };
 
@@ -276,7 +301,7 @@ export default function MediaPreviewScreen() {
     flatListRef.current?.scrollToIndex({ index, animated: true });
     try {
       thumbnailListRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.5 });
-    } catch {}
+    } catch { }
   };
 
   const handleScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
@@ -286,7 +311,7 @@ export default function MediaPreviewScreen() {
       setActiveIndex(index);
       try {
         thumbnailListRef.current?.scrollToIndex({ index, animated: true, viewPosition: 0.5 });
-      } catch {}
+      } catch { }
     }
   };
 
@@ -500,15 +525,29 @@ export default function MediaPreviewScreen() {
           </View>
         )}
 
-        <View style={styles.bottomAuthorRow}>
-          <UserAvatar avatar={authorAvatar} size="sm" />
+        <Pressable
+          style={styles.bottomAuthorRow}
+          onPress={() => {
+            if (authorId) {
+              router.push({
+                pathname: "/pages/user-profile",
+                params: { userId: authorId },
+              } as any);
+            }
+          }}
+        >
+          {isAlly === "false" || (!authorAvatar && authorUsername === "anonymous") ? (
+            <AnonymousAvatar size={32} />
+          ) : (
+            <UserAvatar avatar={authorAvatar} size="sm" />
+          )}
           <Text style={styles.bottomUsernameText} numberOfLines={1}>
-            {authorUsername ? `@${authorUsername}` : authorName || "user"}
+            {authorUsername && authorUsername !== "anonymous" ? `@${authorUsername}` : authorName || "Anonymous Peer"}
           </Text>
           {displayTime ? (
             <Text style={styles.bottomTimeText}>· {displayTime}</Text>
           ) : null}
-        </View>
+        </Pressable>
 
         {caption ? (
           <View style={styles.captionContainer}>
@@ -654,6 +693,14 @@ export default function MediaPreviewScreen() {
                     contentContainerStyle={styles.commentsListContent}
                     renderItem={({ item }) => {
                       const isReply = Boolean(item.parent_comment_id);
+                      const isOwn = item.author?.id === user?.id;
+                      const isCommentAlly = Boolean(item.author?.is_ally || isOwn);
+                      const authorHandle = isCommentAlly ? item.author?.username || "user" : "anonymous";
+                      const authorDisplayName = isCommentAlly ? (item.author?.full_name || `@${item.author?.username}`) : "Anonymous Peer";
+
+                      // Format content: convert legacy '#' mention to '@', highlight mentions
+                      const contentParts = item.content.split(/([@#][a-zA-Z0-9_-]+)/g);
+
                       return (
                         <View
                           style={[
@@ -661,24 +708,91 @@ export default function MediaPreviewScreen() {
                             isReply && styles.commentItemReply,
                           ]}
                         >
-                          <UserAvatar avatar={item.author?.avatar_url} size="sm" />
+                          <TouchableOpacity
+                            disabled={!isCommentAlly}
+                            activeOpacity={0.7}
+                            onPress={() => {
+                              if (item.author?.id && isCommentAlly) {
+                                router.push({
+                                  pathname: "/pages/user-profile",
+                                  params: { userId: item.author.id },
+                                } as any);
+                              }
+                            }}
+                          >
+                            {isCommentAlly ? (
+                              <UserAvatar avatar={item.author?.avatar_url} size="sm" />
+                            ) : (
+                              <AnonymousAvatar avatarKey={item.author?.avatarKey || "fox"} size={28} />
+                            )}
+                          </TouchableOpacity>
                           <View style={{ flex: 1 }}>
-                            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                              <Text style={styles.commentAuthor}>
-                                @{item.author?.username || "User"}
-                              </Text>
+                            <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
+                              <TouchableOpacity
+                                disabled={!isCommentAlly}
+                                activeOpacity={0.7}
+                                onPress={() => {
+                                  if (item.author?.id && isCommentAlly) {
+                                    router.push({
+                                      pathname: "/pages/user-profile",
+                                      params: { userId: item.author.id },
+                                    } as any);
+                                  }
+                                }}
+                                style={{ flexDirection: "row", alignItems: "center", gap: 6 }}
+                              >
+                                <Text style={styles.commentAuthor}>
+                                  {isCommentAlly ? `@${authorHandle}` : authorDisplayName}
+                                </Text>
+                                {!isCommentAlly && (
+                                  <Text style={{ fontSize: 11, color: "#6B7280" }}>
+                                    @anonymous
+                                  </Text>
+                                )}
+                              </TouchableOpacity>
+                              {isOwn && (
+                                <View style={{ backgroundColor: "rgba(26, 107, 60, 0.1)", paddingHorizontal: 5, paddingVertical: 1, borderRadius: 6 }}>
+                                  <Text style={{ fontSize: 9.5, fontWeight: "800", color: "#1A6B3C" }}>You</Text>
+                                </View>
+                              )}
+                              {!isOwn && isCommentAlly && (
+                                <View style={{ backgroundColor: "#DCFCE7", paddingHorizontal: 5, paddingVertical: 1, borderRadius: 6 }}>
+                                  <Text style={{ fontSize: 9.5, fontWeight: "700", color: "#15803D" }}>Ally</Text>
+                                </View>
+                              )}
                               {isReply && (
                                 <Text style={styles.replyBadgeText}>· reply</Text>
                               )}
                             </View>
-                            <Text style={styles.commentBody}>{item.content}</Text>
+
+                            <Text style={styles.commentBody}>
+                              {contentParts.map((part, pIdx) => {
+                                if (part.startsWith("@") || part.startsWith("#")) {
+                                  const rawHandle = part.slice(1);
+                                  // Security check: if not ally and not own, mask to @anonymous
+                                  const isMentionKnownAlly = Boolean(
+                                    rawHandle.toLowerCase() === "anonymous" ||
+                                    comments.some((c) => c.author?.is_ally && c.author?.username?.toLowerCase() === rawHandle.toLowerCase()) ||
+                                    (user as any)?.username?.toLowerCase() === rawHandle.toLowerCase()
+                                  );
+                                  const displayMention = isMentionKnownAlly ? `@${rawHandle}` : "@anonymous";
+                                  return (
+                                    <Text key={pIdx} style={{ color: "#1A6B3C", fontWeight: "700" }}>
+                                      {displayMention}
+                                    </Text>
+                                  );
+                                }
+                                return <Text key={pIdx}>{part}</Text>;
+                              })}
+                            </Text>
 
                             {/* Comment Actions: Like & Reply */}
                             <View style={styles.commentActionRow}>
-                              <Pressable
+                              <TouchableOpacity
                                 onPress={() => handleToggleCommentLike(item)}
                                 style={styles.commentActionBtn}
                                 hitSlop={6}
+                                activeOpacity={0.7}
                               >
                                 <Heart
                                   size={13}
@@ -693,15 +807,18 @@ export default function MediaPreviewScreen() {
                                 >
                                   {item.likes_count > 0 ? item.likes_count : "Like"}
                                 </Text>
-                              </Pressable>
+                              </TouchableOpacity>
 
-                              <Pressable
-                                onPress={() => setReplyingToComment(item)}
+                              {/* Reply button available for both parent & child comments */}
+                              <TouchableOpacity
+                                onPress={() => handleReplyToComment(item)}
                                 style={styles.commentActionBtn}
                                 hitSlop={6}
+                                activeOpacity={0.7}
                               >
+                                <Reply size={12} color="#6B7280" />
                                 <Text style={styles.commentActionText}>Reply</Text>
-                              </Pressable>
+                              </TouchableOpacity>
                             </View>
                           </View>
                         </View>
@@ -719,18 +836,27 @@ export default function MediaPreviewScreen() {
               {/* Replying Banner */}
               {replyingToComment && (
                 <View style={styles.replyBanner}>
-                  <Text style={styles.replyBannerText} numberOfLines={1}>
-                    Replying to{" "}
-                    <Text style={{ fontWeight: "700", color: "#1A6B3C" }}>
-                      @{replyingToComment.author?.username}
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flex: 1 }}>
+                    <Reply size={13} color="#1A6B3C" />
+                    <Text style={styles.replyBannerText} numberOfLines={1}>
+                      Replying to{" "}
+                      <Text style={{ fontWeight: "700", color: "#1A6B3C" }}>
+                        @{Boolean(replyingToComment.author?.is_ally || replyingToComment.author?.id === user?.id)
+                          ? replyingToComment.author?.username
+                          : "anonymous"}
+                      </Text>
                     </Text>
-                  </Text>
-                  <Pressable
-                    onPress={() => setReplyingToComment(null)}
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => {
+                      setReplyingToComment(null);
+                      setCommentInput((prev) => prev.replace(/^@[a-zA-Z0-9_]+\s*/, ""));
+                    }}
                     hitSlop={8}
+                    activeOpacity={0.7}
                   >
                     <X size={14} color="#6B7280" />
-                  </Pressable>
+                  </TouchableOpacity>
                 </View>
               )}
 
@@ -741,16 +867,20 @@ export default function MediaPreviewScreen() {
                   onChangeText={setCommentInput}
                   placeholder={
                     replyingToComment
-                      ? `Reply to @${replyingToComment.author?.username}...`
-                      : "Add a comment..."
+                      ? `Reply to @${Boolean(replyingToComment.author?.is_ally || replyingToComment.author?.id === user?.id)
+                        ? replyingToComment.author?.username
+                        : "anonymous"
+                      }...`
+                      : "Add a comment… Use @ to mention"
                   }
                   placeholderTextColor="#9CA3AF"
                   style={styles.commentTextInput}
                   multiline
                 />
-                <Pressable
+                <TouchableOpacity
                   onPress={handleSendComment}
                   disabled={!commentInput.trim() || submittingComment}
+                  activeOpacity={0.7}
                   style={[
                     styles.sendBtn,
                     (!commentInput.trim() || submittingComment) && styles.sendBtnDisabled,
@@ -761,7 +891,7 @@ export default function MediaPreviewScreen() {
                   ) : (
                     <Send size={16} color="#FFFFFF" />
                   )}
-                </Pressable>
+                </TouchableOpacity>
               </View>
             </Pressable>
           </Pressable>
@@ -903,7 +1033,7 @@ const styles = StyleSheet.create({
   centerRightActions: {
     position: "absolute",
     right: 16,
-    top: "38%",
+    top: "30%",
     transform: [{ translateY: 250 }],
     zIndex: 40,
     alignItems: "center",

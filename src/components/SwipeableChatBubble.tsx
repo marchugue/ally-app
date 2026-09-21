@@ -2,7 +2,7 @@ import { useRef, useCallback } from "react";
 import { View, Text } from "react-native";
 import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
 import { Reply } from "lucide-react-native";
-import { ChatBubble } from "./ChatBubble";
+import { ChatBubble, type BubbleLayout } from "./ChatBubble";
 import type { Message, MessageGroupPosition } from "@/types/conversation";
 
 interface SwipeableChatBubbleProps {
@@ -10,7 +10,7 @@ interface SwipeableChatBubbleProps {
   isMine: boolean;
   groupPosition?: MessageGroupPosition;
   senderName?: string;
-  onLongPress?: (message: Message) => void;
+  onLongPress?: (message: Message, layout?: BubbleLayout) => void;
   onReply?: (message: Message) => void;
   onRetry?: (message: Message) => void;
   isActiveTime?: boolean;

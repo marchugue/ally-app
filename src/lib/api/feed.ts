@@ -9,6 +9,8 @@ import type {
 } from "@/types/feed";
 
 export interface FeedFilterParams {
+  limit?: number;
+  before?: string;
   filter?: 'all' | 'allies' | 'following' | 'discover' | 'popular';
   department?: string;
   course?: string;
@@ -19,6 +21,8 @@ export interface FeedFilterParams {
 
 export function listFeed(accessToken: string, params?: FeedFilterParams): Promise<FeedPost[]> {
   const query = new URLSearchParams();
+  if (params?.limit !== undefined) query.set('limit', String(params.limit));
+  if (params?.before !== undefined) query.set('before', params.before);
   if (params?.filter) query.set('filter', params.filter);
   if (params?.department) query.set('department', params.department);
   if (params?.course) query.set('course', params.course);

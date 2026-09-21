@@ -85,6 +85,7 @@ function RootLayoutNav() {
         segments[1] === "login" ||
         segments[1] === "register" ||
         segments[1] === "forgot-password" ||
+        segments[1] === "password-reset-success" ||
         segments.length === 1);
 
     const onPendingPage = segments[0] === "pages" && segments[1] === "pending-approval";
@@ -173,6 +174,7 @@ function RootLayoutNav() {
       <Stack.Screen name="pages/login" options={{ headerShown: false }} />
       <Stack.Screen name="pages/register" options={{ headerShown: false }} />
       <Stack.Screen name="pages/forgot-password" options={{ headerShown: false }} />
+      <Stack.Screen name="pages/password-reset-success" options={{ headerShown: false }} />
       <Stack.Screen name="pages/pending-approval" options={{ headerShown: false }} />
 
       {/* Main app */}
@@ -239,7 +241,7 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <KeyboardProvider>
-          <StatusBar style="auto" />
+          <StatusBar style="dark" />
           <NetworkProvider>
             <AuthProvider>
               <PresenceProvider>

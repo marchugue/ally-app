@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, useRef, useMemo } from "react";
+import React, { Component, useCallback, useEffect, useState, useRef, useMemo } from "react";
 import {
   View,
   Text,
@@ -10,7 +10,15 @@ import {
   Keyboard,
   Alert,
   Image,
+  Dimensions,
+  useWindowDimensions,
+  StyleSheet,
+  Animated,
+  Share,
+  StatusBar,
+  TouchableOpacity,
 } from "react-native";
+import { LinearGradient } from "expo-linear-gradient";
 import { getFluentEmojiUrl } from "@/lib/fluentEmoji";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
@@ -32,6 +40,12 @@ import {
   ChevronRight,
   LogOut,
   Plus,
+  Reply,
+  Copy,
+  Share2,
+  Send,
+  Trash2,
+  RotateCcw,
 } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/lib/auth/AuthContext";
@@ -42,6 +56,8 @@ import {
   getConversationById,
   setMessageReaction,
   restoreConversationStreak,
+  deleteMessage as apiDeleteMessage,
+  hideConversation as apiHideConversation,
 } from "@/lib/api/conversation";
 import * as Notifications from "expo-notifications";
 import { setAppBadgeCount } from "@/lib/pushNotifications";
@@ -54,18 +70,110 @@ import { getSocket } from "@/lib/socket";
 import * as ImagePicker from "expo-image-picker";
 import { uploadChatFile } from "@/lib/api/media";
 import { SwipeableChatBubble } from "@/components/SwipeableChatBubble";
+import { ChatBubble, isOnlyEmoji, type BubbleLayout } from "@/components/ChatBubble";
 import { ChatInput } from "@/components/ChatInput";
-import { UserAvatar } from "@/components/UserAvatar";
+import { UserAvatar, resolveImageUri } from "@/components/UserAvatar";
 import { AnonymousAvatar } from "@/components/AnonymousAvatar";
 import { FluentEmojiPickerModal } from "@/components/FluentEmojiPickerModal";
 import { MatchRevealSheet } from "@/components/MatchRevealSheet";
+import { RoadmapProgressionBadge } from "@/components/RoadmapProgressionBadge";
 import { KeyboardHugView } from "@/components/KeyboardHugView";
 import { KeyboardGestureArea } from "react-native-keyboard-controller";
 import { ConfirmModal } from "@/components/ConfirmModal";
 import type { Message, Conversation, MessageGroupPosition } from "@/types/conversation";
 import type { Profile } from "@/types/profile";
 
-const REACTION_EMOJIS = ["❤️", "😂", "😮", "😢", "👍", "👎"];
+const REACTION_EMOJIS = ["❤️", "😂", "😮", "😢", "😡", "👍"];
+
+function AnimatedReactionEmoji({
+  emoji,
+  index,
+  onPress,
+}: {
+  emoji: string;
+  index: number;
+  onPress: () => void;
+}) {
+  const scaleAnim = useRef(new Animated.Value(0)).current;
+  const pressAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    Animated.spring(scaleAnim, {
+      toValue: 1,
+      tension: 180,
+      friction: 10,
+      delay: index * 35,
+      useNativeDriver: true,
+    }).start();
+  }, [index, scaleAnim]);
+
+  const handlePressIn = () => {
+    Animated.spring(pressAnim, {
+      toValue: 1.35,
+      friction: 4,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const handlePressOut = () => {
+    Animated.spring(pressAnim, {
+      toValue: 1,
+      friction: 5,
+      useNativeDriver: true,
+    }).start();
+  };
+
+  const fluentUrl = getFluentEmojiUrl(emoji, { animated: true });
+
+  return (
+    <Pressable
+      onPress={onPress}
+      onPressIn={handlePressIn}
+      onPressOut={handlePressOut}
+      style={{
+        width: 42,
+        height: 42,
+        borderRadius: 21,
+        alignItems: "center",
+        justifyContent: "center",
+      }}
+    >
+      <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
+        <Animated.View style={{ transform: [{ scale: pressAnim }] }}>
+          {fluentUrl ? (
+            <Image
+              source={{ uri: fluentUrl }}
+              style={{ width: 32, height: 32 }}
+              resizeMode="contain"
+            />
+          ) : (
+            <Text style={{ fontSize: 24 }}>{emoji}</Text>
+          )}
+        </Animated.View>
+      </Animated.View>
+    </Pressable>
+  );
+}
+
+
+
+async function safeCopyToClipboard(text: string): Promise<void> {
+  try {
+    const Clipboard = require("expo-clipboard");
+    if (Clipboard && typeof Clipboard.setStringAsync === "function") {
+      await Clipboard.setStringAsync(text);
+      return;
+    }
+  } catch {
+    // Native module not linked in current dev binary
+  }
+
+  // Graceful fallback: open native Share dialog so user can still copy or share text
+  try {
+    await Share.share({ message: text });
+  } catch { }
+}
+
 const GROUPING_MAX_GAP_MS = 5 * 60 * 1000;
 
 function canGroupMessages(current: Message, adjacent: Message | null | undefined): boolean {
@@ -93,6 +201,7 @@ function getStreakAnchorKey(convId: string): string {
 
 export default function ConversationScreen() {
   const insets = useSafeAreaInsets();
+  const { width: windowWidth } = useWindowDimensions();
   const { user, accessToken } = useAuth();
   const {
     conversationId: rawConvId,
@@ -177,6 +286,7 @@ export default function ConversationScreen() {
 
   // Context menu
   const [selectedMessage, setSelectedMessage] = useState<Message | null>(null);
+  const [selectedLayout, setSelectedLayout] = useState<BubbleLayout | null>(null);
   const [showReactions, setShowReactions] = useState(false);
   const [showFullEmojiPicker, setShowFullEmojiPicker] = useState(false);
 
@@ -208,6 +318,7 @@ export default function ConversationScreen() {
   const [showOverflow, setShowOverflow] = useState(false);
   const [showBlockConfirm, setShowBlockConfirm] = useState(false);
   const [showReportConfirm, setShowReportConfirm] = useState(false);
+  const [showDeleteConvConfirm, setShowDeleteConvConfirm] = useState(false);
 
   // ── Minute-tick for realtime deadline countdown ──────────────────────
   useEffect(() => {
@@ -692,6 +803,10 @@ export default function ConversationScreen() {
   // ── Pick media & take photo handlers (up to 6 images) ────────────────
   const handlePickMedia = useCallback(async () => {
     if (!conversationId || !accessToken) return;
+    if (isAnonymous && (matchInfo?.stage ?? 1) < 3) {
+      Alert.alert("Feature Locked", "Photo and media sharing unlocks at Stage 3 of your roadmap.");
+      return;
+    }
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== "granted") {
@@ -726,10 +841,14 @@ export default function ConversationScreen() {
       console.warn("Failed to pick and send image", err);
       Alert.alert("Upload Failed", err?.message || "Could not upload image. Please try again.");
     }
-  }, [conversationId, accessToken, handleSend]);
+  }, [conversationId, accessToken, handleSend, isAnonymous, matchInfo?.stage]);
 
   const handleTakePhoto = useCallback(async () => {
     if (!conversationId || !accessToken) return;
+    if (isAnonymous && (matchInfo?.stage ?? 1) < 3) {
+      Alert.alert("Feature Locked", "Photo and media sharing unlocks at Stage 3 of your roadmap.");
+      return;
+    }
     try {
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
       if (status !== "granted") {
@@ -757,7 +876,7 @@ export default function ConversationScreen() {
       console.warn("Failed to take photo and send", err);
       Alert.alert("Camera Failed", err?.message || "Could not upload photo. Please try again.");
     }
-  }, [conversationId, accessToken, handleSend]);
+  }, [conversationId, accessToken, handleSend, isAnonymous, matchInfo?.stage]);
 
   // ── Retry failed message ─────────────────────────────────────────────
   const handleRetry = useCallback(
@@ -801,6 +920,7 @@ export default function ConversationScreen() {
     async (emoji: string) => {
       if (!selectedMessage || !conversationId || !accessToken) return;
       setShowReactions(false);
+      setSelectedLayout(null);
       try {
         const updatedReactions = await setMessageReaction(
           conversationId,
@@ -860,8 +980,9 @@ export default function ConversationScreen() {
 
 
   // ── Long press handler ────────────────────────────────────────────────
-  const handleLongPress = (message: Message) => {
+  const handleLongPress = (message: Message, layout?: BubbleLayout) => {
     setSelectedMessage(message);
+    setSelectedLayout(layout || null);
     setShowReactions(true);
   };
 
@@ -952,19 +1073,38 @@ export default function ConversationScreen() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: "#FFFFFF" }}>
+    <View style={{ flex: 1, backgroundColor: "#EBF5EE", overflow: "hidden" }}>
+      <StatusBar barStyle="dark-content" backgroundColor="transparent" translucent />
+      {/* ── Conversation Theme Background (Mobile - zoomed responsive, no vertical repeat) ── */}
+      <View style={[StyleSheet.absoluteFill, { overflow: "hidden" }]}>
+        <Image
+          source={require("../../assets/images/chat-theme-bg.png")}
+          style={[
+            StyleSheet.absoluteFill,
+            {
+              width: "100%",
+              height: "100%",
+              transform: [{ scale: windowWidth < 500 ? 1.25 : 1.05 }],
+            },
+          ]}
+          resizeMode="cover"
+        />
+      </View>
+
       {/* ── Header (fixed — stays above keyboard) ───────────────────────── */}
-      <View
+      <LinearGradient
+        colors={["#FFFFFF", "rgba(255, 255, 255, 0.95)", "rgba(255, 255, 255, 0)"]}
+        locations={[0, 0.75, 1]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 0, y: 1 }}
         style={{
           paddingTop: insets.top + 8,
-          paddingBottom: 12,
+          paddingBottom: 16,
           paddingHorizontal: 16,
-          backgroundColor: "#FFFFFF",
-          borderBottomWidth: 1,
-          borderBottomColor: "#E2DED7",
           flexDirection: "row",
           alignItems: "center",
           gap: 12,
+          zIndex: 10,
         }}
       >
         <Pressable onPress={() => router.back()} hitSlop={10}>
@@ -1081,43 +1221,22 @@ export default function ConversationScreen() {
         <Pressable onPress={() => setShowOverflow(true)} hitSlop={10}>
           <MoreVertical size={20} color="#6B7280" />
         </Pressable>
-      </View>
+      </LinearGradient>
 
-      {/* ── Scrollable chat area — lifts with keyboard, header stays put ── */}
-      <KeyboardHugView style={{ flex: 1 }} keyboardVerticalOffset={Math.max(insets.bottom, 8)}>
-        {/* ── Anonymous Progression Banner ─────────────────────────────────── */}
-        {isAnonymous && !isEnded && (
-          <Pressable
+      <KeyboardHugView
+        style={{ flex: 1 }}
+        keyboardVerticalOffset={Math.max(insets.bottom, 8)}
+        activeKeyboardGap={6}
+      >
+        {/* ── Anonymous Roadmap & Level Progression (Top Right Corner) ───────── */}
+        {isAnonymous && (
+          <RoadmapProgressionBadge
+            stage={matchInfo?.stage ?? 1}
+            dayStreak={convStreak || matchInfo?.dayStreak || 0}
+            avatarKey={matchInfo?.partnerAvatar || prefillAvatar || "fox"}
             onPress={() => setShowRevealSheet(true)}
-            style={{
-              backgroundColor: "rgba(26, 107, 60, 0.08)",
-              paddingVertical: 8,
-              paddingHorizontal: 16,
-              flexDirection: "row",
-              alignItems: "center",
-              justifyContent: "space-between",
-              borderBottomWidth: 1,
-              borderBottomColor: "rgba(26, 107, 60, 0.12)",
-            }}
-          >
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-              <Flame size={14} color="#EA580C" />
-              <Text style={{ fontSize: 12, fontWeight: "700", color: "#1A6B3C" }}>
-                Stage {matchInfo?.stage ?? 0}: {stageName(matchInfo?.stage ?? 0)}
-              </Text>
-              <Text style={{ fontSize: 11, color: "#64748B" }}>
-                • {matchInfo?.dayStreak ?? 0}d streak
-              </Text>
-            </View>
-
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 3 }}>
-              <Sparkles size={12} color="#1A6B3C" />
-              <Text style={{ fontSize: 11, fontWeight: "700", color: "#1A6B3C" }}>
-                View Clues
-              </Text>
-              <ChevronRight size={13} color="#1A6B3C" />
-            </View>
-          </Pressable>
+            style={{ position: "absolute", top: 10, right: 14, zIndex: 30 }}
+          />
         )}
 
         {/* ── Chat Ended Banner ────────────────────────────────────────────── */}
@@ -1185,8 +1304,11 @@ export default function ConversationScreen() {
         <View
           style={{
             paddingBottom: Math.max(insets.bottom, 8),
-            backgroundColor: "#FFFFFF",
+            backgroundColor: "transparent",
             zIndex: 20,
+            maxWidth: 720,
+            width: "100%",
+            alignSelf: "center",
           }}
         >
           {isEnded ? (
@@ -1212,121 +1334,407 @@ export default function ConversationScreen() {
               replyTo={replyTo}
               onCancelReply={() => setReplyTo(null)}
               draftText={draftText}
+              canUploadImages={!isAnonymous || (matchInfo?.stage ?? 1) >= 3}
             />
           )}
         </View>
       </KeyboardHugView>
 
-      {/* ── Reaction picker modal ────────────────────────────────────────── */}
+      {/* ── Anchored Quick React & Options Modal ───────────────────────── */}
       <Modal
-        visible={showReactions}
+        visible={showReactions && !!selectedMessage}
         transparent
         animationType="fade"
+        statusBarTranslucent
         onRequestClose={() => {
           setShowReactions(false);
           setSelectedMessage(null);
+          setSelectedLayout(null);
         }}
       >
+        {/* Full-screen backdrop */}
+        <View
+          style={[
+            StyleSheet.absoluteFill,
+            {
+              backgroundColor: "rgba(0, 0, 0, 0.65)",
+              ...(Platform.OS === "web"
+                ? ({ backdropFilter: "blur(16px)", WebkitBackdropFilter: "blur(16px)" } as any)
+                : {}),
+            },
+          ]}
+        />
+
+        {/* Tap backdrop to dismiss */}
         <Pressable
-          style={{
-            flex: 1,
-            backgroundColor: "rgba(0,0,0,0.3)",
-            justifyContent: "center",
-            alignItems: "center",
-          }}
+          style={StyleSheet.absoluteFill}
           onPress={() => {
             setShowReactions(false);
             setSelectedMessage(null);
+            setSelectedLayout(null);
           }}
-        >
-          <View
-            style={{
-              backgroundColor: "#FFFFFF",
-              borderRadius: 28,
-              flexDirection: "row",
-              paddingHorizontal: 12,
-              paddingVertical: 10,
-              gap: 4,
-              shadowColor: "#000",
-              shadowOffset: { width: 0, height: 6 },
-              shadowOpacity: 0.12,
-              shadowRadius: 16,
-              elevation: 8,
-            }}
-          >
-            {REACTION_EMOJIS.map((emoji) => {
-              const fluentUrl = getFluentEmojiUrl(emoji, { animated: true });
-              return (
-                <Pressable
-                  key={emoji}
-                  onPress={() => handleReaction(emoji)}
+        />
+
+        {selectedMessage && (() => {
+          const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
+          const isSelectedMine = selectedMessage.sender_id === user?.id;
+
+          const rawImages = selectedMessage.image_url || (selectedMessage as any).imageUrl;
+          let parsedImages: string[] = [];
+          if (Array.isArray(rawImages)) {
+            parsedImages = rawImages.map(resolveImageUri).filter((u): u is string => Boolean(u));
+          } else if (typeof rawImages === "string") {
+            const trimmed = rawImages.trim();
+            if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+              try {
+                const arr = JSON.parse(trimmed);
+                if (Array.isArray(arr)) {
+                  parsedImages = arr.map(resolveImageUri).filter((u): u is string => Boolean(u));
+                }
+              } catch { }
+            }
+            if (parsedImages.length === 0) {
+              const uri = resolveImageUri(trimmed);
+              if (uri) parsedImages = [uri];
+            }
+          }
+
+          const isSelectedEmojiOnly = parsedImages.length === 0 && isOnlyEmoji(selectedMessage.content);
+
+          const isValidNum = (n: any): n is number => typeof n === "number" && Number.isFinite(n);
+
+          const bubbleWidth = isValidNum(selectedLayout?.width) && selectedLayout.width > 0
+            ? selectedLayout.width
+            : Math.min(260, SCREEN_WIDTH * 0.75);
+          const bubbleHeight = isValidNum(selectedLayout?.height) && selectedLayout.height > 0
+            ? selectedLayout.height
+            : (isSelectedEmojiOnly ? 50 : 60);
+          const rawX = isValidNum(selectedLayout?.x)
+            ? selectedLayout.x
+            : (isSelectedMine ? SCREEN_WIDTH - bubbleWidth - 16 : 16);
+          const rawY = isValidNum(selectedLayout?.y)
+            ? selectedLayout.y
+            : (SCREEN_HEIGHT - bubbleHeight) / 2;
+
+          const REACTIONS_HEIGHT = 56;
+          const OPTIONS_HEIGHT = 220;
+          const GAP = 12;
+          const PADDING = 16;
+
+          // Fixed position in one place for all messages (centered vertically)
+          const totalPopupHeight = REACTIONS_HEIGHT + GAP + bubbleHeight + GAP + OPTIONS_HEIGHT;
+          const fixedTopY = Math.max(
+            insets.top + 20,
+            Math.round((SCREEN_HEIGHT - totalPopupHeight) / 2) - 15
+          );
+
+          const reactionsTop = fixedTopY;
+          const messageTop = fixedTopY + REACTIONS_HEIGHT + GAP;
+          const optionsTop = messageTop + bubbleHeight + GAP;
+
+          // Horizontal alignment: right-aligned if sent by me, left-aligned if received
+          const clampedMessageX = isSelectedMine
+            ? SCREEN_WIDTH - bubbleWidth - PADDING
+            : PADDING;
+
+          const reactionsWidth = Math.min(REACTION_EMOJIS.length * 44 + 56, SCREEN_WIDTH - 24);
+          const reactionsLeft = isSelectedMine
+            ? SCREEN_WIDTH - reactionsWidth - PADDING
+            : PADDING;
+
+          const optionsWidth = 210;
+          const optionsLeft = isSelectedMine
+            ? SCREEN_WIDTH - optionsWidth - PADDING
+            : PADDING;
+
+          return (
+            <View style={StyleSheet.absoluteFill} pointerEvents="box-none">
+              {/* 1. Quick Reactions Bar on TOP of message */}
+              <View
+                style={{
+                  position: "absolute",
+                  left: reactionsLeft,
+                  top: reactionsTop,
+                  width: reactionsWidth,
+                  height: REACTIONS_HEIGHT,
+                  backgroundColor: "#FFFFFF",
+                  borderRadius: 28,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  paddingHorizontal: 10,
+                  shadowColor: "#000",
+                  shadowOffset: { width: 0, height: 6 },
+                  shadowOpacity: 0.22,
+                  shadowRadius: 16,
+                  elevation: 10,
+                }}
+              >
+                {REACTION_EMOJIS.map((emoji, index) => (
+                  <AnimatedReactionEmoji
+                    key={emoji}
+                    emoji={emoji}
+                    index={index}
+                    onPress={() => handleReaction(emoji)}
+                  />
+                ))}
+                <TouchableOpacity
+                  activeOpacity={0.6}
+                  onPress={() => {
+                    setShowReactions(false);
+                    setShowFullEmojiPicker(true);
+                  }}
                   style={{
-                    width: 48,
-                    height: 48,
-                    borderRadius: 24,
+                    width: 38,
+                    height: 38,
+                    borderRadius: 19,
                     alignItems: "center",
                     justifyContent: "center",
+                    backgroundColor: "#F3F4F6",
                   }}
-                  android_ripple={{ color: "rgba(0,0,0,0.06)" }}
+                  hitSlop={6}
                 >
-                  {fluentUrl ? (
-                    <Image
-                      source={{ uri: fluentUrl }}
-                      style={{ width: 32, height: 32 }}
-                      resizeMode="contain"
-                    />
-                  ) : (
-                    <Text style={{ fontSize: 24 }}>{emoji}</Text>
-                  )}
-                </Pressable>
-              );
-            })}
-            <Pressable
-              onPress={() => {
-                setShowReactions(false);
-                setShowFullEmojiPicker(true);
-              }}
-              style={{
-                width: 48,
-                height: 48,
-                borderRadius: 24,
-                alignItems: "center",
-                justifyContent: "center",
-                backgroundColor: "#F9FAFB",
-              }}
-              android_ripple={{ color: "rgba(0,0,0,0.06)" }}
-            >
-              <Plus size={20} color="#6B7280" />
-            </Pressable>
-          </View>
+                  <Plus size={18} color="#4B5563" />
+                </TouchableOpacity>
+              </View>
 
-          {/* Reply shortcut */}
-          {selectedMessage && (
-            <Pressable
-              onPress={() => {
-                setReplyTo(selectedMessage);
-                setShowReactions(false);
-                setSelectedMessage(null);
-              }}
-              style={{
-                marginTop: 12,
-                backgroundColor: "#FFFFFF",
-                borderRadius: 14,
-                paddingHorizontal: 20,
-                paddingVertical: 12,
-                shadowColor: "#000",
-                shadowOffset: { width: 0, height: 4 },
-                shadowOpacity: 0.08,
-                shadowRadius: 10,
-                elevation: 4,
-              }}
-            >
-              <Text style={{ fontSize: 14, fontWeight: "600", color: "#1A6B3C" }}>
-                Reply
-              </Text>
-            </Pressable>
-          )}
-        </Pressable>
+              {/* 2. Anchored Message Bubble (Lifted) */}
+              <View
+                style={{
+                  position: "absolute",
+                  left: clampedMessageX,
+                  top: messageTop,
+                  width: bubbleWidth,
+                  minHeight: bubbleHeight,
+                  backgroundColor: isSelectedEmojiOnly
+                    ? "transparent"
+                    : isSelectedMine
+                      ? "#1A6B3C"
+                      : "#F3F4F6",
+                  borderRadius: isSelectedEmojiOnly ? 0 : 18,
+                  paddingHorizontal: isSelectedEmojiOnly ? 0 : 14,
+                  paddingVertical: isSelectedEmojiOnly ? 0 : 10,
+                  justifyContent: "center",
+                  shadowColor: isSelectedEmojiOnly ? "transparent" : "#000",
+                  shadowOffset: { width: 0, height: 4 },
+                  shadowOpacity: isSelectedEmojiOnly ? 0 : 0.2,
+                  shadowRadius: 10,
+                  elevation: isSelectedEmojiOnly ? 0 : 6,
+                }}
+              >
+                {parsedImages.length > 0 && (
+                  <Image
+                    source={{ uri: parsedImages[0] }}
+                    style={{
+                      width: "100%",
+                      height: Math.min(bubbleHeight, 220),
+                      borderRadius: 14,
+                      marginBottom: selectedMessage.content ? 8 : 0,
+                    }}
+                    resizeMode="cover"
+                  />
+                )}
+                {Boolean(selectedMessage.content) && (
+                  <Text
+                    style={
+                      isSelectedEmojiOnly
+                        ? {
+                          fontSize: 38,
+                          lineHeight: 46,
+                          textAlign: isSelectedMine ? "right" : "left",
+                        }
+                        : {
+                          fontSize: 15,
+                          lineHeight: 20,
+                          color: isSelectedMine ? "#FFFFFF" : "#111827",
+                        }
+                    }
+                  >
+                    {selectedMessage.content}
+                  </Text>
+                )}
+              </View>
+
+              {/* 3. Options Menu on BOTTOM of message */}
+              <View
+                style={{
+                  position: "absolute",
+                  left: optionsLeft,
+                  top: optionsTop,
+                  width: optionsWidth,
+                  backgroundColor: "#FFFFFF",
+                  borderRadius: 20,
+                  paddingVertical: 6,
+                  paddingHorizontal: 16,
+                  shadowColor: "#000",
+                  shadowOffset: { width: 0, height: 8 },
+                  shadowOpacity: 0.14,
+                  shadowRadius: 18,
+                  elevation: 10,
+                }}
+              >
+                {/* Reply */}
+                <TouchableOpacity
+                  activeOpacity={0.6}
+                  onPress={() => {
+                    setReplyTo(selectedMessage);
+                    setShowReactions(false);
+                    setSelectedMessage(null);
+                    setSelectedLayout(null);
+                  }}
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 14,
+                    paddingVertical: 10,
+                  }}
+                >
+                  <Reply size={20} color="#111827" />
+                  <Text style={{ fontSize: 16, color: "#111827", fontWeight: "400" }}>
+                    Reply
+                  </Text>
+                </TouchableOpacity>
+
+                {/* Forward */}
+                <TouchableOpacity
+                  activeOpacity={0.6}
+                  onPress={async () => {
+                    const shareText = selectedMessage.content || parsedImages[0];
+                    setShowReactions(false);
+                    setSelectedMessage(null);
+                    setSelectedLayout(null);
+                    if (shareText) {
+                      try {
+                        await Share.share({ message: shareText });
+                      } catch { }
+                    }
+                  }}
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 14,
+                    paddingVertical: 10,
+                  }}
+                >
+                  <Send size={20} color="#111827" />
+                  <Text style={{ fontSize: 16, color: "#111827", fontWeight: "400" }}>
+                    Forward
+                  </Text>
+                </TouchableOpacity>
+
+                {/* Copy */}
+                {Boolean(selectedMessage.content) && (
+                  <TouchableOpacity
+                    activeOpacity={0.6}
+                    onPress={async () => {
+                      if (selectedMessage.content) {
+                        await safeCopyToClipboard(selectedMessage.content);
+                      }
+                      setShowReactions(false);
+                      setSelectedMessage(null);
+                      setSelectedLayout(null);
+                    }}
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 14,
+                      paddingVertical: 10,
+                    }}
+                  >
+                    <Copy size={20} color="#111827" />
+                    <Text style={{ fontSize: 16, color: "#111827", fontWeight: "400" }}>
+                      Copy
+                    </Text>
+                  </TouchableOpacity>
+                )}
+
+                {/* Delete for me */}
+                <TouchableOpacity
+                  activeOpacity={0.6}
+                  onPress={async () => {
+                    const msgId = selectedMessage.id;
+                    const convId = selectedMessage.conversation_id || conversationId;
+                    setMessages((prev) => prev.filter((m) => m.id !== msgId));
+                    setShowReactions(false);
+                    setSelectedMessage(null);
+                    setSelectedLayout(null);
+                    if (accessToken) {
+                      apiDeleteMessage(convId, msgId, "delete_for_me", accessToken).catch(() => {});
+                    }
+                  }}
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 14,
+                    paddingVertical: 10,
+                  }}
+                >
+                  <Trash2 size={20} color="#111827" />
+                  <Text style={{ fontSize: 16, color: "#111827", fontWeight: "400" }}>
+                    Delete for me
+                  </Text>
+                </TouchableOpacity>
+
+                {/* Delete for everyone (sender only) or Report (partner) */}
+                {isSelectedMine ? (
+                  <TouchableOpacity
+                    activeOpacity={0.6}
+                    onPress={async () => {
+                      const msgId = selectedMessage.id;
+                      const convId = selectedMessage.conversation_id || conversationId;
+                      // Optimistically tombstone — show italic placeholder immediately
+                      setMessages((prev) =>
+                        prev.map((m) =>
+                          m.id === msgId
+                            ? { ...m, is_deleted: true, content: "", image_url: null }
+                            : m
+                        )
+                      );
+                      setShowReactions(false);
+                      setSelectedMessage(null);
+                      setSelectedLayout(null);
+                      if (accessToken) {
+                        apiDeleteMessage(convId, msgId, "delete_for_everyone", accessToken).catch(() => {});
+                      }
+                    }}
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 14,
+                      paddingVertical: 10,
+                    }}
+                  >
+                    <RotateCcw size={20} color="#EF4444" />
+                    <Text style={{ fontSize: 16, color: "#EF4444", fontWeight: "400" }}>
+                      Delete for everyone
+                    </Text>
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity
+                    activeOpacity={0.6}
+                    onPress={() => {
+                      setShowReactions(false);
+                      setSelectedMessage(null);
+                      setSelectedLayout(null);
+                      setShowReportConfirm(true);
+                    }}
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 14,
+                      paddingVertical: 10,
+                    }}
+                  >
+                    <Flag size={20} color="#EF4444" />
+                    <Text style={{ fontSize: 16, color: "#EF4444", fontWeight: "400" }}>
+                      Report
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+            </View>
+          );
+        })()}
       </Modal>
 
       {/* ── Full Microsoft Fluent Emoji Picker Modal ──────────────────────── */}
@@ -1451,6 +1859,15 @@ export default function ConversationScreen() {
             )}
 
             <OverflowRow
+              icon={Trash2}
+              label="Delete conversation"
+              onPress={() => {
+                setShowOverflow(false);
+                setShowDeleteConvConfirm(true);
+              }}
+              destructive
+            />
+            <OverflowRow
               icon={Flag}
               label={isAnonymous ? "Report match" : "Report user"}
               onPress={() => {
@@ -1480,6 +1897,22 @@ export default function ConversationScreen() {
         destructive
         onConfirm={handleBlock}
         onCancel={() => setShowBlockConfirm(false)}
+      />
+
+      <ConfirmModal
+        visible={showDeleteConvConfirm}
+        title="Delete conversation?"
+        description="This will remove the conversation from your chat list. The other person won't be notified."
+        confirmLabel="Delete"
+        destructive
+        onConfirm={async () => {
+          setShowDeleteConvConfirm(false);
+          if (accessToken && conversationId) {
+            await apiHideConversation(conversationId, accessToken).catch(() => {});
+          }
+          router.back();
+        }}
+        onCancel={() => setShowDeleteConvConfirm(false)}
       />
 
       <ConfirmModal

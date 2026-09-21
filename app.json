@@ -94,7 +94,8 @@
       ],
       "expo-font",
       "expo-secure-store",
-      "expo-status-bar"
+      "expo-status-bar",
+      "expo-image"
     ],
     "updates": {
       "url": "https://u.expo.dev/60c88f1d-8d58-4a90-8a29-c7444e8c1f37",

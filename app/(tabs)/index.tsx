@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useState, useRef } from "react";
 import {
   View,
   Text,
@@ -19,6 +19,8 @@ import { listFeed, likePost, unlikePost } from "@/lib/api/feed";
 import { listAllies } from "@/lib/api/interaction";
 import type { FeedPost } from "@/types/feed";
 
+const PAGE_SIZE = 30;
+
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const { user, accessToken } = useAuth();
@@ -27,18 +29,23 @@ export default function HomeScreen() {
   const [activeFilter, setActiveFilter] = useState<"all" | "allies">("all");
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
+  const [hasMore, setHasMore] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
+  const cursorRef = useRef<string | undefined>(undefined);
 
   const loadData = useCallback(async () => {
     if (!accessToken) return;
     try {
-      const feedPromise = listFeed(accessToken);
+      const feedPromise = listFeed(accessToken, { limit: PAGE_SIZE });
       const alliesPromise = user?.id
         ? listAllies(user.id, accessToken).catch(() => ({ items: [] }))
         : Promise.resolve({ items: [] });
 
       const [feed, alliesRes] = await Promise.all([feedPromise, alliesPromise]);
       setPosts(feed);
+      setHasMore(feed.length === PAGE_SIZE);
+      cursorRef.current = feed.length > 0 ? feed[feed.length - 1].created_at : undefined;
       if (alliesRes?.items) {
         setAllyUserIds(new Set(alliesRes.items.map((item) => item.id)));
       }
@@ -46,6 +53,32 @@ export default function HomeScreen() {
       console.warn("Failed to load feed data", err);
     }
   }, [user?.id, accessToken]);
+
+  const loadMore = useCallback(async () => {
+    if (!accessToken || isLoadingMore || !hasMore || !cursorRef.current) return;
+    setIsLoadingMore(true);
+    try {
+      const nextPage = await listFeed(accessToken, {
+        limit: PAGE_SIZE,
+        before: cursorRef.current,
+      });
+      if (nextPage.length === 0) {
+        setHasMore(false);
+      } else {
+        setPosts((prev) => {
+          const existingIds = new Set(prev.map((p) => p.id));
+          const newUniquePosts = nextPage.filter((p) => !existingIds.has(p.id));
+          return [...prev, ...newUniquePosts];
+        });
+        setHasMore(nextPage.length === PAGE_SIZE);
+        cursorRef.current = nextPage[nextPage.length - 1].created_at;
+      }
+    } catch (err) {
+      console.warn("Failed to load more posts", err);
+    } finally {
+      setIsLoadingMore(false);
+    }
+  }, [accessToken, isLoadingMore, hasMore]);
 
   useEffect(() => {
     async function init() {
@@ -223,6 +256,8 @@ export default function HomeScreen() {
         contentContainerStyle={
           displayedPosts.length === 0 ? { flex: 1 } : { paddingBottom: 16 }
         }
+        onEndReached={loadMore}
+        onEndReachedThreshold={0.4}
         renderItem={({ item }) => (
           <PostCard
             post={item}
@@ -230,6 +265,19 @@ export default function HomeScreen() {
             onComment={navigateToPost}
           />
         )}
+        ListFooterComponent={
+          isLoadingMore ? (
+            <View style={{ paddingVertical: 20, alignItems: "center" }}>
+              <ActivityIndicator size="small" color="#1A6B3C" />
+            </View>
+          ) : !hasMore && displayedPosts.length > 0 ? (
+            <View style={{ paddingVertical: 20, alignItems: "center" }}>
+              <Text style={{ fontSize: 12, color: "#9CA3AF" }}>
+                You've seen all posts
+              </Text>
+            </View>
+          ) : null
+        }
         ListEmptyComponent={
           activeFilter === "allies" ? (
             <EmptyState

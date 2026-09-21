@@ -26,6 +26,7 @@ import {
   Layers,
 } from "lucide-react-native";
 import { UserAvatar, resolveImageUri } from "@/components/UserAvatar";
+import { AnonymousAvatar } from "@/components/AnonymousAvatar";
 import { usePresence } from "@/context/PresenceContext";
 import { ResponsiveContainer } from "@/components/ResponsiveContainer";
 import { PostCard } from "@/components/PostCard";
@@ -39,7 +40,6 @@ import {
   unfollowUser,
   type ProfileRelationshipSummary,
 } from "@/lib/api/profiles";
-import { requestConnection } from "@/lib/api/interaction";
 import { getOrCreateConversationWithUser } from "@/lib/api/conversation";
 import { listFeedByUser, likePost, unlikePost } from "@/lib/api/feed";
 import type { Profile, ProfileSummary } from "@/types/profile";
@@ -53,14 +53,7 @@ const COLORS = {
   bg: "#FFFFFF",
 };
 
-// Sample fallback suggested allies if backend list is short
-const FALLBACK_SUGGESTED: ProfileSummary[] = [
-  { id: "s1", username: "maria_santos", full_name: "Maria Santos", avatar_url: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150", course: "BSIT 3rd Year" },
-  { id: "s2", username: "juan_dela_cruz", full_name: "Juan Dela Cruz", avatar_url: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150", course: "BSCE 2nd Year" },
-  { id: "s3", username: "anna_reyes", full_name: "Anna Reyes", avatar_url: "https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=150", course: "BSED 4th Year" },
-  { id: "s4", username: "mark_tan", full_name: "Mark Tan", avatar_url: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150", course: "BSBA 1st Year" },
-  { id: "s5", username: "claire_gomez", full_name: "Claire Gomez", avatar_url: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150", course: "BSN 3rd Year" },
-];
+
 
 export default function UserProfileScreen() {
   const { userId } = useLocalSearchParams<{ userId?: string }>();
@@ -77,9 +70,6 @@ export default function UserProfileScreen() {
 
   const [activeTab, setActiveTab] = useState<"feed" | "media" | "about">("feed");
 
-  const [suggested, setSuggested] = useState<ProfileSummary[]>([]);
-  const [followingIds, setFollowingIds] = useState<Set<string>>(new Set());
-
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [actionLoading, setActionLoading] = useState(false);
@@ -92,24 +82,19 @@ export default function UserProfileScreen() {
     try {
       setLoading(true);
 
-      const [profileData, relData, others, userPosts] = await Promise.all([
+      const [profileData, relData, userPosts] = await Promise.all([
         getProfileById(viewedUserId, accessToken),
         !isOwnProfile
           ? getProfileRelationship(viewedUserId, accessToken).catch(() => null)
           : Promise.resolve(null),
-        listProfiles(accessToken, viewedUserId).catch(() => []),
         listFeedByUser(viewedUserId, accessToken).catch(() => []),
       ]);
 
       setProfile(profileData);
       setRelationship(relData);
       setPosts(userPosts);
-
-      const list = others && others.length > 0 ? others : FALLBACK_SUGGESTED;
-      setSuggested(list);
     } catch (err) {
       console.warn("Failed to load user profile", err);
-      setSuggested(FALLBACK_SUGGESTED);
     } finally {
       setLoading(false);
     }
@@ -124,28 +109,6 @@ export default function UserProfileScreen() {
     await loadData();
     setRefreshing(false);
   }, [loadData]);
-
-  // Handle Connect Request
-  const handleToggleConnect = async () => {
-    if (!viewedUserId || !accessToken || actionLoading) return;
-    try {
-      setActionLoading(true);
-      await requestConnection(viewedUserId, accessToken);
-      setRelationship((prev) =>
-        prev
-          ? {
-              ...prev,
-              allyStatus:
-                prev.allyStatus === "none" ? "pending_sent" : prev.allyStatus,
-            }
-          : null
-      );
-    } catch (err) {
-      console.warn("Failed to update ally request", err);
-    } finally {
-      setActionLoading(false);
-    }
-  };
 
   // Handle Follow / Unfollow Profile
   const handleToggleFollow = async () => {
@@ -175,42 +138,11 @@ export default function UserProfileScreen() {
     }
   };
 
-  // Toggle follow on suggested ally card
-  const toggleFollowSuggested = useCallback(
-    async (targetId: string) => {
-      const currentlyFollowing = followingIds.has(targetId);
-      setFollowingIds((prev) => {
-        const next = new Set(prev);
-        if (currentlyFollowing) {
-          next.delete(targetId);
-        } else {
-          next.add(targetId);
-        }
-        return next;
-      });
 
-      if (accessToken) {
-        try {
-          if (currentlyFollowing) {
-            await unfollowUser(targetId, accessToken);
-          } else {
-            await followUser(targetId, accessToken);
-          }
-        } catch (err) {
-          setFollowingIds((prev) => {
-            const next = new Set(prev);
-            if (currentlyFollowing) {
-              next.add(targetId);
-            } else {
-              next.delete(targetId);
-            }
-            return next;
-          });
-        }
-      }
-    },
-    [accessToken, followingIds]
-  );
+  const isConfirmedAlly =
+    isOwnProfile ||
+    relationship?.allyStatus === "accepted" ||
+    (relationship?.allyStatus as any) === "allies";
 
   // Handle Open Direct Chat
   const handleOpenChat = async () => {
@@ -225,8 +157,8 @@ export default function UserProfileScreen() {
         pathname: "/pages/chat",
         params: {
           id: (conversation as any).id || (conversation as any).conversationId,
-          name: profile?.full_name || `@${profile?.username}`,
-          avatar: profile?.avatar_url || "",
+          name: isConfirmedAlly ? (profile?.full_name || `@${profile?.username}`) : "Anonymous Peer",
+          avatar: isConfirmedAlly ? (profile?.avatar_url || "") : "",
           type: "direct",
         },
       } as any);
@@ -301,9 +233,9 @@ export default function UserProfileScreen() {
       <ResponsiveContainer maxContentWidth={540} backgroundColor={COLORS.bg}>
         <FlatList
           key={`user-profile-list-${activeTab}`}
-          data={activeTab === "feed" ? posts : activeTab === "media" ? mediaPosts : []}
-          numColumns={activeTab === "media" ? 3 : 1}
-          columnWrapperStyle={activeTab === "media" ? { gap: 2, paddingHorizontal: 2 } : undefined}
+          data={isConfirmedAlly ? (activeTab === "feed" ? posts : activeTab === "media" ? mediaPosts : []) : []}
+          numColumns={isConfirmedAlly && activeTab === "media" ? 3 : 1}
+          columnWrapperStyle={isConfirmedAlly && activeTab === "media" ? { gap: 2, paddingHorizontal: 2 } : undefined}
           keyExtractor={(item) => item.id}
           refreshControl={
             <RefreshControl
@@ -355,7 +287,11 @@ export default function UserProfileScreen() {
                       shadowRadius: 4,
                     }}
                   >
-                    <UserAvatar avatar={profile.avatar_url} size="xl" online={isOwnProfile ? true : isOnline(profile?.id)} />
+                    {isConfirmedAlly ? (
+                      <UserAvatar avatar={profile.avatar_url} size="xl" online={isOwnProfile ? true : isOnline(profile?.id)} />
+                    ) : (
+                      <AnonymousAvatar avatarKey={(profile as any).avatarKey || "fox"} size={80} />
+                    )}
                   </View>
 
                   {/* Followers, Following, Allies NEXT to avatar — shifted 25px left */}
@@ -369,44 +305,63 @@ export default function UserProfileScreen() {
                       justifyContent: "center",
                     }}
                   >
-                    <Pressable
-                      onPress={() => {
-                        setRelationModalKind("followers");
-                        setRelationModalOpen(true);
-                      }}
-                      style={{ alignItems: "center", minWidth: 54 }}
-                    >
-                      <Text style={{ fontSize: 16, fontWeight: "700", color: "#111827" }}>
-                        {relationship?.followersCount ?? 0}
-                      </Text>
-                      <Text style={{ fontSize: 11, color: "#6B7280", marginTop: 2 }}>Followers</Text>
-                    </Pressable>
+                    {isConfirmedAlly ? (
+                      <>
+                        <Pressable
+                          onPress={() => {
+                            setRelationModalKind("followers");
+                            setRelationModalOpen(true);
+                          }}
+                          style={{ alignItems: "center", minWidth: 54 }}
+                        >
+                          <Text style={{ fontSize: 16, fontWeight: "700", color: "#111827" }}>
+                            {relationship?.followersCount ?? 0}
+                          </Text>
+                          <Text style={{ fontSize: 11, color: "#6B7280", marginTop: 2 }}>Followers</Text>
+                        </Pressable>
 
-                    <Pressable
-                      onPress={() => {
-                        setRelationModalKind("following");
-                        setRelationModalOpen(true);
-                      }}
-                      style={{ alignItems: "center", minWidth: 54 }}
-                    >
-                      <Text style={{ fontSize: 16, fontWeight: "700", color: "#111827" }}>
-                        {relationship?.followingCount ?? 0}
-                      </Text>
-                      <Text style={{ fontSize: 11, color: "#6B7280", marginTop: 2 }}>Following</Text>
-                    </Pressable>
+                        <Pressable
+                          onPress={() => {
+                            setRelationModalKind("following");
+                            setRelationModalOpen(true);
+                          }}
+                          style={{ alignItems: "center", minWidth: 54 }}
+                        >
+                          <Text style={{ fontSize: 16, fontWeight: "700", color: "#111827" }}>
+                            {relationship?.followingCount ?? 0}
+                          </Text>
+                          <Text style={{ fontSize: 11, color: "#6B7280", marginTop: 2 }}>Following</Text>
+                        </Pressable>
 
-                    <Pressable
-                      onPress={() => {
-                        setRelationModalKind("allies");
-                        setRelationModalOpen(true);
-                      }}
-                      style={{ alignItems: "center", minWidth: 54 }}
-                    >
-                      <Text style={{ fontSize: 16, fontWeight: "700", color: "#111827" }}>
-                        {relationship?.alliesCount ?? 0}
-                      </Text>
-                      <Text style={{ fontSize: 11, color: "#6B7280", marginTop: 2 }}>Allies</Text>
-                    </Pressable>
+                        <Pressable
+                          onPress={() => {
+                            setRelationModalKind("allies");
+                            setRelationModalOpen(true);
+                          }}
+                          style={{ alignItems: "center", minWidth: 54 }}
+                        >
+                          <Text style={{ fontSize: 16, fontWeight: "700", color: "#111827" }}>
+                            {relationship?.alliesCount ?? 0}
+                          </Text>
+                          <Text style={{ fontSize: 11, color: "#6B7280", marginTop: 2 }}>Allies</Text>
+                        </Pressable>
+                      </>
+                    ) : (
+                      <>
+                        <View style={{ alignItems: "center", minWidth: 54 }}>
+                          <Text style={{ fontSize: 16, fontWeight: "700", color: "#9CA3AF" }}>—</Text>
+                          <Text style={{ fontSize: 11, color: "#9CA3AF", marginTop: 2 }}>Followers</Text>
+                        </View>
+                        <View style={{ alignItems: "center", minWidth: 54 }}>
+                          <Text style={{ fontSize: 16, fontWeight: "700", color: "#9CA3AF" }}>—</Text>
+                          <Text style={{ fontSize: 11, color: "#9CA3AF", marginTop: 2 }}>Following</Text>
+                        </View>
+                        <View style={{ alignItems: "center", minWidth: 54 }}>
+                          <Text style={{ fontSize: 16, fontWeight: "700", color: "#9CA3AF" }}>—</Text>
+                          <Text style={{ fontSize: 11, color: "#9CA3AF", marginTop: 2 }}>Allies</Text>
+                        </View>
+                      </>
+                    )}
                   </View>
                 </View>
               </View>
@@ -429,10 +384,10 @@ export default function UserProfileScreen() {
                       color: "#111827",
                     }}
                   >
-                    {profile.full_name || `@${profile.username}`}
+                    {isConfirmedAlly ? (profile.full_name || `@${profile.username}`) : "Anonymous Peer"}
                   </Text>
 
-                  {profile.username && (
+                  {isConfirmedAlly && profile.username && (
                     <View
                       style={{
                         flexDirection: "row",
@@ -461,34 +416,25 @@ export default function UserProfileScreen() {
 
                 {/* Username & Academic Tag */}
                 <Text style={{ fontSize: 13, color: "#6B7280", marginTop: 2 }}>
-                  @{profile.username} · {profile.course || "CHMSU Student"} ·{" "}
-                  {profile.year_level || "1st Year"}
+                  {isConfirmedAlly
+                    ? `@${profile.username} · ${profile.course || "CHMSU Student"} · ${profile.year_level || "1st Year"}`
+                    : `@anonymous · Protected Student`}
                 </Text>
 
                 {/* User Bio */}
-                {profile.bio ? (
-                  <Text
-                    style={{
-                      fontSize: 14,
-                      color: "#374151",
-                      lineHeight: 20,
-                      marginTop: 8,
-                    }}
-                  >
-                    {profile.bio}
-                  </Text>
-                ) : (
-                  <Text
-                    style={{
-                      fontSize: 13,
-                      color: "#9CA3AF",
-                      fontStyle: "italic",
-                      marginTop: 8,
-                    }}
-                  >
-                    No bio provided yet.
-                  </Text>
-                )}
+                <Text
+                  style={{
+                    fontSize: 14,
+                    color: isConfirmedAlly ? "#374151" : "#6B7280",
+                    lineHeight: 20,
+                    marginTop: 8,
+                    fontStyle: isConfirmedAlly && !profile.bio ? "italic" : isConfirmedAlly ? "normal" : "italic",
+                  }}
+                >
+                  {isConfirmedAlly
+                    ? (profile.bio || "No bio provided yet.")
+                    : "This student's profile is protected. Complete the matching roadmap to become campus allies and reveal full identity."}
+                </Text>
 
                 {/* ── Relationship Action Bar ── */}
                 {!isOwnProfile && relationship && (
@@ -497,133 +443,109 @@ export default function UserProfileScreen() {
                       flexDirection: "row",
                       alignItems: "center",
                       gap: 10,
-                      marginTop: 8,
+                      marginTop: 12,
                     }}
                   >
-                    {/* Connect / Ally Button */}
-                    <Pressable
-                      onPress={handleToggleConnect}
-                      disabled={
-                        actionLoading ||
-                        relationship.allyStatus === "accepted" ||
-                        relationship.allyStatus === "pending_sent"
-                      }
-                      style={{
-                        flex: 1,
-                        flexDirection: "row",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        gap: 6,
-                        height: 40,
-                        borderRadius: 12,
-                        backgroundColor:
-                          relationship.allyStatus === "accepted"
-                            ? COLORS.forestSoft
-                            : relationship.allyStatus === "pending_sent"
-                            ? "#FFFBEB"
-                            : COLORS.forest,
-                        borderWidth:
-                          relationship.allyStatus === "accepted" ||
-                          relationship.allyStatus === "pending_sent"
-                            ? 1
-                            : 0,
-                        borderColor:
-                          relationship.allyStatus === "accepted"
-                            ? "rgba(26, 107, 60, 0.3)"
-                            : "#FCD34D",
-                      }}
-                    >
-                      <UserPlus
-                        size={15}
-                        color={
-                          relationship.allyStatus === "accepted"
-                            ? COLORS.forest
-                            : relationship.allyStatus === "pending_sent"
-                            ? "#D97706"
-                            : "#FFFFFF"
-                        }
-                      />
-                      <Text
+                    {/* Confirmed Ally Badge */}
+                    {isConfirmedAlly && (relationship.allyStatus === "accepted" || (relationship.allyStatus as any) === "allies") && (
+                      <View
                         style={{
-                          fontSize: 13,
-                          fontWeight: "600",
-                          color:
-                            relationship.allyStatus === "accepted"
-                              ? COLORS.forest
-                              : relationship.allyStatus === "pending_sent"
-                              ? "#D97706"
-                              : "#FFFFFF",
+                          flex: 1,
+                          flexDirection: "row",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          gap: 6,
+                          height: 40,
+                          borderRadius: 12,
+                          backgroundColor: COLORS.forestSoft,
+                          borderWidth: 1,
+                          borderColor: "rgba(26, 107, 60, 0.3)",
                         }}
                       >
-                        {relationship.allyStatus === "accepted"
-                          ? "Ally Connected"
-                          : relationship.allyStatus === "pending_sent"
-                          ? "Requested"
-                          : "Connect"}
-                      </Text>
-                    </Pressable>
+                        <UserCheck size={15} color={COLORS.forest} />
+                        <Text
+                          style={{
+                            fontSize: 13,
+                            fontWeight: "600",
+                            color: COLORS.forest,
+                          }}
+                        >
+                          Ally Connected
+                        </Text>
+                      </View>
+                    )}
 
-                    {/* Follow / Unfollow Button */}
-                    <Pressable
-                      onPress={handleToggleFollow}
-                      disabled={actionLoading}
-                      style={{
-                        flex: 1,
-                        flexDirection: "row",
-                        alignItems: "center",
-                        justifyContent: "center",
-                        gap: 6,
-                        height: 40,
-                        borderRadius: 12,
-                        backgroundColor: relationship.isFollowing
-                          ? "#F3F4F6"
-                          : "#FFFFFF",
-                        borderWidth: 1,
-                        borderColor: relationship.isFollowing
-                          ? "#D1D5DB"
-                          : COLORS.forest,
-                      }}
-                    >
-                      <UserCheck
-                        size={15}
-                        color={
-                          relationship.isFollowing ? "#374151" : COLORS.forest
-                        }
-                      />
-                      <Text
+                    {/* Follow / Unfollow Button (Only for confirmed allies) */}
+                    {isConfirmedAlly && (
+                      <Pressable
+                        onPress={handleToggleFollow}
+                        disabled={actionLoading}
                         style={{
-                          fontSize: 13,
-                          fontWeight: "600",
-                          color:
-                            relationship.isFollowing ? "#374151" : COLORS.forest,
+                          flex: 1,
+                          flexDirection: "row",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          gap: 6,
+                          height: 40,
+                          borderRadius: 12,
+                          backgroundColor: relationship.isFollowing
+                            ? "#F3F4F6"
+                            : "#FFFFFF",
+                          borderWidth: 1,
+                          borderColor: relationship.isFollowing
+                            ? "#D1D5DB"
+                            : COLORS.forest,
                         }}
                       >
-                        {relationship.isFollowing ? "Following" : "Follow"}
-                      </Text>
-                    </Pressable>
+                        <UserCheck
+                          size={15}
+                          color={
+                            relationship.isFollowing ? "#374151" : COLORS.forest
+                          }
+                        />
+                        <Text
+                          style={{
+                            fontSize: 13,
+                            fontWeight: "600",
+                            color:
+                              relationship.isFollowing ? "#374151" : COLORS.forest,
+                          }}
+                        >
+                          {relationship.isFollowing ? "Following" : "Follow"}
+                        </Text>
+                      </Pressable>
+                    )}
 
                     {/* Message Button */}
                     <Pressable
                       onPress={handleOpenChat}
                       disabled={actionLoading}
                       style={{
-                        width: 40,
+                        width: isConfirmedAlly ? 40 : "100%",
                         height: 40,
                         borderRadius: 12,
-                        backgroundColor: "#FFFFFF",
+                        backgroundColor: isConfirmedAlly ? "#FFFFFF" : COLORS.forest,
                         borderWidth: 1,
-                        borderColor: "#E5E7EB",
+                        borderColor: isConfirmedAlly ? "#E5E7EB" : COLORS.forest,
+                        flexDirection: "row",
                         alignItems: "center",
                         justifyContent: "center",
+                        gap: 8,
                       }}
                     >
-                      <MessageCircle size={18} color="#374151" />
+                      <MessageCircle size={18} color={isConfirmedAlly ? "#374151" : "#FFFFFF"} />
+                      {!isConfirmedAlly && (
+                        <Text style={{ fontSize: 14, fontWeight: "600", color: "#FFFFFF" }}>
+                          Message Anonymously
+                        </Text>
+                      )}
                     </Pressable>
                   </View>
                 )}
 
                 {/* Mutual Allies Info */}
                 {!isOwnProfile &&
+                isConfirmedAlly &&
                 relationship &&
                 (relationship.mutualAlliesCount > 0 ||
                   relationship.mutualFollowersCount > 0) ? (
@@ -648,168 +570,91 @@ export default function UserProfileScreen() {
                 ) : null}
               </View>
 
-              {/* ── Feed & About Tab Switcher ── */}
-              <View
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  marginTop: 3,
-                  borderBottomWidth: 1,
-                  borderBottomColor: "#E8E6E1",
-                }}
-              >
-                <Pressable
-                  onPress={() => setActiveTab("feed")}
+              {/* ── Feed & About Tab Switcher (Only if confirmed ally) ── */}
+              {isConfirmedAlly ? (
+                <View
                   style={{
-                    flex: 1,
+                    flexDirection: "row",
                     alignItems: "center",
-                    justifyContent: "center",
-                    paddingVertical: 12,
-                    borderBottomWidth: activeTab === "feed" ? 2.5 : 0,
-                    borderBottomColor: COLORS.forest,
-                    marginBottom: -1,
+                    marginTop: 3,
+                    borderBottomWidth: 1,
+                    borderBottomColor: "#E8E6E1",
                   }}
                 >
-                  <Text
+                  <Pressable
+                    onPress={() => setActiveTab("feed")}
                     style={{
-                      fontSize: 15,
-                      fontWeight: activeTab === "feed" ? "700" : "500",
-                      color: activeTab === "feed" ? COLORS.forest : "#6B7280",
+                      flex: 1,
+                      alignItems: "center",
+                      justifyContent: "center",
+                      paddingVertical: 12,
+                      borderBottomWidth: activeTab === "feed" ? 2.5 : 0,
+                      borderBottomColor: COLORS.forest,
+                      marginBottom: -1,
                     }}
                   >
-                    Feed
-                  </Text>
-                </Pressable>
+                    <Text
+                      style={{
+                        fontSize: 15,
+                        fontWeight: activeTab === "feed" ? "700" : "500",
+                        color: activeTab === "feed" ? COLORS.forest : "#6B7280",
+                      }}
+                    >
+                      Feed
+                    </Text>
+                  </Pressable>
 
-                <Pressable
-                  onPress={() => setActiveTab("media")}
-                  style={{
-                    flex: 1,
-                    alignItems: "center",
-                    justifyContent: "center",
-                    paddingVertical: 12,
-                    borderBottomWidth: activeTab === "media" ? 2.5 : 0,
-                    borderBottomColor: COLORS.forest,
-                    marginBottom: -1,
-                  }}
-                >
-                  <Text
+                  <Pressable
+                    onPress={() => setActiveTab("media")}
                     style={{
-                      fontSize: 15,
-                      fontWeight: activeTab === "media" ? "700" : "500",
-                      color: activeTab === "media" ? COLORS.forest : "#6B7280",
+                      flex: 1,
+                      alignItems: "center",
+                      justifyContent: "center",
+                      paddingVertical: 12,
+                      borderBottomWidth: activeTab === "media" ? 2.5 : 0,
+                      borderBottomColor: COLORS.forest,
+                      marginBottom: -1,
                     }}
                   >
-                    Media
-                  </Text>
-                </Pressable>
+                    <Text
+                      style={{
+                        fontSize: 15,
+                        fontWeight: activeTab === "media" ? "700" : "500",
+                        color: activeTab === "media" ? COLORS.forest : "#6B7280",
+                      }}
+                    >
+                      Media
+                    </Text>
+                  </Pressable>
 
-                <Pressable
-                  onPress={() => setActiveTab("about")}
-                  style={{
-                    flex: 1,
-                    alignItems: "center",
-                    justifyContent: "center",
-                    paddingVertical: 12,
-                    borderBottomWidth: activeTab === "about" ? 2.5 : 0,
-                    borderBottomColor: COLORS.forest,
-                    marginBottom: -1,
-                  }}
-                >
-                  <Text
+                  <Pressable
+                    onPress={() => setActiveTab("about")}
                     style={{
-                      fontSize: 15,
-                      fontWeight: activeTab === "about" ? "700" : "500",
-                      color: activeTab === "about" ? COLORS.forest : "#6B7280",
+                      flex: 1,
+                      alignItems: "center",
+                      justifyContent: "center",
+                      paddingVertical: 12,
+                      borderBottomWidth: activeTab === "about" ? 2.5 : 0,
+                      borderBottomColor: COLORS.forest,
+                      marginBottom: -1,
                     }}
                   >
-                    About
-                  </Text>
-                </Pressable>
-              </View>
+                    <Text
+                      style={{
+                        fontSize: 15,
+                        fontWeight: activeTab === "about" ? "700" : "500",
+                        color: activeTab === "about" ? COLORS.forest : "#6B7280",
+                      }}
+                    >
+                      About
+                    </Text>
+                  </Pressable>
+                </View>
+              ) : null}
 
               {/* Tab View Contents */}
-              {activeTab === "about" ? (
+              {isConfirmedAlly && activeTab === "about" ? (
                 <AboutTabSection profile={profile} />
-              ) : activeTab === "feed" && suggested && suggested.length > 0 ? (
-                <View style={{ marginTop: 14, marginBottom: 4 }}>
-                  {/* Suggested Allies Section Header */}
-                  <View
-                    style={{
-                      flexDirection: "row",
-                      alignItems: "center",
-                      justifyContent: "space-between",
-                      paddingHorizontal: 16,
-                      marginBottom: 10,
-                    }}
-                  >
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                      <Text style={{ fontSize: 14, fontWeight: "700", color: "#111827" }}>
-                        Suggested Allies
-                      </Text>
-                      <View
-                        style={{
-                          backgroundColor: "#F0FDF4",
-                          paddingHorizontal: 6,
-                          paddingVertical: 1.5,
-                          borderRadius: 6,
-                          borderWidth: 1,
-                          borderColor: "#BBF7D0",
-                        }}
-                      >
-                        <Text style={{ fontSize: 9.5, fontWeight: "700", color: "#15803D" }}>
-                          Campus
-                        </Text>
-                      </View>
-                    </View>
-
-                    <Pressable
-                      onPress={() => router.push("/(tabs)/discover" as any)}
-                      hitSlop={6}
-                      style={{ flexDirection: "row", alignItems: "center", gap: 2 }}
-                    >
-                      <Text style={{ fontSize: 12, fontWeight: "700", color: COLORS.forest }}>
-                        See All
-                      </Text>
-                      <ChevronRight size={14} color={COLORS.forest} strokeWidth={2.4} />
-                    </Pressable>
-                  </View>
-
-                  {/* Horizontal Carousel */}
-                  <FlatList
-                    data={suggested}
-                    keyExtractor={(item) => item.id}
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={{ paddingHorizontal: 16, gap: 10 }}
-                    renderItem={({ item }) => (
-                      <SuggestedAllyCard
-                        item={item}
-                        isFollowing={followingIds.has(item.id)}
-                        onPressProfile={() =>
-                          router.push({
-                            pathname: "/pages/user-profile",
-                            params: { userId: item.id },
-                          } as any)
-                        }
-                        onToggleFollow={() => toggleFollowSuggested(item.id)}
-                        onDismiss={() => {
-                          setSuggested((prev) => prev.filter((p) => p.id !== item.id));
-                        }}
-                      />
-                    )}
-                  />
-
-                  {/* Subtle divider before posts */}
-                  <View
-                    style={{
-                      height: 8,
-                      backgroundColor: "#F3F4F6",
-                      marginTop: 14,
-                      marginBottom: 4,
-                    }}
-                  />
-                </View>
               ) : null}
             </View>
           }
@@ -878,7 +723,38 @@ export default function UserProfileScreen() {
             );
           }}
           ListEmptyComponent={
-            activeTab === "feed" ? (
+            !isConfirmedAlly ? (
+              <View style={{ alignItems: "center", paddingVertical: 48, paddingHorizontal: 24 }}>
+                <View
+                  style={{
+                    width: 60,
+                    height: 60,
+                    borderRadius: 30,
+                    backgroundColor: "rgba(26, 107, 60, 0.1)",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    marginBottom: 16,
+                  }}
+                >
+                  <Shield size={30} color={COLORS.forest} />
+                </View>
+                <Text style={{ fontSize: 17, fontWeight: "700", color: "#111827", textAlign: "center" }}>
+                  Profile is Protected
+                </Text>
+                <Text
+                  style={{
+                    fontSize: 13,
+                    color: "#6B7280",
+                    textAlign: "center",
+                    marginTop: 8,
+                    lineHeight: 19,
+                    maxWidth: 300,
+                  }}
+                >
+                  Posts, media, and academic details are hidden until both students complete the matching roadmap and become campus allies.
+                </Text>
+              </View>
+            ) : activeTab === "feed" ? (
               <View className="items-center px-6 py-10">
                 <Text className="font-semibold text-gray-500">
                   No posts to display
@@ -1140,117 +1016,4 @@ function AboutTabSection({ profile }: { profile: Profile }) {
   );
 }
 
-/**
- * Suggested Ally Card Component (Vertical Layout inside container)
- */
-function SuggestedAllyCard({
-  item,
-  onPressProfile,
-  onToggleFollow,
-  isFollowing,
-  onDismiss,
-}: {
-  item: ProfileSummary;
-  onPressProfile: () => void;
-  onToggleFollow: () => void;
-  isFollowing?: boolean;
-  onDismiss?: () => void;
-}) {
-  const { isOnline } = usePresence();
 
-  return (
-    <Pressable
-      onPress={onPressProfile}
-      style={{
-        width: 142,
-        backgroundColor: "#FFFFFF",
-        borderRadius: 16,
-        borderWidth: 1,
-        borderColor: "#E8E6E1",
-        padding: 12,
-        alignItems: "center",
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 1 },
-        shadowOpacity: 0.05,
-        shadowRadius: 4,
-        elevation: 2,
-        position: "relative",
-      }}
-    >
-      {/* Upper Right X Icon */}
-      {onDismiss && (
-        <Pressable
-          onPress={(e) => {
-            e.stopPropagation();
-            onDismiss();
-          }}
-          hitSlop={6}
-          style={{
-            position: "absolute",
-            top: 8,
-            right: 8,
-            zIndex: 10,
-            padding: 2,
-          }}
-        >
-          <X size={14} color="#9CA3AF" />
-        </Pressable>
-      )}
-
-      <UserAvatar avatar={item.avatar_url} size="lg" online={isOnline(item.id)} />
-
-      <Text
-        style={{
-          fontSize: 13,
-          fontWeight: "700",
-          color: "#111827",
-          textAlign: "center",
-          marginTop: 8,
-        }}
-        numberOfLines={1}
-      >
-        {item.full_name || `@${item.username}`}
-      </Text>
-
-      <Text
-        style={{
-          fontSize: 11,
-          color: "#6B7280",
-          textAlign: "center",
-          marginTop: 2,
-        }}
-        numberOfLines={1}
-      >
-        {item.course || `@${item.username}`}
-      </Text>
-
-      <Pressable
-        onPress={(e) => {
-          e.stopPropagation();
-          onToggleFollow();
-        }}
-        style={{
-          marginTop: 12,
-          width: "100%",
-          height: 32,
-          borderRadius: 10,
-          backgroundColor: isFollowing ? "#F3F4F6" : COLORS.forest,
-          borderWidth: isFollowing ? 1 : 0,
-          borderColor: "#D1D5DB",
-          alignItems: "center",
-          justifyContent: "center",
-        }}
-      >
-        <Text
-          style={{
-            fontSize: 12,
-            fontWeight: "600",
-            color: isFollowing ? "#374151" : "#FFFFFF",
-          }}
-        >
-          {isFollowing ? "Following" : "Follow"}
-        </Text>
-      </Pressable>
-    </Pressable>
-  );
-}

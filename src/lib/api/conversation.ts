@@ -151,3 +151,21 @@ export function restoreConversationStreak(
     accessToken,
   });
 }
+
+/**
+ * Delete a message.
+ * - delete_for_me   → removes from caller's view only (hidden, not tombstoned)
+ * - delete_for_everyone → tombstones the message for all participants
+ *   (only the sender can use this mode)
+ */
+export function deleteMessage(
+  conversationId: string,
+  messageId: string,
+  mode: "delete_for_me" | "delete_for_everyone",
+  accessToken: string
+): Promise<void> {
+  return apiRequest<void>(
+    `/conversations/${conversationId}/messages/${messageId}?mode=${mode}`,
+    { method: "DELETE", accessToken, noContent: true }
+  );
+}

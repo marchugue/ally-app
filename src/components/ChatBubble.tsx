@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useRef } from "react";
 import { View, Text, Pressable, Image } from "react-native";
 import { Clock, Check, AlertCircle } from "lucide-react-native";
 import { router } from "expo-router";
@@ -6,12 +6,27 @@ import type { Message, MessageReaction, MessageGroupPosition } from "@/types/con
 import { resolveImageUri } from "./UserAvatar";
 import { getFluentEmojiUrl } from "@/lib/fluentEmoji";
 
+export interface BubbleLayout {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+const EMOJI_ONLY_REGEX = /^[\s\p{Extended_Pictographic}\p{Emoji_Presentation}\uFE0F\u200D\u{1F3FB}-\u{1F3FF}]+$/u;
+export function isOnlyEmoji(text?: string | null): boolean {
+  if (!text) return false;
+  const trimmed = text.trim();
+  if (!trimmed || /[a-zA-Z0-9]/.test(trimmed)) return false;
+  return EMOJI_ONLY_REGEX.test(trimmed);
+}
+
 interface ChatBubbleProps {
   message: Message;
   isMine: boolean;
   groupPosition?: MessageGroupPosition;
   senderName?: string;
-  onLongPress?: (message: Message) => void;
+  onLongPress?: (message: Message, layout?: BubbleLayout) => void;
   onReply?: (message: Message) => void;
   onRetry?: (message: Message) => void;
   isActiveTime?: boolean;
@@ -171,8 +186,36 @@ export function ChatBubble({
 
   const hasImage = images.length > 0;
   const isImageOnly = hasImage && !message.content?.trim();
+  const isEmojiOnly = !hasImage && isOnlyEmoji(message.content);
   const hasReply = !!message.replied_message;
   const hasReactions = message.reactions && message.reactions.length > 0;
+  const bubbleRef = useRef<View>(null);
+
+  const handleBubbleLongPress = () => {
+    if (isSending || isFailed) return;
+    try {
+      if (bubbleRef.current && typeof bubbleRef.current.measureInWindow === "function") {
+        bubbleRef.current.measureInWindow((x: number, y: number, width: number, height: number) => {
+          if (
+            Number.isFinite(x) &&
+            Number.isFinite(y) &&
+            Number.isFinite(width) &&
+            Number.isFinite(height) &&
+            width > 0 &&
+            height > 0
+          ) {
+            onLongPress?.(message, { x, y, width, height });
+          } else {
+            onLongPress?.(message);
+          }
+        });
+      } else {
+        onLongPress?.(message);
+      }
+    } catch {
+      onLongPress?.(message);
+    }
+  };
 
   const handleImagePress = (index: number = 0) => {
     if (images.length === 0) return;
@@ -197,6 +240,32 @@ export function ChatBubble({
   const showSenderName = Boolean(senderName && (groupPosition === "single" || groupPosition === "first"));
 
   const extraBottom = hasReactions ? 18 : 0;
+
+  // ── Tombstone: deleted for everyone ──────────────────────────────────────
+  if (message.is_deleted) {
+    return (
+      <View
+        style={{
+          alignSelf: isMine ? "flex-end" : "flex-start",
+          maxWidth: "78%",
+          marginTop: margins.marginTop,
+          marginBottom: margins.marginBottom,
+          marginHorizontal: 16,
+          paddingHorizontal: 14,
+          paddingVertical: 8,
+          borderRadius: 16,
+          borderWidth: 1,
+          borderStyle: "dashed",
+          borderColor: "#D1D5DB",
+          backgroundColor: "#F9FAFB",
+        }}
+      >
+        <Text style={{ fontSize: 13, color: "#9CA3AF", fontStyle: "italic" }}>
+          This message was deleted
+        </Text>
+      </View>
+    );
+  }
 
   return (
     <View
@@ -248,17 +317,17 @@ export function ChatBubble({
       )}
 
       {/* Main bubble + overlapping reactions */}
-      <View style={{ position: "relative" }}>
+      <View ref={bubbleRef} collapsable={false} style={{ position: "relative" }}>
         <Pressable
-        onPress={() => {
-          if (!isImageOnly) {
+          onPress={() => {
+          if (!isImageOnly && !isEmojiOnly) {
             onToggleTime?.(message.id);
           }
         }}
-        onLongPress={() => !isSending && !isFailed && onLongPress?.(message)}
-        android_ripple={isImageOnly ? undefined : { color: "rgba(0,0,0,0.06)" }}
+        onLongPress={handleBubbleLongPress}
+        android_ripple={isImageOnly || isEmojiOnly ? undefined : { color: "rgba(0,0,0,0.06)" }}
         style={{
-          backgroundColor: isImageOnly
+          backgroundColor: isImageOnly || isEmojiOnly
             ? "transparent"
             : isMine
               ? isFailed
@@ -266,21 +335,21 @@ export function ChatBubble({
                 : "#1A6B3C"
               : "#FFFFFF",
           opacity: isSending ? 0.85 : 1,
-          ...(isImageOnly ? {} : radii),
-          paddingHorizontal: isImageOnly ? 0 : hasImage ? 4 : 14,
-          paddingTop: isImageOnly ? 0 : hasImage ? 4 : 10,
-          paddingBottom: isImageOnly
+          ...(isImageOnly || isEmojiOnly ? {} : radii),
+          paddingHorizontal: isImageOnly || isEmojiOnly ? 0 : hasImage ? 4 : 14,
+          paddingTop: isImageOnly || isEmojiOnly ? 0 : hasImage ? 4 : 10,
+          paddingBottom: isImageOnly || isEmojiOnly
             ? 0
             : (hasImage || isActiveTime || isSending)
               ? hasImage ? 4 : 8
               : 10,
-          borderWidth: isImageOnly ? 0 : isMine ? (isFailed ? 1 : 0) : 1,
-          borderColor: isImageOnly ? "transparent" : isFailed ? "#EF4444" : "#E2DED7",
+          borderWidth: isImageOnly || isEmojiOnly ? 0 : isMine ? (isFailed ? 1 : 0) : 1,
+          borderColor: isImageOnly || isEmojiOnly ? "transparent" : isFailed ? "#EF4444" : "#E2DED7",
           shadowColor: "#000",
           shadowOffset: { width: 0, height: 1 },
-          shadowOpacity: isImageOnly ? 0 : 0.04,
-          shadowRadius: isImageOnly ? 0 : 4,
-          elevation: isImageOnly ? 0 : 1,
+          shadowOpacity: isImageOnly || isEmojiOnly ? 0 : 0.04,
+          shadowRadius: isImageOnly || isEmojiOnly ? 0 : 4,
+          elevation: isImageOnly || isEmojiOnly ? 0 : 1,
         }}
       >
         {/* Image attachment / Stacked cards UI */}
@@ -422,9 +491,9 @@ export function ChatBubble({
           <View style={{ paddingHorizontal: hasImage ? 10 : 0, paddingBottom: hasImage ? 6 : 0 }}>
             <Text
               style={{
-                fontSize: 15,
-                color: isMine ? "#FFFFFF" : "#111827",
-                lineHeight: 21,
+                fontSize: isEmojiOnly ? 38 : 15,
+                lineHeight: isEmojiOnly ? 46 : 21,
+                color: isMine ? (isEmojiOnly ? "#111827" : "#FFFFFF") : "#111827",
               }}
             >
               {message.content}
