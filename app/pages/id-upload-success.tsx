@@ -26,6 +26,7 @@ import {
 import { manipulateAsync, SaveFormat } from "expo-image-manipulator";
 import { useAuth, ApiError } from "@/lib/auth/AuthContext";
 import { uploadStudentIdFile } from "@/lib/api/media";
+import { saveMobileRegisterCache } from "@/lib/registerCache";
 
 const { width: W } = Dimensions.get("window");
 const GREEN = "#1A6B3C";
@@ -147,6 +148,16 @@ export default function IdUploadSuccessScreen() {
           console.warn("[IdUploadSuccess] back upload error:", e)
         );
       }
+
+      // Save pending verification state in cache to prevent loss or cancellation
+      await saveMobileRegisterCache({
+        registeredUserId: userId,
+        showOtpView: true,
+        emailType,
+        form: { username, email, password },
+        studentIdFrontUri: frontUri,
+        studentIdBackUri: backUri,
+      });
 
       // Navigate to standalone OTP verification
       router.replace({

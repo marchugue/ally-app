@@ -9,8 +9,8 @@ import {
   type StyleProp,
   type ViewStyle,
 } from "react-native";
-import { getAnimalEmojiAsset } from "@/constants/animalEmojiAssets";
 import { getAvatarEmoji } from "@/constants/matchOptions";
+import { OfflineAnimatedEmoji } from "@/components/OfflineAnimatedEmoji";
 
 export interface RoadmapProgressionBadgeProps {
   stage?: number;
@@ -126,7 +126,6 @@ export function RoadmapProgressionBadge({
   const pressScaleAnim = useRef(new Animated.Value(1)).current;
 
   const progression = calculateStageProgression(stage, dayStreak);
-  const localAsset = getAnimalEmojiAsset(avatarKey);
   const fallbackEmoji = getAvatarEmoji(avatarKey);
 
   const handlePressIn = () => {
@@ -164,17 +163,13 @@ export function RoadmapProgressionBadge({
             justifyContent: "center",
           }}
         >
-          {localAsset ? (
-            <Image
-              source={localAsset}
-              style={{ width: emojiSize, height: emojiSize }}
-              resizeMode="contain"
-            />
-          ) : (
-            <Text style={{ fontSize: emojiSize * 0.68, lineHeight: emojiSize * 0.8 }}>
-              {fallbackEmoji}
-            </Text>
-          )}
+          <OfflineAnimatedEmoji
+            avatarKey={avatarKey}
+            emoji={fallbackEmoji}
+            size={emojiSize}
+            preferLottie={true}
+            fallbackText={fallbackEmoji}
+          />
         </View>
 
         {/* Level / Progression Bar Horizontally — width strictly matches emoji scale */}

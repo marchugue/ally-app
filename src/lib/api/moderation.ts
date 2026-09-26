@@ -5,10 +5,23 @@ export function blockUser(blockedUserId: string, accessToken: string): Promise<B
   return apiRequest<BlockRecord>("/moderation/block", { method: "POST", body: { blockedUserId }, accessToken });
 }
 
-export function reportUser(targetUserId: string, reason: string, accessToken: string): Promise<Report> {
+export function reportUser(
+  targetUserId: string,
+  reason: string,
+  accessToken: string,
+  options?: { conversationId?: string; postId?: string; notes?: string }
+): Promise<Report> {
   return apiRequest<Report>("/moderation/report", {
     method: "POST",
-    body: { targetUserId, reason },
+    body: {
+      targetUserId,
+      reportedUserId: targetUserId,
+      reason,
+      violationId: reason,
+      conversationId: options?.conversationId,
+      postId: options?.postId,
+      notes: options?.notes,
+    },
     accessToken,
   });
 }

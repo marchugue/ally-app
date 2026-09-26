@@ -38,6 +38,28 @@ export async function forgotPassword(email: string): Promise<{ trackingToken: st
   return { trackingToken };
 }
 
+export function verifyPasswordResetOtp(
+  email: string,
+  code: string
+): Promise<{ valid: boolean; trackingToken: string }> {
+  return apiRequest<{ valid: boolean; trackingToken: string }>("/auth/password-reset/verify-otp", {
+    method: "POST",
+    body: { email, code },
+  });
+}
+
+export function resetPassword(payload: {
+  email?: string;
+  code?: string;
+  token?: string;
+  password: string;
+}): Promise<{ source: string; trackingToken: string; mobileRedirectUrl?: string }> {
+  return apiRequest("/auth/reset-password", {
+    method: "POST",
+    body: payload,
+  });
+}
+
 export function getPasswordResetStatus(trackingToken: string): Promise<{
   status: "pending" | "completed" | "unknown";
   source?: "web" | "mobile";
@@ -83,10 +105,19 @@ export function getOtpStatus(userId: string): Promise<OtpStatus> {
  * can restart fresh with the same or a different username/email.
  * Safe: the backend refuses if the OTP is already verified.
  */
-export function cancelRegistration(userId: string): Promise<void> {
+export function cancelRegistration(
+  userIdOrPayload: string | { userId?: string; email?: string }
+): Promise<void> {
+  const payload = typeof userIdOrPayload === 'string' ? { userId: userIdOrPayload } : userIdOrPayload;
   return apiRequest<void>('/auth/register/cancel', {
     method: 'DELETE',
-    body: { userId },
+    body: payload,
     noContent: true,
+  }).catch(() => {
+    return apiRequest<void>('/auth/register/cancel', {
+      method: 'POST',
+      body: payload,
+      noContent: true,
+    }).catch(() => {});
   });
 }

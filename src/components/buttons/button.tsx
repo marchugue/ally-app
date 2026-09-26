@@ -1,37 +1,56 @@
-import { useEffect, useRef } from "react";
-import { View, Text, TextInput, Animated } from "react-native";
-import { Mail } from "lucide-react-native";
+import { useEffect, useRef, forwardRef } from "react";
+import {
+  View,
+  Text,
+  TextInput,
+  Animated,
+  StyleProp,
+  ViewStyle,
+  TextInputProps,
+} from "react-native";
+import { User } from "lucide-react-native";
 
-type InputProps = {
+export type InputProps = {
   variant?: "text" | "dropdown" | "chips" | "checkboxes";
-
   value?: string;
   values?: string[];
-
   placeholder?: string;
   label?: string;
-
   options?: string[];
-
   icon?: React.ReactNode;
-
   error?: string | null;
-
   onChangeText?: (text: string) => void;
   onPress?: () => void;
   onSelect?: (value: string) => void;
   onToggle?: (value: string) => void;
-
   onBlur?: () => void;
+  onFocus?: () => void;
+  containerStyle?: StyleProp<ViewStyle>;
+  returnKeyType?: TextInputProps["returnKeyType"];
+  onSubmitEditing?: () => void;
+  keyboardType?: TextInputProps["keyboardType"];
+  autoCapitalize?: TextInputProps["autoCapitalize"];
+  autoCorrect?: boolean;
 };
 
-export default function Input({
-  value,
-  onChangeText,
-  onBlur,
-  error,
-  placeholder = "Text",
-}: InputProps) {
+const Input = forwardRef<TextInput, InputProps>(function Input(
+  {
+    value,
+    onChangeText,
+    onBlur,
+    onFocus,
+    error,
+    placeholder = "Text",
+    icon,
+    containerStyle,
+    returnKeyType,
+    onSubmitEditing,
+    keyboardType = "default",
+    autoCapitalize = "none",
+    autoCorrect = false,
+  },
+  ref
+) {
   const errorAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -43,7 +62,7 @@ export default function Input({
   }, [error]);
 
   return (
-    <View style={{ position: "relative", marginBottom: 20 }}>
+    <View style={[{ position: "relative", marginBottom: 20 }, containerStyle]}>
       {/* Floating Error */}
       <Animated.View
         style={{
@@ -92,18 +111,21 @@ export default function Input({
           elevation: 2,
         }}
       >
-        <Mail size={17} color={error ? "#DC2626" : "#9CA3AF"} />
+        {icon || <User size={17} color={error ? "#DC2626" : "#9CA3AF"} />}
 
         <TextInput
+          ref={ref}
           value={value}
           onChangeText={onChangeText}
           onBlur={onBlur}
+          onFocus={onFocus}
           placeholder={placeholder}
           placeholderTextColor="#9CA3AF"
-          autoCapitalize="none"
-          autoCorrect={false}
-          keyboardType="email-address"
-          textContentType="emailAddress"
+          autoCapitalize={autoCapitalize}
+          autoCorrect={autoCorrect}
+          keyboardType={keyboardType}
+          returnKeyType={returnKeyType}
+          onSubmitEditing={onSubmitEditing}
           style={{
             flex: 1,
             marginLeft: 10,
@@ -114,4 +136,6 @@ export default function Input({
       </View>
     </View>
   );
-}
+});
+
+export default Input;

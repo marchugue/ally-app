@@ -12,7 +12,9 @@ import {
   TouchableOpacity,
   Dimensions,
   ActivityIndicator,
+  BackHandler,
 } from "react-native";
+
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
 import {
@@ -44,6 +46,11 @@ import {
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth, ApiError } from "@/lib/auth/AuthContext";
 import * as authApi from "@/lib/api/auth";
+import {
+  getMobileRegisterCache,
+  saveMobileRegisterCache,
+  clearMobileRegisterCache,
+} from "@/lib/registerCache";
 import { updateMyProfile } from "@/lib/api/profiles";
 import { uploadStudentIdFile, getPresetAvatars, PresetAvatarRow } from "@/lib/api/media";
 import { UserAvatar } from "@/components/UserAvatar";
@@ -260,6 +267,7 @@ export default function RegisterScreen() {
   const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
   const [isResendingOtp, setIsResendingOtp] = useState(false);
   const [resendCooldown, setResendCooldown] = useState(0);
+  const otpInputsRef = useRef<Array<TextInput | null>>([]);
 
   // dept picker modal
   const [showDeptPicker, setShowDeptPicker] = useState(false);
@@ -267,6 +275,79 @@ export default function RegisterScreen() {
 
   // Keyboard visibility via native state
   const { isKeyboardVisible } = useKeyboard();
+
+  // Step 1 input refs for sequential focus & navigation
+  const usernameInputRef = useRef<TextInput>(null);
+  const emailInputRef = useRef<TextInput>(null);
+  const passwordInputRef = useRef<TextInput>(null);
+  const confirmPasswordInputRef = useRef<TextInput>(null);
+
+  // Layout positions of step 1 inputs for auto-scroll
+  const usernameYRef = useRef(0);
+  const emailYRef = useRef(0);
+  const passwordYRef = useRef(0);
+  const confirmPasswordYRef = useRef(0);
+
+  // Track focused field in Step 1
+  const [focusedField, setFocusedField] = useState<
+    "username" | "email" | "password" | "confirmPassword" | null
+  >(null);
+
+  const isPasswordOrConfirmFocused =
+    step === 1 &&
+    !showOtpView &&
+    (focusedField === "password" || focusedField === "confirmPassword");
+
+  const isStep1NextState =
+    step === 1 &&
+    !showOtpView &&
+    (focusedField === "username" || focusedField === "email" || focusedField === "password");
+
+  const handleInputFocus = (field: "username" | "email" | "password" | "confirmPassword") => {
+    setFocusedField(field);
+
+    if (field === "password") {
+      requestAnimationFrame(() => {
+        scrollViewRef.current?.scrollTo({ y: passwordYRef.current, animated: true });
+      });
+    } else if (field === "confirmPassword") {
+      requestAnimationFrame(() => {
+        scrollViewRef.current?.scrollTo({ y: confirmPasswordYRef.current, animated: true });
+      });
+    } else {
+      requestAnimationFrame(() => {
+        scrollViewRef.current?.scrollTo({ y: 0, animated: true });
+      });
+    }
+  };
+
+  const handleInputBlur = (field: "username" | "email" | "password" | "confirmPassword") => {
+    setTouched(true);
+  };
+
+  const handleStep1NextInput = () => {
+    if (focusedField === "username") {
+      emailInputRef.current?.focus();
+    } else if (focusedField === "email") {
+      passwordInputRef.current?.focus();
+    } else if (focusedField === "password") {
+      confirmPasswordInputRef.current?.focus();
+    } else {
+      handleNext();
+    }
+  };
+
+  // Restore scroll and reset focus state when keyboard closes
+  useEffect(() => {
+    if (!isKeyboardVisible && step === 1 && !showOtpView) {
+      setFocusedField(null);
+      scrollViewRef.current?.scrollTo({ y: 0, animated: true });
+    }
+  }, [isKeyboardVisible, step, showOtpView]);
+
+  useEffect(() => {
+    setFocusedField(null);
+  }, [step]);
 
 
   const [presetAvatars, setPresetAvatars] = useState<PresetAvatarRow[]>([]);
@@ -287,18 +368,131 @@ export default function RegisterScreen() {
     bio: "",
   });
 
+  const pendingUserIdRef = useRef<string | null>(null);
+  const isVerifiedRef = useRef<boolean>(false);
+  const formEmailRef = useRef<string>("");
+
+  useEffect(() => {
+    pendingUserIdRef.current = registeredUserId;
+  }, [registeredUserId]);
+
+  useEffect(() => {
+    formEmailRef.current = form.email.trim().toLowerCase();
+  }, [form.email]);
+
+  // Handle Android hardware back press when on OTP view
+  useEffect(() => {
+    if (!showOtpView) return;
+
+    const onBackPress = () => {
+      setShowOtpView(false);
+      saveMobileRegisterCache({ showOtpView: false });
+      return true;
+    };
+
+    const sub = BackHandler.addEventListener("hardwareBackPress", onBackPress);
+    return () => sub.remove();
+  }, [showOtpView]);
+
+  // Restore cached verification process and form data on mount
+  useEffect(() => {
+    if (params.startStep) return;
+
+    getMobileRegisterCache().then(async (cached) => {
+      if (!cached) return;
+
+      if (cached.showOtpView && cached.registeredUserId) {
+        try {
+          const status = await authApi.getOtpStatus(cached.registeredUserId);
+          if (status.verified) {
+            setStep(cached.step > 1 ? cached.step : 2);
+            setShowOtpView(false);
+            if (cached.form) setForm((prev) => ({ ...prev, ...cached.form }));
+          } else if (status.exists) {
+            if (cached.emailType) setEmailType(cached.emailType);
+            setStep(cached.step || 1);
+            setRegisteredUserId(cached.registeredUserId);
+            setShowOtpView(true);
+            if (cached.otpDigits && Array.isArray(cached.otpDigits)) {
+              setOtpDigits(cached.otpDigits);
+            }
+            if (cached.form) setForm((prev) => ({ ...prev, ...cached.form }));
+            if (cached.studentIdFrontUri) setStudentIdUri(cached.studentIdFrontUri);
+            if (cached.studentIdBackUri) setStudentIdBackUri(cached.studentIdBackUri);
+          } else {
+            if (cached.emailType) setEmailType(cached.emailType);
+            setStep(1);
+            setShowOtpView(false);
+            if (cached.form) setForm((prev) => ({ ...prev, ...cached.form }));
+          }
+        } catch {
+          if (cached.emailType) setEmailType(cached.emailType);
+          setStep(cached.step || 1);
+          setRegisteredUserId(cached.registeredUserId);
+          setShowOtpView(true);
+          if (cached.otpDigits) setOtpDigits(cached.otpDigits);
+          if (cached.form) setForm((prev) => ({ ...prev, ...cached.form }));
+        }
+      } else {
+        if (cached.emailType && !params.emailType) setEmailType(cached.emailType);
+        if (cached.step && cached.step >= 1 && !params.startStep) setStep(cached.step);
+        if (cached.form) setForm((prev) => ({ ...prev, ...cached.form }));
+        if (cached.studentIdFrontUri && !params.studentIdFrontUri) setStudentIdUri(cached.studentIdFrontUri);
+        if (cached.studentIdBackUri && !params.studentIdBackUri) setStudentIdBackUri(cached.studentIdBackUri);
+        if (cached.avatarTab) setAvatarTab(cached.avatarTab);
+        if (cached.agreedToTerms !== undefined) setAgreedToTerms(cached.agreedToTerms);
+      }
+    }).catch(() => {});
+  }, []);
+
+  // Persist form & verification state to cache
+  useEffect(() => {
+    if (isDone) return;
+    saveMobileRegisterCache({
+      emailType,
+      step,
+      registeredUserId,
+      showOtpView,
+      otpDigits,
+      form,
+      studentIdFrontUri: studentIdUri,
+      studentIdBackUri,
+      avatarTab,
+      agreedToTerms,
+    });
+  }, [
+    emailType,
+    step,
+    registeredUserId,
+    showOtpView,
+    otpDigits,
+    form,
+    studentIdUri,
+    studentIdBackUri,
+    avatarTab,
+    agreedToTerms,
+    isDone,
+  ]);
+
   // Load admin-curated preset avatars
   useEffect(() => {
     let isMounted = true;
     setIsLoadingPresets(true);
     getPresetAvatars()
       .then((res) => {
-        if (isMounted && res?.avatars) {
-          setPresetAvatars(res.avatars);
+        if (isMounted) {
+          if (res?.avatars && res.avatars.length > 0) {
+            setPresetAvatars(res.avatars);
+          } else {
+            setAvatarTab("emojis");
+          }
         }
       })
       .catch((err) => {
-        console.warn("[register] Failed to load preset avatars:", err);
+        console.warn("[register] Failed to load preset avatars (falling back to emojis):", err?.message || err);
+        if (isMounted) {
+          setAvatarTab("emojis");
+        }
       })
       .finally(() => {
         if (isMounted) setIsLoadingPresets(false);
@@ -450,6 +644,9 @@ export default function RegisterScreen() {
           organizations: [],
         });
         setRegisteredUserId(result.userId);
+        pendingUserIdRef.current = result.userId;
+        isVerifiedRef.current = false;
+        formEmailRef.current = form.email.trim().toLowerCase();
         setShowOtpView(true);
       } catch (err: any) {
         setSubmitError(err instanceof ApiError ? err.message : err?.message || "Registration failed.");
@@ -476,8 +673,11 @@ export default function RegisterScreen() {
     setOtpError("");
     try {
       const session = await authApi.verifyOtp(registeredUserId, code);
+      isVerifiedRef.current = true;
+      pendingUserIdRef.current = null;
       await completeLogin(session);
       setShowOtpView(false);
+      saveMobileRegisterCache({ showOtpView: false, step: 2 });
       setStep(2);
     } catch (err: any) {
       setOtpError(err?.message || "Invalid verification code. Please try again.");
@@ -511,8 +711,9 @@ export default function RegisterScreen() {
 
   const handleBack = () => {
     if (step === 1 && showOtpView) {
-      // Hide OTP view but don't navigate away — handleCancelRegistration does the actual rollback
-      handleCancelRegistration();
+      // Hide OTP view so user can review/edit their details without cancelling on the server
+      setShowOtpView(false);
+      saveMobileRegisterCache({ showOtpView: false });
       return;
     }
     if (step > 1) {
@@ -532,30 +733,30 @@ export default function RegisterScreen() {
   };
 
   /**
-   * Rolls back the pending (unverified) account when the user goes back from the
-   * OTP screen. Fires the DELETE /auth/register/cancel endpoint then resets all
-   * Step 1 OTP state so the user can retry with the same or a different email.
-   * Resilient: always resets local state even if the server call fails.
+   * Resets OTP view state and optionally rolls back pending registration if explicitly cancelled.
    */
-  const handleCancelRegistration = async () => {
-    const prevUserId = registeredUserId;
+  const handleCancelRegistration = async (explicitCancel?: boolean | unknown) => {
+    const isExplicit = explicitCancel === true;
+    const prevUserId = registeredUserId || pendingUserIdRef.current;
+    const prevEmail = form.email || formEmailRef.current;
+    pendingUserIdRef.current = null;
+    isVerifiedRef.current = false;
     // Reset OTP view state immediately so the user sees the form again
     setShowOtpView(false);
     setOtpDigits(["", "", "", "", "", ""]);
     setOtpError("");
-    setRegisteredUserId(null);
+    saveMobileRegisterCache({ showOtpView: false, otpDigits: ["", "", "", "", "", ""] });
 
-    if (prevUserId) {
+    if (isExplicit && prevUserId) {
+      clearMobileRegisterCache();
       try {
-        await authApi.cancelRegistration(prevUserId);
+        await authApi.cancelRegistration({ userId: prevUserId, email: prevEmail });
       } catch (err: any) {
-        // Silently ignore — the user is already back on the form.
-        // The pending account will eventually be cleaned up or they can
-        // retry with a different email.
         console.warn('[register] cancelRegistration error (non-blocking):', err?.message);
       }
     }
   };
+
 
   // ── Submit Profile (Step 4) ───────────────────────────────────────────────
 
@@ -601,6 +802,7 @@ export default function RegisterScreen() {
         void refreshSession();
       }
       setIsDone(true);
+      clearMobileRegisterCache();
     } catch (err: any) {
       setSubmitError(err instanceof ApiError ? err.message : "Could not save profile.");
     } finally {
@@ -717,66 +919,55 @@ export default function RegisterScreen() {
               borderBottomColor: "#F3F4F6",
             }}
           >
-            {/* Back button & Step counter row */}
+            {/* Header row: green arrow back (left, no border) + Title (center) */}
             <View
               style={{
                 flexDirection: "row",
                 alignItems: "center",
                 justifyContent: "space-between",
-                marginBottom: 6,
               }}
             >
               <Pressable
                 onPress={handleBack}
+                hitSlop={14}
                 style={{
-                  width: 38,
-                  height: 38,
-                  borderRadius: 12,
-                  backgroundColor: "#F9FAFB",
-                  borderWidth: 1,
-                  borderColor: "#E5E7EB",
+                  width: 40,
+                  height: 40,
                   alignItems: "center",
                   justifyContent: "center",
                 }}
+                accessibilityLabel="Go back"
               >
-                <ArrowLeft size={20} color="#1A6B3C" />
+                <ArrowLeft size={24} color="#1A6B3C" />
               </Pressable>
-              <Text style={{ fontSize: 12, fontWeight: "700", color: "#9CA3AF", letterSpacing: 0.8 }}>
-                STEP {step} OF {STEPS.length}
+
+              <Text
+                style={{
+                  fontSize: 18,
+                  fontWeight: "800",
+                  color: "#111827",
+                  textAlign: "center",
+                  letterSpacing: -0.4,
+                }}
+              >
+                {STEPS[step - 1].label}
               </Text>
-              <View style={{ width: 38 }} />
+
+              {/* Balanced spacer so title is centered */}
+              <View style={{ width: 40 }} />
             </View>
 
-            {/* Title + Subtitle */}
+            {/* Subtitle / hint */}
             <Text
               style={{
-                fontSize: 20,
-                fontWeight: "800",
-                color: "#111827",
+                fontSize: 13,
+                color: "#6B7280",
                 textAlign: "center",
-                letterSpacing: -0.5,
+                marginTop: 2,
               }}
             >
-              {STEPS[step - 1].label}
-            </Text>
-            <Text style={{ fontSize: 13, color: "#6B7280", textAlign: "center", marginTop: 2 }}>
               {STEPS[step - 1].hint}
             </Text>
-
-            {/* Progress dots */}
-            <View style={{ flexDirection: "row", gap: 8, marginTop: 8, justifyContent: "center", alignItems: "center" }}>
-              {STEPS.map(({ num }) => (
-                <View
-                  key={num}
-                  style={{
-                    height: 6,
-                    borderRadius: 3,
-                    width: num === step ? 20 : 6,
-                    backgroundColor: step >= num ? "#1A6B3C" : "#E5E7EB",
-                  }}
-                />
-              ))}
-            </View>
 
             {submitError ? (
               <View style={{ marginTop: 8, width: "100%" }}>
@@ -790,9 +981,14 @@ export default function RegisterScreen() {
             ref={scrollViewRef}
             showsVerticalScrollIndicator={false}
             style={{ flex: 1, backgroundColor: "#FFFFFF" }}
-            contentContainerStyle={{ paddingHorizontal: 24, paddingBottom: 24, paddingTop: 16 }}
+            contentContainerStyle={{
+              paddingHorizontal: 24,
+              paddingTop: 16,
+              paddingBottom: isPasswordOrConfirmFocused ? SCREEN_WIDTH * 0.9 : 24,
+            }}
             keyboardShouldPersistTaps="handled"
             keyboardDismissMode="on-drag"
+            scrollEnabled={!isPasswordOrConfirmFocused}
           >
             {/* ── STEP 1: Basic Info & Email Type & Inline OTP ── */}
             {step === 1 && (
@@ -812,15 +1008,43 @@ export default function RegisterScreen() {
                     {otpDigits.map((digit, idx) => (
                       <TextInput
                         key={idx}
+                        ref={(el) => {
+                          otpInputsRef.current[idx] = el;
+                        }}
                         value={digit}
                         onChangeText={(text) => {
-                          const val = text.replace(/[^0-9]/g, "");
+                          setOtpError("");
+                          const cleaned = text.replace(/\D/g, "");
+                          if (cleaned.length >= 6) {
+                            const next = cleaned.slice(0, 6).split("");
+                            setOtpDigits(next);
+                            otpInputsRef.current[5]?.focus();
+                            handleVerifyOtpInStep1(next.join(""));
+                            return;
+                          }
+                          const single = cleaned.slice(-1);
                           const updated = [...otpDigits];
-                          updated[idx] = val.slice(-1);
+                          updated[idx] = single;
                           setOtpDigits(updated);
+                          if (single && idx < 5) {
+                            otpInputsRef.current[idx + 1]?.focus();
+                          }
+                          if (single && updated.every(Boolean)) {
+                            handleVerifyOtpInStep1(updated.join(""));
+                          }
+                        }}
+                        onKeyPress={({ nativeEvent }) => {
+                          if (nativeEvent.key === "Backspace" && !otpDigits[idx] && idx > 0) {
+                            const next = [...otpDigits];
+                            next[idx - 1] = "";
+                            setOtpDigits(next);
+                            otpInputsRef.current[idx - 1]?.focus();
+                          }
                         }}
                         keyboardType="number-pad"
-                        maxLength={1}
+                        maxLength={6}
+                        selectTextOnFocus
+                        caretHidden
                         style={{
                           width: 44,
                           height: 52,
@@ -843,56 +1067,103 @@ export default function RegisterScreen() {
                     </View>
                   ) : null}
 
-                  <TouchableOpacity
-                    onPress={handleResendOtpInStep1}
-                    disabled={isResendingOtp || resendCooldown > 0}
-                    style={{ marginTop: 4, padding: 8 }}
-                  >
-                    <Text style={{ fontSize: 13, fontWeight: "700", color: "#1A6B3C", textAlign: "center" }}>
-                      {resendCooldown > 0 ? `Resend in ${resendCooldown}s` : isResendingOtp ? "Resending..." : "Resend code"}
-                    </Text>
-                  </TouchableOpacity>
+                  {/* Resend under inputs */}
+                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, marginTop: 4 }}>
+                    <Text style={{ fontSize: 13, color: "#6B7280" }}>Didn&apos;t receive code?</Text>
+                    {resendCooldown > 0 ? (
+                      <Text style={{ fontSize: 13, fontWeight: "700", color: "#9CA3AF" }}>
+                        Resend in {resendCooldown}s
+                      </Text>
+                    ) : (
+                      <TouchableOpacity onPress={handleResendOtpInStep1} disabled={isResendingOtp}>
+                        <Text style={{ fontSize: 13, fontWeight: "700", color: "#1A6B3C" }}>
+                          {isResendingOtp ? "Resending..." : "Resend"}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
 
                   <TouchableOpacity
-                    onPress={handleCancelRegistration}
-                    style={{ marginTop: 8, padding: 4 }}
+                    onPress={() => handleCancelRegistration(false)}
+                    style={{ marginTop: 12, padding: 4 }}
                   >
                     <Text style={{ fontSize: 12, color: "#9CA3AF", textAlign: "center" }}>← Change email address</Text>
                   </TouchableOpacity>
                 </View>
               ) : (
                 <View>
-                  <Input
-                    value={form.username}
-                    onChangeText={(text) => setForm((prev) => ({ ...prev, username: text }))}
-                    onBlur={() => setTouched(true)}
-                    error={usernameError}
-                    placeholder="Username"
-                  />
+                  <View
+                    onLayout={(e) => {
+                      usernameYRef.current = e.nativeEvent.layout.y;
+                    }}
+                  >
+                    <Input
+                      ref={usernameInputRef}
+                      value={form.username}
+                      onChangeText={(text) => setForm((prev) => ({ ...prev, username: text }))}
+                      onBlur={() => handleInputBlur("username")}
+                      onFocus={() => handleInputFocus("username")}
+                      error={usernameError}
+                      placeholder="Username"
+                      icon={<User size={17} color={usernameError ? "#DC2626" : "#9CA3AF"} />}
+                      returnKeyType="next"
+                      onSubmitEditing={() => emailInputRef.current?.focus()}
+                    />
+                  </View>
 
-                  <EmailInput
-                    value={form.email}
-                    onChangeText={(text) => setForm((prev) => ({ ...prev, email: text }))}
-                    onBlur={() => setTouched(true)}
-                    error={emailError}
-                    placeholder={emailType === "chmsu" ? "Your@chmsu.edu.ph" : "yourname@gmail.com"}
-                  />
+                  <View
+                    onLayout={(e) => {
+                      emailYRef.current = e.nativeEvent.layout.y;
+                    }}
+                  >
+                    <EmailInput
+                      ref={emailInputRef}
+                      value={form.email}
+                      onChangeText={(text) => setForm((prev) => ({ ...prev, email: text }))}
+                      onBlur={() => handleInputBlur("email")}
+                      onFocus={() => handleInputFocus("email")}
+                      error={emailError}
+                      placeholder={emailType === "chmsu" ? "Your@chmsu.edu.ph" : "yourname@gmail.com"}
+                      returnKeyType="next"
+                      onSubmitEditing={() => passwordInputRef.current?.focus()}
+                    />
+                  </View>
 
-                  <PasswordInput
-                    value={form.password}
-                    onChangeText={(text) => setForm((prev) => ({ ...prev, password: text }))}
-                    onBlur={() => setTouched(true)}
-                    error={passwordError}
-                  />
+                  <View
+                    onLayout={(e) => {
+                      passwordYRef.current = e.nativeEvent.layout.y;
+                    }}
+                  >
+                    <PasswordInput
+                      ref={passwordInputRef}
+                      value={form.password}
+                      onChangeText={(text) => setForm((prev) => ({ ...prev, password: text }))}
+                      onBlur={() => handleInputBlur("password")}
+                      onFocus={() => handleInputFocus("password")}
+                      error={passwordError}
+                      returnKeyType="next"
+                      onSubmitEditing={() => confirmPasswordInputRef.current?.focus()}
+                    />
+                  </View>
 
-                  <PasswordInput
-                    value={form.confirmPassword}
-                    onChangeText={(text) => setForm((prev) => ({ ...prev, confirmPassword: text }))}
-                    onBlur={() => setTouched(true)}
-                    error={confirmPasswordError}
-                    placeholder="Confirm your password"
-                    showStrength={false}
-                  />
+                  <View
+                    onLayout={(e) => {
+                      confirmPasswordYRef.current = e.nativeEvent.layout.y;
+                    }}
+                  >
+                    <PasswordInput
+                      ref={confirmPasswordInputRef}
+                      value={form.confirmPassword}
+                      onChangeText={(text) => setForm((prev) => ({ ...prev, confirmPassword: text }))}
+                      onBlur={() => handleInputBlur("confirmPassword")}
+                      onFocus={() => handleInputFocus("confirmPassword")}
+                      error={confirmPasswordError}
+                      placeholder="Confirm your password"
+                      showStrength={false}
+                      returnKeyType="done"
+                      onSubmitEditing={handleNext}
+                    />
+                  </View>
                 </View>
               )
             )}
@@ -1360,6 +1631,8 @@ export default function RegisterScreen() {
                   ? "Verify Code"
                   : step === 4
                   ? "Complete Profile"
+                  : isStep1NextState
+                  ? "Next"
                   : "Continue"
               }
               variant="primary"
@@ -1367,7 +1640,7 @@ export default function RegisterScreen() {
               size="lg"
               disabled={isSubmitting || isVerifyingOtp || (step === 4 && !agreedToTerms)}
               icon={step === 4 ? <Check size={16} color="#FFFFFF" /> : <ArrowRight size={16} color="#FFFFFF" />}
-              onPress={handleNext}
+              onPress={isStep1NextState ? handleStep1NextInput : handleNext}
               className="w-full"
             />
 

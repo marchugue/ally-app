@@ -55,6 +55,18 @@ export function SwipeableChatBubble({
     onReply?.(message);
   }, [message, onReply]);
 
+  // If deleted for everyone, do not allow swipe actions
+  if (message.is_deleted || (message as any).isDeleted) {
+    return (
+      <ChatBubble
+        message={message}
+        isMine={isMine}
+        groupPosition={groupPosition}
+        senderName={senderName}
+      />
+    );
+  }
+
   // My messages → swipe LEFT to reply (renderRightActions)
   // Their messages → swipe RIGHT to reply (renderLeftActions)
 

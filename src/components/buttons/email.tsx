@@ -1,22 +1,41 @@
-import { useEffect, useRef } from "react";
-import { View, Text, TextInput, Animated } from "react-native";
+import { useEffect, useRef, forwardRef } from "react";
+import {
+  View,
+  Text,
+  TextInput,
+  Animated,
+  StyleProp,
+  ViewStyle,
+  TextInputProps,
+} from "react-native";
 import { Mail } from "lucide-react-native";
 
-type EmailInputProps = {
+export type EmailInputProps = {
   value: string;
   onChangeText: (text: string) => void;
   onBlur?: () => void;
+  onFocus?: () => void;
   error?: string | null;
   placeholder?: string;
+  containerStyle?: StyleProp<ViewStyle>;
+  returnKeyType?: TextInputProps["returnKeyType"];
+  onSubmitEditing?: () => void;
 };
 
-export default function EmailInput({
-  value,
-  onChangeText,
-  onBlur,
-  error,
-  placeholder = "your@chmsu.edu.ph",
-}: EmailInputProps) {
+const EmailInput = forwardRef<TextInput, EmailInputProps>(function EmailInput(
+  {
+    value,
+    onChangeText,
+    onBlur,
+    onFocus,
+    error,
+    placeholder = "your@chmsu.edu.ph",
+    containerStyle,
+    returnKeyType,
+    onSubmitEditing,
+  },
+  ref
+) {
   const errorAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -28,7 +47,7 @@ export default function EmailInput({
   }, [error]);
 
   return (
-    <View style={{ position: "relative", marginBottom: 20 }}>
+    <View style={[{ position: "relative", marginBottom: 20 }, containerStyle]}>
       {/* Floating Error */}
       <Animated.View
         style={{
@@ -80,15 +99,19 @@ export default function EmailInput({
         <Mail size={17} color={error ? "#DC2626" : "#9CA3AF"} />
 
         <TextInput
+          ref={ref}
           value={value}
           onChangeText={onChangeText}
           onBlur={onBlur}
+          onFocus={onFocus}
           placeholder={placeholder}
           placeholderTextColor="#9CA3AF"
           autoCapitalize="none"
           autoCorrect={false}
           keyboardType="email-address"
           textContentType="emailAddress"
+          returnKeyType={returnKeyType}
+          onSubmitEditing={onSubmitEditing}
           style={{
             flex: 1,
             marginLeft: 10,
@@ -99,4 +122,6 @@ export default function EmailInput({
       </View>
     </View>
   );
-}
+});
+
+export default EmailInput;

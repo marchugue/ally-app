@@ -166,6 +166,11 @@ export function deleteMessage(
 ): Promise<void> {
   return apiRequest<void>(
     `/conversations/${conversationId}/messages/${messageId}?mode=${mode}`,
-    { method: "DELETE", accessToken, noContent: true }
+    {
+      method: "DELETE",
+      accessToken,
+      noContent: true,
+      body: JSON.stringify({ mode }),
+    }
   );
 }

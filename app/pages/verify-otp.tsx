@@ -9,11 +9,17 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View, Text, TextInput, TouchableOpacity, StyleSheet,
-  ActivityIndicator, ScrollView, Dimensions, Clipboard,
+  ActivityIndicator, ScrollView, Dimensions, Clipboard, BackHandler,
 } from 'react-native';
+
 import { useRouter, useLocalSearchParams } from 'expo-router';
 import { ArrowLeft, AlertCircle, ClipboardPaste } from 'lucide-react-native';
 import * as authApi from '@/lib/api/auth';
+import {
+  getMobileRegisterCache,
+  saveMobileRegisterCache,
+  clearMobileRegisterCache,
+} from '@/lib/registerCache';
 import { useAuth } from '@/lib/auth/AuthContext';
 import { OtpIllustration } from '@/components/OnboardingIllustrations';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -40,8 +46,8 @@ export default function VerifyOtpPage() {
   const params = useLocalSearchParams<{ userId: string; email: string }>();
   const { completeLogin } = useAuth();
 
-  const userId = params.userId ?? '';
-  const email = params.email ?? '';
+  const [userId, setUserId] = useState(params.userId ?? '');
+  const [email, setEmail] = useState(params.email ?? '');
 
   const [digits, setDigits] = useState<string[]>(Array(OTP_LENGTH).fill(''));
   const [isVerifying, setIsVerifying] = useState(false);
@@ -52,12 +58,56 @@ export default function VerifyOtpPage() {
   const [cooldown, setCooldown] = useState(0);
   const inputsRef = useRef<(TextInput | null)[]>([]);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const isVerifiedRef = useRef<boolean>(false);
+
+  const handleBack = useCallback(() => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace('/pages/register' as any);
+    }
+  }, [router]);
+
+  // Intercept hardware back button on Android
+  useEffect(() => {
+    const onBackPress = () => {
+      handleBack();
+      return true;
+    };
+    const sub = BackHandler.addEventListener('hardwareBackPress', onBackPress);
+    return () => sub.remove();
+  }, [handleBack]);
+
+  // Restore and persist verification cache (does not cancel on unmount or navigation)
+  useEffect(() => {
+    if (params.userId) {
+      setUserId(params.userId);
+      saveMobileRegisterCache({ registeredUserId: params.userId, showOtpView: true });
+    }
+    if (params.email) {
+      setEmail(params.email);
+    }
+    if (!params.userId) {
+      getMobileRegisterCache().then((cached) => {
+        if (cached?.registeredUserId) {
+          setUserId(cached.registeredUserId);
+          if (cached.form?.email) setEmail(cached.form.email);
+        }
+      }).catch(() => {});
+    }
+  }, [params.userId, params.email]);
 
   // Load OTP status on mount
   useEffect(() => {
     if (!userId) return;
     authApi.getOtpStatus(userId)
-      .then((s) => { setResendCount(s.resendCount); setResendLimit(s.resendLimit); })
+      .then((s) => {
+        setResendCount(s.resendCount);
+        setResendLimit(s.resendLimit);
+        if (s.verified) {
+          isVerifiedRef.current = true;
+        }
+      })
       .catch(() => {});
   }, [userId]);
 
@@ -85,12 +135,15 @@ export default function VerifyOtpPage() {
     setError('');
     try {
       const session = await authApi.verifyOtp(userId, code);
+      isVerifiedRef.current = true;
       await completeLogin(session);
+      await clearMobileRegisterCache();
 
       const hasMetadata = Boolean(
         (session.user?.user_metadata?.course || session.user?.user_metadata?.department) &&
         session.user?.user_metadata?.year_level
       );
+
       const userNeedsOnboarding = Boolean(
         !session.user?.user_metadata?.onboarding_complete && !hasMetadata
       );
@@ -212,10 +265,13 @@ export default function VerifyOtpPage() {
         {/* Header */}
         <View style={[styles.header, { paddingTop: Math.max(insets.top + 8, 20) }]}>
           <TouchableOpacity
-            onPress={() => router.canGoBack() ? router.back() : router.replace('/pages/register' as any)}
+            onPress={handleBack}
+            hitSlop={14}
             style={styles.backBtn}
+            accessibilityLabel="Go back"
           >
-            <ArrowLeft size={18} color="#374151" />
+
+            <ArrowLeft size={24} color={GREEN} />
           </TouchableOpacity>
 
           <View style={styles.illustrationWrap}>
@@ -237,16 +293,12 @@ export default function VerifyOtpPage() {
 
         {/* Card */}
         <View style={styles.card}>
-          <View style={styles.instructionRow}>
-            <Text style={styles.instruction}>
-              Enter the code below — expires in{' '}
+          {/* Instruction */}
+          <View style={{ alignItems: 'center', marginBottom: 16 }}>
+            <Text style={{ fontSize: 13, color: '#6B7280', textAlign: 'center' }}>
+              Enter the 6-digit code below — expires in{' '}
               <Text style={{ fontWeight: '700', color: '#111827' }}>10 minutes</Text>.
             </Text>
-            {/* Paste button */}
-            <TouchableOpacity onPress={handlePaste} style={styles.pasteBtn} hitSlop={8}>
-              <ClipboardPaste size={15} color={GREEN} />
-              <Text style={styles.pasteBtnText}>Paste</Text>
-            </TouchableOpacity>
           </View>
 
           {/* OTP boxes */}
@@ -290,25 +342,31 @@ export default function VerifyOtpPage() {
             {isVerifying ? (
               <ActivityIndicator color="#fff" size="small" />
             ) : (
-              <Text style={styles.verifyBtnText}>Verify Email</Text>
+              <Text style={styles.verifyBtnText}>Verify Code</Text>
             )}
           </TouchableOpacity>
 
-          {/* Resend */}
+          {/* Resend under verify button */}
           <View style={styles.resendSection}>
             {resendCount >= resendLimit ? (
               <Text style={styles.resendLimitText}>Maximum resends reached. Contact support.</Text>
             ) : (
-              <>
-                <Text style={styles.resendHint}>
-                  {resendsLeft} resend{resendsLeft !== 1 ? 's' : ''} remaining
+              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+                <Text style={{ fontSize: 13, color: '#6B7280' }}>
+                  Didn&apos;t receive code?
                 </Text>
-                <TouchableOpacity onPress={handleResend} disabled={!canResend}>
-                  <Text style={[styles.resendBtn, !canResend && styles.resendBtnDisabled]}>
-                    {cooldown > 0 ? `Resend in ${cooldown}s` : isResending ? 'Sending…' : 'Resend code'}
+                {cooldown > 0 ? (
+                  <Text style={{ fontSize: 13, fontWeight: '700', color: '#9CA3AF' }}>
+                    Resend in {cooldown}s
                   </Text>
-                </TouchableOpacity>
-              </>
+                ) : (
+                  <TouchableOpacity onPress={handleResend} disabled={!canResend}>
+                    <Text style={{ fontSize: 13, fontWeight: '700', color: GREEN }}>
+                      {isResending ? 'Sending…' : 'Resend'}
+                    </Text>
+                  </TouchableOpacity>
+                )}
+              </View>
             )}
           </View>
         </View>
@@ -327,20 +385,14 @@ const styles = StyleSheet.create({
     paddingBottom: 18,
     paddingHorizontal: 20,
     alignItems: 'center',
-    borderBottomWidth: 1,
-    borderBottomColor: '#F3F4F6',
   },
   backBtn: {
     alignSelf: 'flex-start',
-    width: 34,
-    height: 34,
-    borderRadius: 10,
-    backgroundColor: '#F9FAFB',
-    borderWidth: 1,
-    borderColor: '#E5E7EB',
+    width: 40,
+    height: 40,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 12,
+    marginBottom: 8,
   },
   illustrationWrap: { marginBottom: 12 },
   title: {
@@ -448,8 +500,6 @@ const styles = StyleSheet.create({
   resendSection: {
     alignItems: 'center',
     paddingTop: 14,
-    borderTopWidth: 1,
-    borderTopColor: '#F3F4F6',
   },
   resendHint: { fontSize: 11, color: '#9CA3AF', marginBottom: 5 },
   resendBtn: { fontSize: 13, color: GREEN, fontWeight: '600' },

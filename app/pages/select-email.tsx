@@ -67,7 +67,7 @@ export default function SelectEmailScreen() {
           <View style={styles.headerText}>
             <Text style={styles.title}>How would you like to sign up?</Text>
             <Text style={styles.subtitle}>
-              Choose an email type to verify your CHMSU Alijis student identity.
+              Choose an email type to verify your student identity.
             </Text>
           </View>
 
@@ -98,7 +98,7 @@ export default function SelectEmailScreen() {
 
               <Text style={styles.cardTitle}>CHMSU Student Email</Text>
               <Text style={styles.cardDesc}>
-                Instant verification code sent directly to your institutional student inbox. No ID upload needed.
+                Instant verification code sent to your student inbox. No ID upload needed.
               </Text>
             </Pressable>
 
@@ -120,7 +120,6 @@ export default function SelectEmailScreen() {
                   <FileCheck size={22} color={selectedType === "external" ? GREEN : "#4B5563"} />
                 </View>
 
-
                 {selectedType === "external" && (
                   <CheckCircle2 size={22} color={GREEN} style={styles.checkIcon} />
                 )}
@@ -128,7 +127,7 @@ export default function SelectEmailScreen() {
 
               <Text style={styles.cardTitle}>Personal Email</Text>
               <Text style={styles.cardDesc}>
-                For students awaiting institutional account activation. Requires a quick photo scan of your Student ID or COR.
+                For students awaiting school email. Requires Student ID or COR verification.
               </Text>
             </Pressable>
           </View>

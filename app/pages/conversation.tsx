@@ -17,8 +17,10 @@ import {
   Share,
   StatusBar,
   TouchableOpacity,
+  UIManager,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
+import { requireOptionalNativeModule } from "expo-modules-core";
 import { getFluentEmojiUrl } from "@/lib/fluentEmoji";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
@@ -45,7 +47,6 @@ import {
   Share2,
   Send,
   Trash2,
-  RotateCcw,
 } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/lib/auth/AuthContext";
@@ -75,15 +76,27 @@ import { ChatInput } from "@/components/ChatInput";
 import { UserAvatar, resolveImageUri } from "@/components/UserAvatar";
 import { AnonymousAvatar } from "@/components/AnonymousAvatar";
 import { FluentEmojiPickerModal } from "@/components/FluentEmojiPickerModal";
+import { OfflineAnimatedEmoji } from "@/components/OfflineAnimatedEmoji";
 import { MatchRevealSheet } from "@/components/MatchRevealSheet";
 import { RoadmapProgressionBadge } from "@/components/RoadmapProgressionBadge";
 import { KeyboardHugView } from "@/components/KeyboardHugView";
 import { KeyboardGestureArea } from "react-native-keyboard-controller";
 import { ConfirmModal } from "@/components/ConfirmModal";
+import { ReportModal } from "@/components/ReportModal";
+import { BlurView } from "expo-blur";
 import type { Message, Conversation, MessageGroupPosition } from "@/types/conversation";
 import type { Profile } from "@/types/profile";
 
 const REACTION_EMOJIS = ["❤️", "😂", "😮", "😢", "😡", "👍"];
+
+const isNativeBlurAvailable =
+  Platform.OS !== "web" &&
+  (Platform.OS === "ios" ||
+    Boolean(
+      UIManager.getViewManagerConfig?.("ExpoBlurView") ||
+      (UIManager as any)?.hasViewManagerConfig?.("ExpoBlurView") ||
+      (UIManager as any)?.ExpoBlurView
+    ));
 
 function AnimatedReactionEmoji({
   emoji,
@@ -123,8 +136,6 @@ function AnimatedReactionEmoji({
     }).start();
   };
 
-  const fluentUrl = getFluentEmojiUrl(emoji, { animated: true });
-
   return (
     <Pressable
       onPress={onPress}
@@ -140,15 +151,12 @@ function AnimatedReactionEmoji({
     >
       <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
         <Animated.View style={{ transform: [{ scale: pressAnim }] }}>
-          {fluentUrl ? (
-            <Image
-              source={{ uri: fluentUrl }}
-              style={{ width: 32, height: 32 }}
-              resizeMode="contain"
-            />
-          ) : (
-            <Text style={{ fontSize: 24 }}>{emoji}</Text>
-          )}
+          <OfflineAnimatedEmoji
+            emoji={emoji}
+            size={32}
+            preferLottie={true}
+            fallbackText={emoji}
+          />
         </Animated.View>
       </Animated.View>
     </Pressable>
@@ -158,17 +166,28 @@ function AnimatedReactionEmoji({
 
 
 async function safeCopyToClipboard(text: string): Promise<void> {
+  // 1. Web browser: modern navigator.clipboard
+  if (Platform.OS === "web") {
+    try {
+      if (typeof navigator !== "undefined" && navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(text);
+        return;
+      }
+    } catch { }
+  }
+
+  // 2. Mobile: safely check if ExpoClipboard is compiled into the native binary
   try {
-    const Clipboard = require("expo-clipboard");
-    if (Clipboard && typeof Clipboard.setStringAsync === "function") {
-      await Clipboard.setStringAsync(text);
+    const ExpoClipboard = requireOptionalNativeModule<{ setStringAsync?: (text: string) => Promise<boolean> }>("ExpoClipboard");
+    if (ExpoClipboard && typeof ExpoClipboard.setStringAsync === "function") {
+      await ExpoClipboard.setStringAsync(text);
       return;
     }
   } catch {
     // Native module not linked in current dev binary
   }
 
-  // Graceful fallback: open native Share dialog so user can still copy or share text
+  // 3. Graceful fallback: open native Share dialog so user can still copy or share text
   try {
     await Share.share({ message: text });
   } catch { }
@@ -318,6 +337,7 @@ export default function ConversationScreen() {
   const [showOverflow, setShowOverflow] = useState(false);
   const [showBlockConfirm, setShowBlockConfirm] = useState(false);
   const [showReportConfirm, setShowReportConfirm] = useState(false);
+  const [showReportModal, setShowReportModal] = useState(false);
   const [showDeleteConvConfirm, setShowDeleteConvConfirm] = useState(false);
 
   // ── Minute-tick for realtime deadline countdown ──────────────────────
@@ -464,7 +484,13 @@ export default function ConversationScreen() {
           (m) => !serverIds.has(m.id) && !m.id.startsWith("temp-") && new Date(m.created_at).getTime() < firstServerTime
         );
 
-        const combined = [...olderHistory, ...msgs];
+        const combined = [...olderHistory, ...msgs].map((m) => {
+          const prevMsg = prev.find((p) => p.id === m.id);
+          if (prevMsg?.is_deleted) {
+            return { ...m, is_deleted: true, content: "", image_url: null, reactions: [] };
+          }
+          return m;
+        });
 
         if (pending.length === 0) {
           setCachedChat(conversationId, combined, res.hasMore, res.nextCursor, user?.id);
@@ -684,7 +710,24 @@ export default function ConversationScreen() {
       }
     };
 
+    const onMessageDeleted = (payload: any) => {
+      if (payload?.conversationId === conversationId && payload?.messageId) {
+        setMessages((prev) => {
+          const updated = prev.map((m) =>
+            m.id === payload.messageId
+              ? { ...m, is_deleted: true, content: "", image_url: null, reactions: [] }
+              : m
+          );
+          if (conversationId) {
+            setCachedChat(conversationId, updated, hasMore, nextCursor, user?.id);
+          }
+          return updated;
+        });
+      }
+    };
+
     socket.on("conversation:message_new", onMessageNew);
+    socket.on("conversation:message_deleted", onMessageDeleted);
     socket.on("conversation:streak_updated", onStreakUpdate);
     socket.on("matchmaking:stage_updated", onStageUpdated);
     socket.on("matchmaking:streak_update", onStreakUpdate);
@@ -698,6 +741,7 @@ export default function ConversationScreen() {
 
     return () => {
       socket.off("conversation:message_new", onMessageNew);
+      socket.off("conversation:message_deleted", onMessageDeleted);
       socket.off("conversation:streak_updated", onStreakUpdate);
       socket.off("matchmaking:stage_updated", onStageUpdated);
       socket.off("matchmaking:streak_update", onStreakUpdate);
@@ -945,25 +989,28 @@ export default function ConversationScreen() {
 
   // ── Block / Report ────────────────────────────────────────────────────
   const handleBlock = useCallback(async () => {
-    if (!otherProfile || !accessToken) return;
+    const targetId = partnerUserId || (otherProfile?.id && otherProfile.id !== "anonymous" ? otherProfile.id : null);
+    if (!targetId || !accessToken) return;
     setShowBlockConfirm(false);
     try {
-      await blockUser(otherProfile.id, accessToken);
+      await blockUser(targetId, accessToken);
       router.back();
     } catch (err) {
       console.warn("Failed to block user", err);
     }
-  }, [otherProfile, accessToken]);
+  }, [partnerUserId, otherProfile, accessToken]);
 
-  const handleReport = useCallback(async () => {
-    if (!otherProfile || !accessToken) return;
-    setShowReportConfirm(false);
-    try {
-      await reportUser(otherProfile.id, "Reported from chat", accessToken);
-    } catch (err) {
-      console.warn("Failed to report user", err);
+  const handleReportSubmit = useCallback(async (reason: string, details?: string) => {
+    const targetId = partnerUserId || (otherProfile?.id && otherProfile.id !== "anonymous" ? otherProfile.id : null);
+    if (!targetId || !accessToken) {
+      throw new Error("Unable to identify user to report");
     }
-  }, [otherProfile, accessToken]);
+    const fullReason = details ? `${reason} - ${details}` : reason;
+    await reportUser(targetId, fullReason, accessToken, {
+      conversationId: conversationId || undefined,
+      notes: details,
+    });
+  }, [partnerUserId, otherProfile, accessToken, conversationId]);
 
   const handleEndMatch = useCallback(async () => {
     const id = matchInfo?.matchId || matchInfo?.id || conversationId;
@@ -1351,18 +1398,32 @@ export default function ConversationScreen() {
           setSelectedLayout(null);
         }}
       >
-        {/* Full-screen backdrop */}
-        <View
-          style={[
-            StyleSheet.absoluteFill,
-            {
-              backgroundColor: "rgba(0, 0, 0, 0.65)",
-              ...(Platform.OS === "web"
-                ? ({ backdropFilter: "blur(16px)", WebkitBackdropFilter: "blur(16px)" } as any)
-                : {}),
-            },
-          ]}
-        />
+        {/* Full-screen backdrop with intensity 80 blur */}
+        {Platform.OS === "web" ? (
+          <View
+            style={[
+              StyleSheet.absoluteFill,
+              {
+                backgroundColor: "rgba(0, 0, 0, 0.65)",
+                backdropFilter: "blur(80px)",
+                WebkitBackdropFilter: "blur(80px)",
+              } as any,
+            ]}
+          />
+        ) : isNativeBlurAvailable ? (
+          <BlurView
+            intensity={80}
+            tint="dark"
+            style={StyleSheet.absoluteFill}
+          />
+        ) : (
+          <View
+            style={[
+              StyleSheet.absoluteFill,
+              { backgroundColor: "rgba(10, 15, 29, 0.82)" },
+            ]}
+          />
+        )}
 
         {/* Tap backdrop to dismiss */}
         <Pressable
@@ -1416,20 +1477,26 @@ export default function ConversationScreen() {
             : (SCREEN_HEIGHT - bubbleHeight) / 2;
 
           const REACTIONS_HEIGHT = 56;
-          const OPTIONS_HEIGHT = 220;
+          const optionCount = 2 + (Boolean(selectedMessage.content) ? 1 : 0) + 1 + (isSelectedMine ? 1 : 0) + (!isSelectedMine ? 1 : 0);
+          const OPTIONS_HEIGHT = optionCount * 44 + 14;
           const GAP = 12;
           const PADDING = 16;
 
           // Fixed position in one place for all messages (centered vertically)
-          const totalPopupHeight = REACTIONS_HEIGHT + GAP + bubbleHeight + GAP + OPTIONS_HEIGHT;
+          const availableBubbleHeight = Math.max(
+            50,
+            SCREEN_HEIGHT - insets.top - insets.bottom - REACTIONS_HEIGHT - OPTIONS_HEIGHT - GAP * 3 - 32
+          );
+          const effectiveBubbleHeight = Math.min(bubbleHeight, availableBubbleHeight);
+          const totalPopupHeight = REACTIONS_HEIGHT + GAP + effectiveBubbleHeight + GAP + OPTIONS_HEIGHT;
           const fixedTopY = Math.max(
-            insets.top + 20,
-            Math.round((SCREEN_HEIGHT - totalPopupHeight) / 2) - 15
+            insets.top + 16,
+            Math.round((SCREEN_HEIGHT - totalPopupHeight) / 2) - 10
           );
 
           const reactionsTop = fixedTopY;
           const messageTop = fixedTopY + REACTIONS_HEIGHT + GAP;
-          const optionsTop = messageTop + bubbleHeight + GAP;
+          const optionsTop = messageTop + effectiveBubbleHeight + GAP;
 
           // Horizontal alignment: right-aligned if sent by me, left-aligned if received
           const clampedMessageX = isSelectedMine
@@ -1674,25 +1741,29 @@ export default function ConversationScreen() {
                   </Text>
                 </TouchableOpacity>
 
-                {/* Delete for everyone (sender only) or Report (partner) */}
-                {isSelectedMine ? (
+                {/* Delete for everyone (available only for messages created by caller) */}
+                {isSelectedMine && (
                   <TouchableOpacity
                     activeOpacity={0.6}
                     onPress={async () => {
                       const msgId = selectedMessage.id;
                       const convId = selectedMessage.conversation_id || conversationId;
-                      // Optimistically tombstone — show italic placeholder immediately
-                      setMessages((prev) =>
-                        prev.map((m) =>
+                      // Optimistically tombstone in-place — instant UI swap
+                      setMessages((prev) => {
+                        const updated = prev.map((m) =>
                           m.id === msgId
-                            ? { ...m, is_deleted: true, content: "", image_url: null }
+                            ? { ...m, is_deleted: true, content: "", image_url: null, reactions: [] }
                             : m
-                        )
-                      );
+                        );
+                        if (convId) {
+                          setCachedChat(convId, updated, hasMore, nextCursor, user?.id);
+                        }
+                        return updated;
+                      });
                       setShowReactions(false);
                       setSelectedMessage(null);
                       setSelectedLayout(null);
-                      if (accessToken) {
+                      if (accessToken && convId) {
                         apiDeleteMessage(convId, msgId, "delete_for_everyone", accessToken).catch(() => {});
                       }
                     }}
@@ -1703,19 +1774,22 @@ export default function ConversationScreen() {
                       paddingVertical: 10,
                     }}
                   >
-                    <RotateCcw size={20} color="#EF4444" />
+                    <Trash2 size={20} color="#EF4444" />
                     <Text style={{ fontSize: 16, color: "#EF4444", fontWeight: "400" }}>
                       Delete for everyone
                     </Text>
                   </TouchableOpacity>
-                ) : (
+                )}
+
+                {/* Report (partner message) */}
+                {!isSelectedMine && (
                   <TouchableOpacity
                     activeOpacity={0.6}
                     onPress={() => {
                       setShowReactions(false);
                       setSelectedMessage(null);
                       setSelectedLayout(null);
-                      setShowReportConfirm(true);
+                      setShowReportModal(true);
                     }}
                     style={{
                       flexDirection: "row",
@@ -1871,7 +1945,7 @@ export default function ConversationScreen() {
               label={isAnonymous ? "Report match" : "Report user"}
               onPress={() => {
                 setShowOverflow(false);
-                setShowReportConfirm(true);
+                setShowReportModal(true);
               }}
             />
             <OverflowRow
@@ -1914,14 +1988,11 @@ export default function ConversationScreen() {
         onCancel={() => setShowDeleteConvConfirm(false)}
       />
 
-      <ConfirmModal
-        visible={showReportConfirm}
-        title="Report this user?"
-        description="We'll review their account for any violations. Your report is confidential."
-        confirmLabel="Report"
-        destructive
-        onConfirm={handleReport}
-        onCancel={() => setShowReportConfirm(false)}
+      <ReportModal
+        visible={showReportModal}
+        onClose={() => setShowReportModal(false)}
+        onSubmitReport={handleReportSubmit}
+        targetType="user"
       />
 
       <ConfirmModal

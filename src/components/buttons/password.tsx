@@ -1,32 +1,46 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, forwardRef } from "react";
 import {
   View,
   Text,
   TextInput,
   Pressable,
   Animated,
+  StyleProp,
+  ViewStyle,
+  TextInputProps,
 } from "react-native";
 import { Lock, Eye, EyeOff, Check, X } from "lucide-react-native";
 import { PASSWORD_RULES, passwordStrength } from "@/lib/validator/password";
 
-type PasswordInputProps = {
+export type PasswordInputProps = {
   value: string;
   onChangeText: (text: string) => void;
   onBlur?: () => void;
+  onFocus?: () => void;
   error?: string | null;
   placeholder?: string;
   /** Show the strength validator UI below the input (default true) */
   showStrength?: boolean;
+  containerStyle?: StyleProp<ViewStyle>;
+  returnKeyType?: TextInputProps["returnKeyType"];
+  onSubmitEditing?: () => void;
 };
 
-export default function PasswordInput({
-  value,
-  onChangeText,
-  onBlur,
-  error,
-  placeholder = "Enter your password",
-  showStrength = true,
-}: PasswordInputProps) {
+const PasswordInput = forwardRef<TextInput, PasswordInputProps>(function PasswordInput(
+  {
+    value,
+    onChangeText,
+    onBlur,
+    onFocus,
+    error,
+    placeholder = "Enter your password",
+    showStrength = true,
+    containerStyle,
+    returnKeyType,
+    onSubmitEditing,
+  },
+  ref
+) {
   const [showPassword, setShowPassword] = useState(false);
   const [focused, setFocused] = useState(false);
   const errorAnim = useRef(new Animated.Value(0)).current;
@@ -58,7 +72,7 @@ export default function PasswordInput({
     "Very strong";
 
   return (
-    <View style={{ marginBottom: 8 }}>
+    <View style={[{ position: "relative", marginBottom: 20 }, containerStyle]}>
       {/* Floating Error */}
       <Animated.View
         style={{
@@ -104,16 +118,19 @@ export default function PasswordInput({
         <Lock size={17} color={error ? "#DC2626" : focused ? "#1A6B3C" : "#9CA3AF"} />
 
         <TextInput
+          ref={ref}
           value={value}
           onChangeText={onChangeText}
           onBlur={() => { setFocused(false); onBlur?.(); }}
-          onFocus={() => setFocused(true)}
+          onFocus={() => { setFocused(true); onFocus?.(); }}
           placeholder={placeholder}
           placeholderTextColor="#9CA3AF"
           secureTextEntry={!showPassword}
           autoCapitalize="none"
           autoCorrect={false}
           textContentType="password"
+          returnKeyType={returnKeyType}
+          onSubmitEditing={onSubmitEditing}
           style={{
             flex: 1,
             marginLeft: 10,
@@ -198,4 +215,6 @@ export default function PasswordInput({
       )}
     </View>
   );
-}
+});
+
+export default PasswordInput;

@@ -456,7 +456,8 @@ export default function NotificationsScreen() {
         item.type === "post_like" ||
         item.type === "comment" ||
         item.type === "post_comment" ||
-        item.type === "comment_like"
+        item.type === "comment_like" ||
+        item.type === "comment_mention"
       ) {
         const targetPostId = item.post_id || item.target_id;
         if (targetPostId) {
@@ -465,6 +466,7 @@ export default function NotificationsScreen() {
             params: {
               postId: targetPostId,
               openComments: "true",
+              ...(item.comment_id ? { commentId: item.comment_id } : {}),
             },
           });
         } else {
@@ -841,7 +843,12 @@ export default function NotificationsScreen() {
           </Text>
 
           <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-            {(item.type === "message" || item.type === "anon_match") && (
+            {(item.type === "message" ||
+              item.type === "anon_match" ||
+              item.type === "comment" ||
+              item.type === "post_comment" ||
+              item.type === "comment_reply" ||
+              item.type === "comment_mention") && (
               <TouchableOpacity
                 onPress={() => handleTapNotification(item)}
                 hitSlop={8}

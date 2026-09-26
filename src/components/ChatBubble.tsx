@@ -5,6 +5,7 @@ import { router } from "expo-router";
 import type { Message, MessageReaction, MessageGroupPosition } from "@/types/conversation";
 import { resolveImageUri } from "./UserAvatar";
 import { getFluentEmojiUrl } from "@/lib/fluentEmoji";
+import { OfflineAnimatedEmoji } from "@/components/OfflineAnimatedEmoji";
 
 export interface BubbleLayout {
   x: number;
@@ -242,7 +243,7 @@ export function ChatBubble({
   const extraBottom = hasReactions ? 18 : 0;
 
   // ── Tombstone: deleted for everyone ──────────────────────────────────────
-  if (message.is_deleted) {
+  if (message.is_deleted || (message as any).isDeleted) {
     return (
       <View
         style={{
@@ -489,15 +490,24 @@ export function ChatBubble({
         {/* Text content */}
         {message.content ? (
           <View style={{ paddingHorizontal: hasImage ? 10 : 0, paddingBottom: hasImage ? 6 : 0 }}>
-            <Text
-              style={{
-                fontSize: isEmojiOnly ? 38 : 15,
-                lineHeight: isEmojiOnly ? 46 : 21,
-                color: isMine ? (isEmojiOnly ? "#111827" : "#FFFFFF") : "#111827",
-              }}
-            >
-              {message.content}
-            </Text>
+            {isEmojiOnly ? (
+              <OfflineAnimatedEmoji
+                emoji={message.content.trim()}
+                size={44}
+                fallbackText={message.content}
+                preferLottie={true}
+              />
+            ) : (
+              <Text
+                style={{
+                  fontSize: 15,
+                  lineHeight: 21,
+                  color: isMine ? "#FFFFFF" : "#111827",
+                }}
+              >
+                {message.content}
+              </Text>
+            )}
           </View>
         ) : null}
 
@@ -577,7 +587,6 @@ export function ChatBubble({
             }}
           >
             {groupReactions(message.reactions).map(({ emoji, count }) => {
-              const fluentUrl = getFluentEmojiUrl(emoji);
               return (
                 <View
                   key={emoji}
@@ -587,22 +596,12 @@ export function ChatBubble({
                     gap: 3,
                   }}
                 >
-                  {fluentUrl ? (
-                    <Image
-                      source={{ uri: fluentUrl }}
-                      style={{ width: 20, height: 20 }}
-                      resizeMode="contain"
-                    />
-                  ) : (
-                    <Text
-                      style={{
-                        fontSize: 13,
-                        lineHeight: 16,
-                      }}
-                    >
-                      {emoji}
-                    </Text>
-                  )}
+                  <OfflineAnimatedEmoji
+                    emoji={emoji}
+                    size={18}
+                    preferLottie={true}
+                    fallbackText={emoji}
+                  />
                   {count > 1 && (
                     <Text
                       style={{
