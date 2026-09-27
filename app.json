@@ -1,7 +1,7 @@
 {
   "expo": {
     "name": "Ally-jis",
-    "slug": "ally",
+    "slug": "allyjis",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/group9.png",
@@ -24,11 +24,12 @@
     },
     "android": {
       "permissions": [
-        "CAMERA",
-        "READ_EXTERNAL_STORAGE",
-        "WRITE_EXTERNAL_STORAGE",
-        "READ_MEDIA_IMAGES",
-        "READ_MEDIA_VIDEO"
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE",
+        "android.permission.READ_MEDIA_IMAGES",
+        "android.permission.READ_MEDIA_VIDEO",
+        "android.permission.RECORD_AUDIO"
       ],
       "softwareKeyboardLayoutMode": "resize",
       "versionCode": 1,
@@ -36,7 +37,7 @@
         "foregroundImage": "./assets/images/group9.png",
         "backgroundColor": "#1f663c"
       },
-      "package": "com.allyjis.app",
+      "package": "com.allyjis.mobile",
       "googleServicesFile": "./google-services.json",
       "intentFilters": [
         {
@@ -98,7 +99,7 @@
       "expo-image"
     ],
     "updates": {
-      "url": "https://u.expo.dev/60c88f1d-8d58-4a90-8a29-c7444e8c1f37",
+      "url": "https://u.expo.dev/fb558069-d3da-43c2-ad88-5c3ee45b5144",
       "enabled": true,
       "checkAutomatically": "ON_LOAD",
       "fallbackToCacheTimeout": 0
@@ -112,8 +113,9 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "60c88f1d-8d58-4a90-8a29-c7444e8c1f37"
+        "projectId": "fb558069-d3da-43c2-ad88-5c3ee45b5144"
       }
-    }
+    },
+    "owner": "ally-jis"
   }
 }

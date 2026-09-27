@@ -18,3 +18,4 @@ android/
 ios/
 *.apk
 *.aab
+*-adminsdk-*.json

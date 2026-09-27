@@ -1,21 +1,21 @@
 {
   "project_info": {
-    "project_number": "895776105284",
-    "project_id": "notification-4c5d8",
-    "storage_bucket": "notification-4c5d8.firebasestorage.app"
+    "project_number": "732407859941",
+    "project_id": "allyjis",
+    "storage_bucket": "allyjis.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:895776105284:android:fa253c4306fcfa02d3ed11",
+        "mobilesdk_app_id": "1:732407859941:android:42420a178c93b97b1ee20c",
         "android_client_info": {
-          "package_name": "com.allyjis.app"
+          "package_name": "com.allyjis.mobile"
         }
       },
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyDfSzodg3u5rdE9FxyFTV2bDDf6GbvxAbE"
+          "current_key": "AIzaSyB5I7Jj2zslpU299pW3GBfNk-BuZyjBWMk"
         }
       ],
       "services": {
