@@ -11,15 +11,14 @@ import {
 import {
   X,
   Lock,
-  Sparkles,
-  Flame,
+  Zap,
+  Star,
   MessageSquareText,
-  UserPlus,
-  Shield,
-  Heart,
-  ChevronRight,
+  Users,
   LogOut,
-  Compass,
+  CheckCircle2,
+  Circle,
+  Flame,
   Gamepad2,
   Image as ImageIcon,
 } from "lucide-react-native";
@@ -28,15 +27,17 @@ import { AnonymousAvatar } from "@/components/AnonymousAvatar";
 import {
   getMatchReveal,
   RevealData,
+  DailyTaskStatus,
   endMatch as apiEndMatch,
 } from "@/lib/api/matchmaking";
-import { STAGE_NAMES, STAGE_THRESHOLDS, stageName, avatarColorFor } from "@/constants/matchOptions";
+import { STAGE_NAMES, POINTS_PER_STAGE, stageName, avatarColorFor } from "@/constants/matchOptions";
 
 interface MatchRevealSheetProps {
   visible: boolean;
   onClose: () => void;
   matchId: string;
   stage?: number;
+  stagePoints?: number;
   dayStreak?: number;
   partnerAlias?: string;
   partnerAvatar?: string;
@@ -45,11 +46,55 @@ interface MatchRevealSheetProps {
   ended?: boolean;
 }
 
+// Simple chip component
+function Chip({ label }: { label: string }) {
+  return (
+    <View
+      style={{
+        backgroundColor: "#F1F5F9",
+        paddingHorizontal: 10,
+        paddingVertical: 5,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: "#E2E8F0",
+      }}
+    >
+      <Text style={{ fontSize: 12, fontWeight: "600", color: "#334155" }}>
+        {label}
+      </Text>
+    </View>
+  );
+}
+
+function InfoRow({ label, value }: { label: string; value?: string | null }) {
+  if (!value) return null;
+  return (
+    <View
+      style={{
+        flexDirection: "row",
+        justifyContent: "space-between",
+        paddingVertical: 8,
+        borderBottomWidth: 1,
+        borderBottomColor: "#F1F5F9",
+      }}
+    >
+      <Text style={{ fontSize: 12, color: "#64748B" }}>{label}</Text>
+      <Text style={{ fontSize: 12, fontWeight: "700", color: "#0F172A" }}>
+        {value}
+      </Text>
+    </View>
+  );
+}
+
+// ── Tab types ────────────────────────────────────────────────────────────────
+type TabId = "about" | "tasks" | "feed";
+
 export function MatchRevealSheet({
   visible,
   onClose,
   matchId,
-  stage: initialStage = 0,
+  stage: initialStage = 1,
+  stagePoints: initialStagePoints = 0,
   dayStreak: initialStreak = 0,
   partnerAlias = "Anonymous Ally",
   partnerAvatar = "fox",
@@ -57,11 +102,10 @@ export function MatchRevealSheet({
   onMatchEnded,
   ended = false,
 }: MatchRevealSheetProps) {
-  const { accessToken, user } = useAuth();
+  const { accessToken } = useAuth();
   const [loading, setLoading] = useState(true);
   const [revealData, setRevealData] = useState<RevealData | null>(null);
-  const [sendingRequest, setSendingRequest] = useState(false);
-  const [friendRequestSent, setFriendRequestSent] = useState(false);
+  const [activeTab, setActiveTab] = useState<TabId>("about");
 
   const fetchReveal = useCallback(async () => {
     if (!matchId || !accessToken) return;
@@ -83,9 +127,20 @@ export function MatchRevealSheet({
   }, [visible, fetchReveal]);
 
   const stage = revealData?.stage ?? initialStage;
-  const streak = revealData?.dayStreak ?? initialStreak;
+  const dayStreak = revealData?.dayStreak ?? initialStreak;
   const partner = revealData?.partner;
-  const matchColor = avatarColorFor(partnerAvatar);
+  const stagePoints = revealData?.stagePoints ?? initialStagePoints;
+  const matchPoints = revealData?.matchPoints ?? 0;
+  const effectiveMultiplier = revealData?.effectiveMultiplier ?? 1;
+  const isProfileUnlocked = Boolean(revealData?.isProfileUnlocked || matchPoints >= 500);
+  const pointsProgress = Math.min(100, Math.round((matchPoints / 500) * 100));
+  const pointsRemaining = Math.max(0, 500 - matchPoints);
+
+  // Next streak milestone
+  let nextStageDays = 3;
+  if (stage === 2) nextStageDays = 7;
+  else if (stage === 3) nextStageDays = 10;
+  const daysToNextStage = Math.max(0, nextStageDays - dayStreak);
 
   const handleEndMatch = () => {
     Alert.alert(
@@ -115,13 +170,7 @@ export function MatchRevealSheet({
 
   return (
     <Modal visible={visible} animationType="slide" transparent={true} onRequestClose={onClose}>
-      <View
-        style={{
-          flex: 1,
-          backgroundColor: "rgba(0,0,0,0.65)",
-          justifyContent: "flex-end",
-        }}
-      >
+      <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.65)", justifyContent: "flex-end" }}>
         <Pressable style={{ flex: 1 }} onPress={onClose} />
 
         <View
@@ -129,11 +178,11 @@ export function MatchRevealSheet({
             backgroundColor: "#FFFFFF",
             borderTopLeftRadius: 32,
             borderTopRightRadius: 32,
-            maxHeight: "88%",
+            maxHeight: "90%",
             paddingBottom: 32,
           }}
         >
-          {/* Header Drag Handle & Title */}
+          {/* ── Drag Handle + Header ── */}
           <View style={{ alignItems: "center", paddingTop: 12, paddingBottom: 6 }}>
             <View
               style={{
@@ -157,15 +206,15 @@ export function MatchRevealSheet({
                 <AnonymousAvatar
                   avatarKey={partnerAvatar}
                   size={42}
-                  photoUrl={stage >= 4 ? partner?.avatarUrl : null}
+                  photoUrl={isProfileUnlocked ? partner?.avatarUrl : null}
                   isBlurred={false}
                 />
                 <View>
                   <Text style={{ fontSize: 17, fontWeight: "800", color: "#0F172A" }}>
-                    {stage >= 4 && partner?.fullName ? partner.fullName : partnerAlias}
+                    {isProfileUnlocked && partner?.fullName ? partner.fullName : partnerAlias}
                   </Text>
                   <Text style={{ fontSize: 12, color: "#64748B", fontWeight: "600" }}>
-                    Stage {stage}: {stageName(stage)} • {streak}d streak
+                    Stage {stage}: {stageName(stage)} • {dayStreak}d streak
                   </Text>
                 </View>
               </View>
@@ -186,8 +235,46 @@ export function MatchRevealSheet({
             </View>
           </View>
 
+          {/* ── Tabs ── */}
+          <View
+            style={{
+              flexDirection: "row",
+              marginHorizontal: 20,
+              marginTop: 12,
+              marginBottom: 4,
+              backgroundColor: "#F1F5F9",
+              borderRadius: 12,
+              padding: 3,
+            }}
+          >
+            {(["about", "tasks", "feed"] as TabId[]).map((tab) => (
+              <Pressable
+                key={tab}
+                onPress={() => setActiveTab(tab)}
+                style={{
+                  flex: 1,
+                  paddingVertical: 8,
+                  alignItems: "center",
+                  borderRadius: 10,
+                  backgroundColor: activeTab === tab ? "#FFFFFF" : "transparent",
+                }}
+              >
+                <Text
+                  style={{
+                    fontSize: 12,
+                    fontWeight: "700",
+                    color: activeTab === tab ? "#0F172A" : "#64748B",
+                    textTransform: "capitalize",
+                  }}
+                >
+                  {tab === "feed" ? "Feed" : tab === "tasks" ? "Tasks" : "About"}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+
           <ScrollView
-            contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 16, paddingBottom: 24 }}
+            contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 12, paddingBottom: 24 }}
             showsVerticalScrollIndicator={false}
           >
             {loading ? (
@@ -199,305 +286,413 @@ export function MatchRevealSheet({
               </View>
             ) : (
               <>
-                {/* ═══ ROADMAP PROGRESSION BAR ═══ */}
-                <View
-                  style={{
-                    backgroundColor: "#F8FAFC",
-                    borderRadius: 20,
-                    padding: 16,
-                    borderWidth: 1,
-                    borderColor: "#E2E8F0",
-                    marginBottom: 20,
-                  }}
-                >
-                  <View
-                    style={{
-                      flexDirection: "row",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      marginBottom: 10,
-                    }}
-                  >
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                      <Flame size={16} color="#EA580C" />
-                      <Text style={{ fontSize: 13, fontWeight: "800", color: "#0F172A" }}>
-                        Connection Stage
-                      </Text>
-                    </View>
-                    <Text style={{ fontSize: 12, fontWeight: "700", color: "#1A6B3C" }}>
-                      {stageName(stage)}
-                    </Text>
-                  </View>
-
-                  {/* 5-Segment Progress Bar */}
-                  <View style={{ flexDirection: "row", gap: 4, marginBottom: 12 }}>
-                    {[0, 1, 2, 3, 4].map((step) => {
-                      const isReached = stage >= step;
-                      return (
-                        <View
-                          key={step}
-                          style={{
-                            flex: 1,
-                            height: 6,
-                            borderRadius: 3,
-                            backgroundColor: isReached ? "#1A6B3C" : "#E2E8F0",
-                          }}
-                        />
-                      );
-                    })}
-                  </View>
-
-                  <Text style={{ fontSize: 11, color: "#64748B", lineHeight: 16 }}>
-                    Keep chatting daily to advance stages and unlock mutual clues, academic details, and full identity.
-                  </Text>
-                </View>
-
-                {/* ═══ COMPATIBILITY & SHARED INTERESTS (Stage 1+) ═══ */}
-                {stage >= 1 && (
-                  <View style={{ marginBottom: 20 }}>
-                    {revealData?.compatibilityScore !== null &&
-                      revealData?.compatibilityScore !== undefined && (
-                        <View
-                          style={{
-                            backgroundColor: "rgba(26, 107, 60, 0.08)",
-                            borderRadius: 18,
-                            padding: 14,
-                            alignItems: "center",
-                            borderWidth: 1,
-                            borderColor: "rgba(26, 107, 60, 0.2)",
-                            marginBottom: 14,
-                          }}
-                        >
-                          <Text style={{ fontSize: 26, fontWeight: "900", color: "#1A6B3C" }}>
-                            {revealData.compatibilityScore}%
-                          </Text>
-                          <Text style={{ fontSize: 12, fontWeight: "700", color: "#0A1F12" }}>
-                            High Ally Compatibility
+                {/* ── ABOUT TAB ── */}
+                {activeTab === "about" && (
+                  <>
+                    {/* ── 500-PT PROFILE UNLOCK CARD ── */}
+                    <View
+                      style={{
+                        backgroundColor: "#F8FAFC",
+                        borderRadius: 18,
+                        padding: 16,
+                        borderWidth: 1.5,
+                        borderColor: isProfileUnlocked ? "#86EFAC" : "#E2E8F0",
+                        marginBottom: 14,
+                        gap: 10,
+                      }}
+                    >
+                      <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center" }}>
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                          <Text style={{ fontSize: 16 }}>{isProfileUnlocked ? "🎉" : "🔓"}</Text>
+                          <Text style={{ fontSize: 13, fontWeight: "800", color: "#0F172A" }}>
+                            {isProfileUnlocked ? "Real Identities Unlocked!" : "Profile Unlock Goal (500 pts)"}
                           </Text>
                         </View>
-                      )}
+                        <Text style={{ fontSize: 11, fontWeight: "700", color: isProfileUnlocked ? "#16A34A" : "#D97706" }}>
+                          {matchPoints} / 500 pts
+                        </Text>
+                      </View>
 
-                    {revealData?.sharedInterests && revealData.sharedInterests.length > 0 && (
+                      {/* 500-pt progress bar */}
+                      <View
+                        style={{
+                          height: 8,
+                          backgroundColor: "#E2E8F0",
+                          borderRadius: 99,
+                          overflow: "hidden",
+                        }}
+                      >
+                        <View
+                          style={{
+                            height: "100%",
+                            width: `${Math.max(pointsProgress > 0 ? 3 : 0, pointsProgress)}%`,
+                            backgroundColor: isProfileUnlocked ? "#16A34A" : "#1A6B3C",
+                            borderRadius: 99,
+                          }}
+                        />
+                      </View>
+
+                      <View style={{ flexDirection: "row", justifyContent: "space-between" }}>
+                        <Text style={{ fontSize: 11, color: "#64748B" }}>
+                          {isProfileUnlocked
+                            ? "Mutual real profiles, names, and avatars unlocked."
+                            : `${pointsRemaining} pts needed to unlock mutual profiles.`}
+                        </Text>
+                        <Text style={{ fontSize: 11, fontWeight: "700", color: "#1A6B3C" }}>
+                          {pointsProgress}%
+                        </Text>
+                      </View>
+                    </View>
+
+                    {/* ── STREAK STAGES CARD (3d, 7d, 10d) ── */}
+                    <View
+                      style={{
+                        backgroundColor: "#FFFBEB",
+                        borderRadius: 16,
+                        padding: 14,
+                        borderWidth: 1,
+                        borderColor: "#FDE68A",
+                        marginBottom: 14,
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 12,
+                      }}
+                    >
+                      <View
+                        style={{
+                          width: 38,
+                          height: 38,
+                          borderRadius: 12,
+                          backgroundColor: "#F59E0B",
+                          alignItems: "center",
+                          justifyContent: "center",
+                        }}
+                      >
+                        <Flame size={20} color="#FFFFFF" />
+                      </View>
+                      <View style={{ flex: 1 }}>
+                        <Text style={{ fontSize: 13, fontWeight: "800", color: "#92400E" }}>
+                          {dayStreak}-Day Streak • Stage {stage} ({effectiveMultiplier}× Multiplier)
+                        </Text>
+                        <Text style={{ fontSize: 11, color: "#B45309", marginTop: 2 }}>
+                          {stage >= 4
+                            ? "Max Stage 4 reached! Feed unlocked in Allies filter."
+                            : `${daysToNextStage} more consecutive day${daysToNextStage === 1 ? "" : "s"} for Stage ${stage + 1} (${nextStageDays}d milestone)`}
+                        </Text>
+                      </View>
+                    </View>
+
+                    {/* ── REAL PROFILE DETAILS (when 500 pts reached) ── */}
+                    {isProfileUnlocked && (
+                      <View
+                        style={{
+                          backgroundColor: "#F0FDF4",
+                          borderRadius: 18,
+                          padding: 14,
+                          borderWidth: 1.5,
+                          borderColor: "#86EFAC",
+                          marginBottom: 14,
+                        }}
+                      >
+                        <Text style={{ fontSize: 12, fontWeight: "800", color: "#16A34A", marginBottom: 8, textTransform: "uppercase" }}>
+                          👤 Real Profile Information
+                        </Text>
+                        <InfoRow label="Full Name" value={partner?.fullName} />
+                        <InfoRow label="Username" value={partner?.username ? `@${partner.username}` : null} />
+                        <InfoRow label="Department" value={partner?.department} />
+                        <InfoRow label="Course" value={partner?.course} />
+                        <InfoRow label="Bio" value={partner?.bio} />
+                      </View>
+                    )}
+
+                    {/* Compatibility score */}
+                    {stage >= 1 && revealData?.compatibilityScore != null && (
+                      <View
+                        style={{
+                          backgroundColor: "rgba(26, 107, 60, 0.08)",
+                          borderRadius: 18,
+                          padding: 14,
+                          alignItems: "center",
+                          borderWidth: 1,
+                          borderColor: "rgba(26, 107, 60, 0.2)",
+                          marginBottom: 14,
+                        }}
+                      >
+                        <Text style={{ fontSize: 26, fontWeight: "900", color: "#1A6B3C" }}>
+                          {revealData.compatibilityScore}%
+                        </Text>
+                        <Text style={{ fontSize: 12, fontWeight: "700", color: "#0A1F12" }}>
+                          Ally Compatibility
+                        </Text>
+                      </View>
+                    )}
+
+                    {/* Shared interests */}
+                    {stage >= 1 && revealData?.sharedInterests && revealData.sharedInterests.length > 0 && (
                       <View style={{ marginBottom: 14 }}>
                         <Text style={{ fontSize: 12, fontWeight: "800", color: "#475569", marginBottom: 8, textTransform: "uppercase" }}>
                           Shared Interests
                         </Text>
                         <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
-                          {revealData.sharedInterests.map((interest) => (
-                            <View
-                              key={interest}
-                              style={{
-                                backgroundColor: "#F1F5F9",
-                                paddingHorizontal: 10,
-                                paddingVertical: 5,
-                                borderRadius: 12,
-                                borderWidth: 1,
-                                borderColor: "#E2E8F0",
-                              }}
-                            >
-                              <Text style={{ fontSize: 12, fontWeight: "600", color: "#334155" }}>
-                                ✨ {interest}
-                              </Text>
-                            </View>
+                          {revealData.sharedInterests.map((i) => (
+                            <Chip key={i} label={`✨ ${i}`} />
                           ))}
                         </View>
                       </View>
                     )}
-                  </View>
-                )}
 
-                {/* ═══ STAGE 2: PLAY GAMES TOGETHER ═══ */}
-                <View
-                  style={{
-                    backgroundColor: stage >= 2 ? "#FFFFFF" : "#F8FAFC",
-                    borderRadius: 18,
-                    borderWidth: 1,
-                    borderColor: stage >= 2 ? "#E2E8F0" : "#E2E8F0",
-                    padding: 16,
-                    marginBottom: 20,
-                  }}
-                >
-                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                      <Gamepad2 size={18} color={stage >= 2 ? "#1A6B3C" : "#94A3B8"} />
-                      <Text style={{ fontSize: 13, fontWeight: "800", color: stage >= 2 ? "#0F172A" : "#64748B" }}>
-                        Stage 2: Play Games Together
-                      </Text>
-                    </View>
-                    <View
-                      style={{
-                        backgroundColor: "#FEF3C7",
-                        paddingHorizontal: 8,
-                        paddingVertical: 2,
-                        borderRadius: 8,
-                      }}
-                    >
-                      <Text style={{ fontSize: 10, fontWeight: "700", color: "#D97706" }}>
-                        Coming Soon
-                      </Text>
-                    </View>
-                  </View>
-                  <Text style={{ fontSize: 12, color: "#64748B", lineHeight: 16 }}>
-                    {stage >= 2
-                      ? "You reached Stage 2! Interactive mini-games are currently in development."
-                      : "Reach a 3-day streak to unlock interactive games and activities."}
-                  </Text>
-                  {stage >= 2 && partner?.studyCategory && (
-                    <View style={{ marginTop: 10, paddingTop: 10, borderTopWidth: 1, borderTopColor: "#F1F5F9", flexDirection: "row", justifyContent: "space-between" }}>
-                      <Text style={{ fontSize: 12, color: "#64748B" }}>Academic Program</Text>
-                      <Text style={{ fontSize: 12, fontWeight: "700", color: "#0F172A" }}>{partner.studyCategory}</Text>
-                    </View>
-                  )}
-                </View>
+                    {/* Partner details (stage 2+ non-identifying clues) */}
+                    {stage >= 2 && !isProfileUnlocked && (
+                      <View style={{ marginBottom: 14 }}>
+                        <Text style={{ fontSize: 12, fontWeight: "800", color: "#475569", marginBottom: 8, textTransform: "uppercase" }}>
+                          Stage 2 Clues
+                        </Text>
+                        <InfoRow label="Age range" value={partner?.ageRange} />
+                        <InfoRow label="Zodiac" value={partner?.zodiacSign} />
+                        <InfoRow label="Personality" value={partner?.personalityType} />
+                        <InfoRow label="Studying" value={partner?.studyCategory} />
+                      </View>
+                    )}
 
-                {/* ═══ STAGE 3: IMAGE & MEDIA SHARING ═══ */}
-                <View
-                  style={{
-                    backgroundColor: stage >= 3 ? "#FFFFFF" : "#F8FAFC",
-                    borderRadius: 18,
-                    borderWidth: 1,
-                    borderColor: stage >= 3 ? "#E2E8F0" : "#E2E8F0",
-                    padding: 16,
-                    marginBottom: 20,
-                  }}
-                >
-                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                      <ImageIcon size={18} color={stage >= 3 ? "#1A6B3C" : "#94A3B8"} />
-                      <Text style={{ fontSize: 13, fontWeight: "800", color: stage >= 3 ? "#0F172A" : "#64748B" }}>
-                        Stage 3: Image & Media Sharing
-                      </Text>
-                    </View>
-                    {stage >= 3 ? (
+                    {/* Hobbies (stage 3+) */}
+                    {stage >= 3 && partner?.favoriteHobby && !isProfileUnlocked && (
+                      <View style={{ marginBottom: 14 }}>
+                        <InfoRow label="Favorite hobby" value={partner.favoriteHobby} />
+                      </View>
+                    )}
+
+                    {/* Stage 4: feed unlock notice */}
+                    {stage >= 4 && (
                       <View
                         style={{
-                          backgroundColor: "#E8F5EE",
-                          paddingHorizontal: 8,
-                          paddingVertical: 2,
-                          borderRadius: 8,
+                          backgroundColor: "rgba(26, 107, 60, 0.08)",
+                          borderRadius: 18,
+                          padding: 16,
+                          borderWidth: 1.5,
+                          borderColor: "#1A6B3C",
+                          marginBottom: 16,
+                          flexDirection: "row",
+                          alignItems: "flex-start",
+                          gap: 10,
                         }}
                       >
-                        <Text style={{ fontSize: 10, fontWeight: "700", color: "#1A6B3C" }}>
-                          Unlocked
+                        <Users size={20} color="#1A6B3C" />
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontSize: 14, fontWeight: "800", color: "#0F172A", marginBottom: 4 }}>
+                            Campus Allies — Feed Unlocked!
+                          </Text>
+                          <Text style={{ fontSize: 12, color: "#64748B", lineHeight: 18 }}>
+                            {partnerAlias}'s posts appear in your Allies filter (anonymous until 500 pts).
+                          </Text>
+                        </View>
+                      </View>
+                    )}
+
+                    {/* Icebreakers */}
+                    {revealData?.icebreakers && revealData.icebreakers.length > 0 && !ended && (
+                      <View style={{ marginBottom: 16 }}>
+                        <Text style={{ fontSize: 12, fontWeight: "800", color: "#475569", marginBottom: 8, textTransform: "uppercase" }}>
+                          Conversation Starters
+                        </Text>
+                        <View style={{ gap: 8 }}>
+                          {revealData.icebreakers.map((prompt, idx) => (
+                            <Pressable
+                              key={idx}
+                              onPress={() => {
+                                if (onSelectIcebreaker) {
+                                  onSelectIcebreaker(prompt);
+                                  onClose();
+                                }
+                              }}
+                              style={({ pressed }) => ({
+                                backgroundColor: pressed ? "#E2E8F0" : "#F8FAFC",
+                                padding: 12,
+                                borderRadius: 14,
+                                borderWidth: 1,
+                                borderColor: "#E2E8F0",
+                                flexDirection: "row",
+                                alignItems: "center",
+                                justifyContent: "space-between",
+                              })}
+                            >
+                              <Text style={{ fontSize: 13, color: "#1E293B", flex: 1, marginRight: 8 }}>
+                                "{prompt}"
+                              </Text>
+                              <MessageSquareText size={16} color="#1A6B3C" />
+                            </Pressable>
+                          ))}
+                        </View>
+                      </View>
+                    )}
+
+                    {/* End match */}
+                    {!ended && (
+                      <Pressable
+                        onPress={handleEndMatch}
+                        style={{
+                          paddingVertical: 14,
+                          borderRadius: 16,
+                          backgroundColor: "rgba(239, 68, 68, 0.08)",
+                          borderWidth: 1,
+                          borderColor: "rgba(239, 68, 68, 0.2)",
+                          flexDirection: "row",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          gap: 8,
+                          marginTop: 8,
+                        }}
+                      >
+                        <LogOut size={16} color="#EF4444" />
+                        <Text style={{ fontSize: 14, fontWeight: "700", color: "#EF4444" }}>
+                          End Anonymous Chat
+                        </Text>
+                      </Pressable>
+                    )}
+                  </>
+                )}
+
+                {/* ── TASKS TAB ── */}
+                {activeTab === "tasks" && (
+                  <>
+                    {/* Multiplier info */}
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 8,
+                        backgroundColor: "#FFF7ED",
+                        borderWidth: 1,
+                        borderColor: "#FED7AA",
+                        borderRadius: 12,
+                        padding: 12,
+                        marginBottom: 14,
+                      }}
+                    >
+                      <Flame size={16} color="#EA580C" />
+                      <Text style={{ fontSize: 12, color: "#9A3412", flex: 1, lineHeight: 18 }}>
+                        Stage {stage} multiplier: <Text style={{ fontWeight: "800" }}>{effectiveMultiplier}×</Text> ({dayStreak}d streak)
+                        {"\n"}
+                        <Text style={{ color: "#C2410C", fontSize: 11 }}>Resets at 12:00 AM PHT daily • 500 total points required to unlock real profiles!</Text>
+                      </Text>
+                    </View>
+
+                    {(!revealData?.dailyTasks || revealData.dailyTasks.length === 0) ? (
+                      <View style={{ alignItems: "center", paddingVertical: 32 }}>
+                        <Lock size={28} color="#CBD5E1" />
+                        <Text style={{ fontSize: 13, color: "#94A3B8", marginTop: 8 }}>
+                          No tasks available at this stage.
                         </Text>
                       </View>
                     ) : (
-                      <Lock size={14} color="#94A3B8" />
+                      <View style={{ gap: 10 }}>
+                        {revealData.dailyTasks.map((task) => {
+                          const bothDone = task.myCompleted && task.partnerCompleted;
+                          return (
+                            <View
+                              key={task.taskId}
+                              style={{
+                                backgroundColor: bothDone ? "#F0FDF4" : "#F8FAFC",
+                                borderRadius: 16,
+                                borderWidth: 1,
+                                borderColor: bothDone ? "#86EFAC" : "#E2E8F0",
+                                padding: 14,
+                              }}
+                            >
+                              <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                                {bothDone ? (
+                                  <CheckCircle2 size={20} color="#16A34A" />
+                                ) : (
+                                  <Circle size={20} color="#CBD5E1" />
+                                )}
+                                <View style={{ flex: 1 }}>
+                                  <Text style={{ fontSize: 13, fontWeight: "700", color: "#0F172A" }}>
+                                    {task.label}
+                                  </Text>
+                                  <Text style={{ fontSize: 11, color: "#64748B", marginTop: 2 }}>
+                                    {task.description}
+                                  </Text>
+                                </View>
+                                <View style={{ alignItems: "flex-end" }}>
+                                  <Text style={{ fontSize: 12, fontWeight: "800", color: "#1A6B3C" }}>
+                                    +{Math.round(task.basePoints * effectiveMultiplier)}pt
+                                  </Text>
+                                  <Text style={{ fontSize: 10, color: "#94A3B8" }}>
+                                    {task.basePoints}×{effectiveMultiplier}
+                                  </Text>
+                                </View>
+                              </View>
+
+                              {/* Me / Partner status */}
+                              <View
+                                style={{
+                                  flexDirection: "row",
+                                  gap: 16,
+                                  marginTop: 10,
+                                  paddingTop: 10,
+                                  borderTopWidth: 1,
+                                  borderTopColor: bothDone ? "#DCFCE7" : "#F1F5F9",
+                                  paddingLeft: 30,
+                                }}
+                              >
+                                <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                                  {task.myCompleted ? (
+                                    <CheckCircle2 size={12} color="#16A34A" />
+                                  ) : (
+                                    <Circle size={12} color="#CBD5E1" />
+                                  )}
+                                  <Text style={{ fontSize: 11, color: task.myCompleted ? "#16A34A" : "#94A3B8" }}>
+                                    You
+                                  </Text>
+                                </View>
+                                <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                                  {task.partnerCompleted ? (
+                                    <CheckCircle2 size={12} color="#16A34A" />
+                                  ) : (
+                                    <Circle size={12} color="#CBD5E1" />
+                                  )}
+                                  <Text style={{ fontSize: 11, color: task.partnerCompleted ? "#16A34A" : "#94A3B8" }}>
+                                    {partnerAlias}
+                                  </Text>
+                                </View>
+                                {task.myPointsAwarded > 0 && (
+                                  <Text style={{ fontSize: 10, color: "#F59E0B", marginLeft: "auto", fontWeight: "700" }}>
+                                    +{task.myPointsAwarded} earned
+                                  </Text>
+                                )}
+                              </View>
+                            </View>
+                          );
+                        })}
+                      </View>
+                    )}
+                  </>
+                )}
+
+                {/* ── FEED TAB ── */}
+                {activeTab === "feed" && (
+                  <View style={{ alignItems: "center", paddingVertical: 32 }}>
+                    {stage >= 4 ? (
+                      <>
+                        <Users size={32} color="#1A6B3C" />
+                        <Text style={{ fontSize: 14, fontWeight: "700", color: "#0F172A", marginTop: 10 }}>
+                          Feed Unlocked!
+                        </Text>
+                        <Text style={{ fontSize: 12, color: "#64748B", textAlign: "center", marginTop: 6, lineHeight: 18, maxWidth: 260 }}>
+                          {partnerAlias}'s posts now appear in your Allies newsfeed filter — still anonymous until you both reveal.
+                        </Text>
+                      </>
+                    ) : (
+                      <>
+                        <Lock size={28} color="#CBD5E1" />
+                        <Text style={{ fontSize: 13, fontWeight: "700", color: "#0F172A", marginTop: 10 }}>
+                          Feed Locked
+                        </Text>
+                        <Text style={{ fontSize: 12, color: "#64748B", textAlign: "center", marginTop: 6, lineHeight: 18, maxWidth: 260 }}>
+                          Reach Stage 4 to unlock {partnerAlias}'s posts in the Allies newsfeed filter.
+                        </Text>
+                      </>
                     )}
                   </View>
-                  <Text style={{ fontSize: 12, color: "#64748B", lineHeight: 16 }}>
-                    {stage >= 3
-                      ? "Photos and camera uploads are unlocked! Share campus moments and notes."
-                      : "Reach a 7-day streak to unlock sending photos and camera uploads in chat."}
-                  </Text>
-                </View>
-
-                {/* ═══ STAGE 4: ALLIES UNLOCKED ═══ */}
-                {stage >= 4 ? (
-                  <View
-                    style={{
-                      backgroundColor: "rgba(26, 107, 60, 0.08)",
-                      borderRadius: 20,
-                      padding: 18,
-                      borderWidth: 1.5,
-                      borderColor: "#1A6B3C",
-                      marginBottom: 20,
-                      alignItems: "center",
-                    }}
-                  >
-                    <Sparkles size={24} color="#1A6B3C" />
-                    <Text style={{ fontSize: 16, fontWeight: "800", color: "#0F172A", marginTop: 6 }}>
-                      Campus Allies Unlocked!
-                    </Text>
-                    <Text style={{ fontSize: 12, color: "#64748B", textAlign: "center", marginTop: 4 }}>
-                      You completed the Ally Roadmap! You are now official campus allies with full profile access.
-                    </Text>
-                  </View>
-                ) : (
-                  <View
-                    style={{
-                      backgroundColor: "#F8FAFC",
-                      borderRadius: 18,
-                      borderWidth: 1,
-                      borderColor: "#E2E8F0",
-                      padding: 16,
-                      marginBottom: 20,
-                    }}
-                  >
-                    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-                      <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                        <Shield size={18} color="#94A3B8" />
-                        <Text style={{ fontSize: 13, fontWeight: "800", color: "#64748B" }}>
-                          Stage 4: Campus Allies
-                        </Text>
-                      </View>
-                      <Lock size={14} color="#94A3B8" />
-                    </View>
-                    <Text style={{ fontSize: 12, color: "#64748B", lineHeight: 16 }}>
-                      Reach a 10-day streak to reveal real identities and become confirmed campus allies.
-                    </Text>
-                  </View>
-                )}
-
-                {/* ═══ ICEBREAKER CARDS ═══ */}
-                {revealData?.icebreakers && revealData.icebreakers.length > 0 && !ended && (
-                  <View style={{ marginBottom: 20 }}>
-                    <Text style={{ fontSize: 12, fontWeight: "800", color: "#475569", marginBottom: 8, textTransform: "uppercase" }}>
-                      Suggested Conversation Starters
-                    </Text>
-                    <View style={{ gap: 8 }}>
-                      {revealData.icebreakers.map((prompt, idx) => (
-                        <Pressable
-                          key={idx}
-                          onPress={() => {
-                            if (onSelectIcebreaker) {
-                              onSelectIcebreaker(prompt);
-                              onClose();
-                            }
-                          }}
-                          style={({ pressed }) => ({
-                            backgroundColor: pressed ? "#E2E8F0" : "#F8FAFC",
-                            padding: 12,
-                            borderRadius: 14,
-                            borderWidth: 1,
-                            borderColor: "#E2E8F0",
-                            flexDirection: "row",
-                            alignItems: "center",
-                            justifyContent: "space-between",
-                          })}
-                        >
-                          <Text style={{ fontSize: 13, color: "#1E293B", flex: 1, marginRight: 8 }}>
-                            "{prompt}"
-                          </Text>
-                          <MessageSquareText size={16} color="#1A6B3C" />
-                        </Pressable>
-                      ))}
-                    </View>
-                  </View>
-                )}
-
-                {/* ═══ END CHAT BUTTON ═══ */}
-                {!ended && (
-                  <Pressable
-                    onPress={handleEndMatch}
-                    style={{
-                      paddingVertical: 14,
-                      borderRadius: 16,
-                      backgroundColor: "rgba(239, 68, 68, 0.08)",
-                      borderWidth: 1,
-                      borderColor: "rgba(239, 68, 68, 0.2)",
-                      flexDirection: "row",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: 8,
-                      marginTop: 8,
-                    }}
-                  >
-                    <LogOut size={16} color="#EF4444" />
-                    <Text style={{ fontSize: 14, fontWeight: "700", color: "#EF4444" }}>
-                      End Anonymous Chat
-                    </Text>
-                  </Pressable>
                 )}
               </>
             )}

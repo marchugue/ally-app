@@ -39,18 +39,39 @@ export async function registerMessageNotificationCategory(): Promise<void> {
   }
 }
 
+let activeConversationId: string | null = null;
+
+export function setActiveConversationId(convId: string | null): void {
+  activeConversationId = convId;
+}
+
 // Configure notification handler & actions category safely
 function initNotificationHandler() {
   if (Platform.OS === "web") return;
   try {
     if (Notifications && typeof Notifications.setNotificationHandler === "function") {
       Notifications.setNotificationHandler({
-        handleNotification: async () => ({
-          shouldPlaySound: true,
-          shouldSetBadge: true,
-          shouldShowBanner: true,
-          shouldShowList: true,
-        }),
+        handleNotification: async (notification) => {
+          const data = notification.request?.content?.data;
+          const convId = data?.conversationId as string | undefined;
+
+          // If the user currently has this exact conversation open on screen, suppress tray banner
+          if (convId && activeConversationId === convId) {
+            return {
+              shouldPlaySound: false,
+              shouldSetBadge: false,
+              shouldShowBanner: false,
+              shouldShowList: false,
+            };
+          }
+
+          return {
+            shouldPlaySound: true,
+            shouldSetBadge: true,
+            shouldShowBanner: true,
+            shouldShowList: true,
+          };
+        },
       });
 
       registerMessageNotificationCategory().catch(() => null);
@@ -254,11 +275,116 @@ export function setupNotificationListeners(
       }
     );
 
+    const receivedSubscription = typeof Notifications.addNotificationReceivedListener === "function"
+      ? Notifications.addNotificationReceivedListener(async (notification) => {
+          const data = notification.request?.content?.data;
+          const conversationId = data?.conversationId as string | undefined;
+          const senderId = data?.senderId as string | undefined;
+          const currentId = notification.request?.identifier;
+
+          if (!conversationId && !senderId) return;
+
+          // If the user currently has this exact conversation open, clear the incoming tray notification immediately
+          if (conversationId && activeConversationId === conversationId) {
+            if (currentId && typeof Notifications.dismissNotificationAsync === "function") {
+              await Notifications.dismissNotificationAsync(currentId).catch(() => null);
+            }
+            return;
+          }
+
+          // Proactively prune any older notifications for the same user or conversation
+          // so only the newest, updated notification card remains in the tray!
+          try {
+            if (typeof Notifications.getPresentedNotificationsAsync === "function") {
+              const presented = await Notifications.getPresentedNotificationsAsync();
+              for (const item of presented) {
+                if (item.request?.identifier !== currentId) {
+                  const itemData = item.request?.content?.data;
+                  const itemId = item.request?.identifier || "";
+                  const matchesConv = conversationId && (itemData?.conversationId === conversationId || itemId.includes(conversationId));
+                  const matchesSender = senderId && (itemData?.senderId === senderId || itemId.includes(senderId));
+                  if (matchesConv || matchesSender) {
+                    if (typeof Notifications.dismissNotificationAsync === "function") {
+                      await Notifications.dismissNotificationAsync(item.request.identifier).catch(() => null);
+                    }
+                  }
+                }
+              }
+            }
+          } catch (err) {
+            console.warn("[PushNotifications] Could not prune older notification for same user:", err);
+          }
+        })
+      : null;
+
     return () => {
       responseSubscription?.remove();
+      receivedSubscription?.remove();
     };
   } catch (e) {
     console.warn("[PushNotifications] Could not attach response listener:", e);
     return () => {};
+  }
+}
+
+/**
+ * Automatically clears presented notifications from the device notification tray
+ * for a specific conversation or user when the user opens the chat (Facebook/Messenger style).
+ */
+export async function dismissPresentedNotificationByConversationId(conversationId: string, senderId?: string): Promise<void> {
+  if (Platform.OS === "web" || isExpoGo) return;
+  try {
+    if (!Notifications || typeof Notifications.getPresentedNotificationsAsync !== "function") return;
+    const presented = await Notifications.getPresentedNotificationsAsync();
+    for (const notif of presented) {
+      const data = notif.request?.content?.data;
+      const notifId = notif.request?.identifier || "";
+      const matchesConv =
+        data?.conversationId === conversationId ||
+        data?.targetId === conversationId ||
+        notifId === `conv_${conversationId}` ||
+        notifId === conversationId ||
+        notifId.includes(conversationId);
+      const matchesSender =
+        Boolean(senderId && (data?.senderId === senderId || notifId === `user_${senderId}` || notifId.includes(senderId)));
+      const matchesTag =
+        Boolean(typeof data?.tag === "string" && (data.tag.includes(conversationId) || (senderId && data.tag.includes(senderId))));
+
+      if (matchesConv || matchesSender || matchesTag) {
+        if (typeof Notifications.dismissNotificationAsync === "function") {
+          await Notifications.dismissNotificationAsync(notif.request.identifier);
+        }
+      }
+    }
+  } catch (e) {
+    console.warn("[PushNotifications] Could not dismiss notification by conversationId:", e);
+  }
+}
+
+/**
+ * Automatically clears presented notifications from the device notification tray
+ * for a specific category or target (e.g. 'connections', 'ally', 'safety').
+ */
+export async function dismissPresentedNotificationsByCategory(category?: string, targetId?: string): Promise<void> {
+  if (Platform.OS === "web" || isExpoGo) return;
+  try {
+    if (!Notifications || typeof Notifications.getPresentedNotificationsAsync !== "function") return;
+    const presented = await Notifications.getPresentedNotificationsAsync();
+    for (const notif of presented) {
+      const data = notif.request?.content?.data;
+      const notifCategory = data?.category;
+      const notifTarget = data?.targetId;
+
+      const matchesCategory = category && (notifCategory === category || notif.request?.identifier?.startsWith(`${category}_`));
+      const matchesTarget = targetId && (notifTarget === targetId || data?.conversationId === targetId || notif.request?.identifier === targetId);
+
+      if (matchesCategory || matchesTarget) {
+        if (typeof Notifications.dismissNotificationAsync === "function") {
+          await Notifications.dismissNotificationAsync(notif.request.identifier);
+        }
+      }
+    }
+  } catch (e) {
+    console.warn("[PushNotifications] Could not dismiss notification by category:", e);
   }
 }

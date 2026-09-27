@@ -1,4 +1,5 @@
-import { View, Text, Image } from "react-native";
+import { View, Text, Image, Platform } from "react-native";
+import { API_BASE_URL } from "@/constants";
 
 type AvatarSize = "xs" | "sm" | "md" | "lg" | "xl";
 
@@ -22,22 +23,34 @@ interface UserAvatarProps {
 
 export function resolveImageUri(input: any): string | null {
   if (!input) return null;
+  let raw: string | null = null;
   if (typeof input === "string") {
-    const trimmed = input.trim();
-    return trimmed.length > 0 ? trimmed : null;
-  }
-  if (typeof input === "object") {
+    raw = input.trim();
+  } else if (typeof input === "object") {
     if (typeof input.uri === "string" && input.uri.trim().length > 0) {
-      return input.uri.trim();
-    }
-    if (typeof input.url === "string" && input.url.trim().length > 0) {
-      return input.url.trim();
-    }
-    if (typeof input.path === "string" && input.path.trim().length > 0) {
-      return input.path.trim();
+      raw = input.uri.trim();
+    } else if (typeof input.url === "string" && input.url.trim().length > 0) {
+      raw = input.url.trim();
+    } else if (typeof input.path === "string" && input.path.trim().length > 0) {
+      raw = input.path.trim();
     }
   }
-  return null;
+
+  if (!raw || raw.length === 0) return null;
+
+  // Prepend API_BASE_URL if it's a relative path
+  if (raw.startsWith("/")) {
+    return `${API_BASE_URL}${raw}`;
+  }
+
+  // Rewrite localhost / 127.0.0.1 for mobile devices/emulators so they can reach the server
+  if (Platform.OS !== "web") {
+    if (raw.includes("localhost:3001") || raw.includes("127.0.0.1:3001")) {
+      return raw.replace(/https?:\/\/(localhost|127\.0\.0\.1):3001/, API_BASE_URL);
+    }
+  }
+
+  return raw;
 }
 
 export function isUrl(input: any): boolean {

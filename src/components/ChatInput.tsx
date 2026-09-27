@@ -8,12 +8,16 @@ import {
   ActivityIndicator,
   Platform,
   Alert,
+  ScrollView,
+  Image,
 } from "react-native";
 import { Send, Plus, X, Camera, Image as ImageIcon } from "lucide-react-native";
+import * as ImagePicker from "expo-image-picker";
 import type { Message } from "@/types/conversation";
+import type { LocalFile } from "@/lib/api/media";
 
 interface ChatInputProps {
-  onSend: (content: string) => void;
+  onSend: (content: string, images?: LocalFile[]) => void;
   onAttach?: () => void;
   onPickMedia?: () => void;
   onTakePhoto?: () => void;
@@ -41,6 +45,7 @@ export function ChatInput({
 }: ChatInputProps) {
   const [text, setText] = useState(draftText || "");
   const [showMenu, setShowMenu] = useState(false);
+  const [pendingImages, setPendingImages] = useState<LocalFile[]>([]);
   const inputRef = useRef<TextInput>(null);
 
   // Sync draftText when external source updates it (e.g. icebreaker card tapped)
@@ -53,33 +58,93 @@ export function ChatInput({
     }
   }, [draftText]);
 
+  const canSend = text.trim().length > 0 || pendingImages.length > 0;
+
   const handleSend = () => {
+    if (!canSend) return;
     const trimmed = text.trim();
-    if (!trimmed) return;
-    onSend(trimmed);
+    onSend(trimmed, pendingImages.length > 0 ? pendingImages : undefined);
     setText("");
+    setPendingImages([]);
     setShowMenu(false);
   };
 
-  const handlePickMedia = () => {
+  const handlePickMedia = async () => {
     setShowMenu(false);
-    if (onPickMedia) {
-      onPickMedia();
-    } else if (onAttach) {
-      onAttach();
+    if (!canUploadImages) {
+      Alert.alert(
+        "Feature Locked",
+        "Photo and media sharing unlocks at Stage 3 of your roadmap."
+      );
+      return;
+    }
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert("Permission Required", "Photo library permission is required to select photos.");
+        return;
+      }
+      const remaining = 6 - pendingImages.length;
+      if (remaining <= 0) {
+        Alert.alert("Limit Reached", "You can select up to 6 photos per message.");
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        allowsMultipleSelection: true,
+        selectionLimit: remaining,
+        quality: 0.8,
+      });
+      if (result.canceled || !result.assets?.length) return;
+
+      const newFiles: LocalFile[] = result.assets.slice(0, remaining).map((asset) => {
+        const filename = asset.fileName || asset.uri.split("/").pop() || `photo_${Date.now()}.jpg`;
+        const mime = asset.mimeType || (/\.png$/i.test(filename) ? "image/png" : "image/jpeg");
+        return { uri: asset.uri, name: filename, type: mime };
+      });
+      setPendingImages((prev) => [...prev, ...newFiles].slice(0, 6));
+    } catch (err: any) {
+      console.warn("Failed to pick media", err);
     }
   };
 
-  const handleTakePhoto = () => {
+  const handleTakePhoto = async () => {
     setShowMenu(false);
-    if (onTakePhoto) {
-      onTakePhoto();
-    } else if (onAttach) {
-      onAttach();
+    if (!canUploadImages) {
+      Alert.alert(
+        "Feature Locked",
+        "Photo and media sharing unlocks at Stage 3 of your roadmap."
+      );
+      return;
+    }
+    if (pendingImages.length >= 6) {
+      Alert.alert("Limit Reached", "You can select up to 6 photos per message.");
+      return;
+    }
+    try {
+      const { status } = await ImagePicker.requestCameraPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert("Permission Required", "Camera permission is required to take photos.");
+        return;
+      }
+      const result = await ImagePicker.launchCameraAsync({
+        mediaTypes: ["images"],
+        quality: 0.8,
+      });
+      if (result.canceled || !result.assets?.[0]?.uri) return;
+
+      const asset = result.assets[0];
+      const filename = asset.fileName || asset.uri.split("/").pop() || `camera_${Date.now()}.jpg`;
+      const mime = asset.mimeType || (/\.png$/i.test(filename) ? "image/png" : "image/jpeg");
+      setPendingImages((prev) => [...prev, { uri: asset.uri, name: filename, type: mime }].slice(0, 6));
+    } catch (err: any) {
+      console.warn("Failed to take photo", err);
     }
   };
 
-  const canSend = text.trim().length > 0;
+  const handleRemovePendingImage = (index: number) => {
+    setPendingImages((prev) => prev.filter((_, i) => i !== index));
+  };
 
   return (
     <View
@@ -138,7 +203,124 @@ export function ChatInput({
         </View>
       )}
 
-      {/* Small overlay vertically aligned, anchored at bottom-left above the plus button */}
+      {/* Media Upload Carousel Preview Strip (up to 6) — mirrors web MessageInput */}
+      {pendingImages.length > 0 && (
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            paddingHorizontal: 10,
+            paddingVertical: 8,
+            marginHorizontal: 10,
+            marginBottom: 6,
+            backgroundColor: "rgba(255, 255, 255, 0.95)",
+            borderRadius: 16,
+            borderWidth: 1,
+            borderColor: "#E2DED7",
+            shadowColor: "#000",
+            shadowOffset: { width: 0, height: 1 },
+            shadowOpacity: 0.05,
+            shadowRadius: 3,
+            elevation: 2,
+          }}
+        >
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={{ alignItems: "center", gap: 10, paddingRight: 6 }}
+          >
+            {pendingImages.map((file, idx) => (
+              <View
+                key={`${file.uri}-${idx}`}
+                style={{
+                  position: "relative",
+                  width: 72,
+                  height: 72,
+                  borderRadius: 12,
+                }}
+              >
+                <View
+                  style={{
+                    width: 72,
+                    height: 72,
+                    borderRadius: 12,
+                    overflow: "hidden",
+                    borderWidth: 1,
+                    borderColor: "#E5E7EB",
+                    backgroundColor: "#F3F4F6",
+                  }}
+                >
+                  <Image
+                    source={{ uri: file.uri }}
+                    style={{ width: "100%", height: "100%" }}
+                    resizeMode="cover"
+                  />
+                </View>
+                <TouchableOpacity
+                  onPress={() => handleRemovePendingImage(idx)}
+                  hitSlop={8}
+                  activeOpacity={0.8}
+                  style={{
+                    position: "absolute",
+                    top: -5,
+                    right: -5,
+                    width: 20,
+                    height: 20,
+                    borderRadius: 10,
+                    backgroundColor: "#EF4444",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    borderWidth: 1.5,
+                    borderColor: "#FFFFFF",
+                    zIndex: 20,
+                    elevation: 3,
+                    shadowColor: "#000",
+                    shadowOffset: { width: 0, height: 1 },
+                    shadowOpacity: 0.2,
+                    shadowRadius: 2,
+                  }}
+                >
+                  <X size={11} color="#FFFFFF" strokeWidth={3} />
+                </TouchableOpacity>
+              </View>
+            ))}
+
+            {pendingImages.length < 6 && (
+              <TouchableOpacity
+                onPress={handlePickMedia}
+                activeOpacity={0.7}
+                style={{
+                  width: 72,
+                  height: 72,
+                  borderRadius: 12,
+                  borderWidth: 1.5,
+                  borderStyle: "dashed",
+                  borderColor: "#D1D5DB",
+                  backgroundColor: "#FAF9F5",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  paddingHorizontal: 4,
+                }}
+              >
+                <ImageIcon size={20} color="#1A6B3C" />
+                <Text
+                  style={{
+                    fontSize: 10,
+                    fontWeight: "600",
+                    color: "#6B7280",
+                    marginTop: 3,
+                    textAlign: "center",
+                  }}
+                >
+                  Add (max 6)
+                </Text>
+              </TouchableOpacity>
+            )}
+          </ScrollView>
+        </View>
+      )}
+
+      {/* Small popup menu vertically aligned above the plus button */}
       {showMenu && (
         <>
           {/* Dismiss backdrop */}

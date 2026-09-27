@@ -5,11 +5,11 @@ import {
   TextInput,
   Pressable,
   Modal,
-  Image,
   ScrollView,
   Alert,
   ActivityIndicator,
   Platform,
+  Image,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { KeyboardGestureArea } from "react-native-keyboard-controller";

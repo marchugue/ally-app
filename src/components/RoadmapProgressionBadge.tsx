@@ -15,6 +15,11 @@ import { OfflineAnimatedEmoji } from "@/components/OfflineAnimatedEmoji";
 export interface RoadmapProgressionBadgeProps {
   stage?: number;
   dayStreak?: number;
+  matchPoints?: number;
+  stagePoints?: number;
+  pointsPerStage?: number;
+  profileUnlockTarget?: number;
+  effectiveMultiplier?: number;
   avatarKey?: string | null;
   onPress: () => void;
   emojiSize?: number;
@@ -24,108 +29,56 @@ export interface RoadmapProgressionBadgeProps {
 export interface StageProgression {
   currentStage: number;
   targetStage: number;
-  currentStreak: number;
-  targetStreak: number;
-  stageStartStreak: number;
+  matchPoints: number;
+  profileUnlockTarget: number;
   progressPercent: number;
   isMaxStage: boolean;
+  isProfileUnlocked: boolean;
   stageLabel: string;
   targetLabel: string;
 }
 
 export function calculateStageProgression(
   stage: number = 1,
-  dayStreak: number = 0
+  matchPoints: number = 0,
+  profileUnlockTarget: number = 500
 ): StageProgression {
-  const streakCalculatedStage =
-    dayStreak >= 10 ? 4 : dayStreak >= 7 ? 3 : dayStreak >= 3 ? 2 : 1;
-  const currentStage = Math.max(1, Math.min(4, Math.max(stage, streakCalculatedStage)));
-
-  if (currentStage === 1) {
-    const targetStreak = 3;
-    const progressPercent = Math.max(
-      0,
-      Math.min(100, Math.round((dayStreak / targetStreak) * 100))
-    );
-    return {
-      currentStage: 1,
-      targetStage: 2,
-      currentStreak: dayStreak,
-      targetStreak,
-      stageStartStreak: 0,
-      progressPercent,
-      isMaxStage: false,
-      stageLabel: "Lv.1",
-      targetLabel: "Lv.2",
-    };
-  }
-
-  if (currentStage === 2) {
-    const stageStartStreak = 3;
-    const targetStreak = 7;
-    const range = targetStreak - stageStartStreak; // 4
-    const progressPercent = Math.max(
-      0,
-      Math.min(100, Math.round(((dayStreak - stageStartStreak) / range) * 100))
-    );
-    return {
-      currentStage: 2,
-      targetStage: 3,
-      currentStreak: dayStreak,
-      targetStreak,
-      stageStartStreak,
-      progressPercent,
-      isMaxStage: false,
-      stageLabel: "Lv.2",
-      targetLabel: "Lv.3",
-    };
-  }
-
-  if (currentStage === 3) {
-    const stageStartStreak = 7;
-    const targetStreak = 10;
-    const range = targetStreak - stageStartStreak; // 3
-    const progressPercent = Math.max(
-      0,
-      Math.min(100, Math.round(((dayStreak - stageStartStreak) / range) * 100))
-    );
-    return {
-      currentStage: 3,
-      targetStage: 4,
-      currentStreak: dayStreak,
-      targetStreak,
-      stageStartStreak,
-      progressPercent,
-      isMaxStage: false,
-      stageLabel: "Lv.3",
-      targetLabel: "Lv.4",
-    };
-  }
-
+  const currentStage = Math.max(1, Math.min(4, stage));
+  const isProfileUnlocked = matchPoints >= profileUnlockTarget;
+  const progressPercent = Math.max(
+    0,
+    Math.min(100, Math.round((matchPoints / profileUnlockTarget) * 100))
+  );
   return {
-    currentStage: 4,
-    targetStage: 4,
-    currentStreak: dayStreak,
-    targetStreak: 10,
-    stageStartStreak: 10,
-    progressPercent: 100,
-    isMaxStage: true,
-    stageLabel: "Lv.4",
-    targetLabel: "MAX",
+    currentStage,
+    targetStage: currentStage >= 4 ? 4 : currentStage + 1,
+    matchPoints,
+    profileUnlockTarget,
+    progressPercent,
+    isMaxStage: currentStage >= 4,
+    isProfileUnlocked,
+    stageLabel: `S${currentStage}`,
+    targetLabel: currentStage >= 4 ? "MAX" : `S${currentStage + 1}`,
   };
 }
 
 export function RoadmapProgressionBadge({
   stage = 1,
-  dayStreak = 0,
+  dayStreak: _dayStreak = 0,
+  matchPoints = 0,
+  stagePoints = 0,
+  pointsPerStage = 500,
+  profileUnlockTarget = 500,
   avatarKey,
   onPress,
-  emojiSize = 60, // 1.5x scaled up (from 40px)
+  emojiSize = 60,
   style,
 }: RoadmapProgressionBadgeProps) {
   const pressScaleAnim = useRef(new Animated.Value(1)).current;
 
-  const progression = calculateStageProgression(stage, dayStreak);
+  const currentPoints = matchPoints > 0 ? matchPoints : stagePoints;
+  const targetPoints = profileUnlockTarget > 0 ? profileUnlockTarget : pointsPerStage;
+  const progression = calculateStageProgression(stage, currentPoints, targetPoints);
   const fallbackEmoji = getAvatarEmoji(avatarKey);
 
   const handlePressIn = () => {
@@ -186,11 +139,13 @@ export function RoadmapProgressionBadge({
             />
           </View>
 
-          {/* Level text */}
+          {/* Stage label + pts/percent */}
           <View style={styles.labelRow}>
             <Text style={styles.stageText}>{progression.stageLabel}</Text>
             <Text style={styles.percentText}>
-              {progression.isMaxStage ? "MAX" : `${progression.progressPercent}%`}
+              {progression.isProfileUnlocked
+                ? "MAX"
+                : `${progression.matchPoints}pt`}
             </Text>
           </View>
         </View>

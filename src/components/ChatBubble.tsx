@@ -30,6 +30,7 @@ interface ChatBubbleProps {
   onLongPress?: (message: Message, layout?: BubbleLayout) => void;
   onReply?: (message: Message) => void;
   onRetry?: (message: Message) => void;
+  onImagePress?: (message: Message, index: number) => void;
   isActiveTime?: boolean;
   onToggleTime?: (messageId: string) => void;
 }
@@ -159,31 +160,45 @@ export function ChatBubble({
   onLongPress,
   onReply,
   onRetry,
+  onImagePress,
   isActiveTime = false,
   onToggleTime,
 }: ChatBubbleProps) {
-  // Parse images (supports single URL, JSON array string, camelCase, snake_case)
+  // Parse images (supports single URL, JSON array string, camelCase, snake_case, images array, media, content URL)
   const images: string[] = useMemo(() => {
-    const raw = message.image_url || (message as any).imageUrl;
-    if (!raw) return [];
-    if (Array.isArray(raw)) {
-      return raw.map(resolveImageUri).filter((u): u is string => Boolean(u));
-    }
-    if (typeof raw === "string") {
-      const trimmed = raw.trim();
-      if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
-        try {
-          const parsed = JSON.parse(trimmed);
-          if (Array.isArray(parsed)) {
-            return parsed.map(resolveImageUri).filter((u): u is string => Boolean(u));
-          }
-        } catch {}
+    const raw =
+      message.image_url ||
+      (message as any).imageUrl ||
+      (message as any).images ||
+      (message as any).media;
+    if (raw) {
+      if (Array.isArray(raw)) {
+        return raw.map(resolveImageUri).filter((u): u is string => Boolean(u));
       }
-      const uri = resolveImageUri(trimmed);
-      return uri ? [uri] : [];
+      if (typeof raw === "string") {
+        const trimmed = raw.trim();
+        if (trimmed.startsWith("[") && trimmed.endsWith("]")) {
+          try {
+            const parsed = JSON.parse(trimmed);
+            if (Array.isArray(parsed)) {
+              return parsed.map(resolveImageUri).filter((u): u is string => Boolean(u));
+            }
+          } catch {}
+        }
+        const uri = resolveImageUri(trimmed);
+        if (uri) return [uri];
+      }
+    }
+    // Fallback: check if content itself is a direct image URL
+    if (message.content && typeof message.content === "string") {
+      const trimmed = message.content.trim();
+      if (/^https?:\/\/.+\.(jpg|jpeg|png|webp|gif)(\?.*)?$/i.test(trimmed)) {
+        const uri = resolveImageUri(trimmed);
+        if (uri) return [uri];
+      }
     }
     return [];
-  }, [message.image_url, (message as any).imageUrl]);
+  }, [message.image_url, (message as any).imageUrl, (message as any).images, (message as any).media, message.content]);
 
   const hasImage = images.length > 0;
   const isImageOnly = hasImage && !message.content?.trim();
@@ -220,6 +235,10 @@ export function ChatBubble({
 
   const handleImagePress = (index: number = 0) => {
     if (images.length === 0) return;
+    if (onImagePress) {
+      onImagePress(message, index);
+      return;
+    }
     router.push({
       pathname: "/pages/media-preview" as any,
       params: {
@@ -326,6 +345,7 @@ export function ChatBubble({
           }
         }}
         onLongPress={handleBubbleLongPress}
+        delayLongPress={300}
         android_ripple={isImageOnly || isEmojiOnly ? undefined : { color: "rgba(0,0,0,0.06)" }}
         style={{
           backgroundColor: isImageOnly || isEmojiOnly
@@ -355,7 +375,11 @@ export function ChatBubble({
       >
         {/* Image attachment / Stacked cards UI */}
         {hasImage && images.length === 1 && (
-          <Pressable onPress={() => handleImagePress(0)}>
+          <Pressable
+            onPress={() => handleImagePress(0)}
+            onLongPress={handleBubbleLongPress}
+            delayLongPress={300}
+          >
             <Image
               source={{ uri: images[0] }}
               style={{
@@ -384,6 +408,8 @@ export function ChatBubble({
             {images.length >= 3 && (
               <Pressable
                 onPress={() => handleImagePress(2)}
+                onLongPress={handleBubbleLongPress}
+                delayLongPress={300}
                 style={{
                   position: "absolute",
                   width: 216,
@@ -414,6 +440,8 @@ export function ChatBubble({
             {images.length >= 2 && (
               <Pressable
                 onPress={() => handleImagePress(1)}
+                onLongPress={handleBubbleLongPress}
+                delayLongPress={300}
                 style={{
                   position: "absolute",
                   width: 216,
@@ -443,6 +471,8 @@ export function ChatBubble({
             {/* Card 0 (Top / Upper card) */}
             <Pressable
               onPress={() => handleImagePress(0)}
+              onLongPress={handleBubbleLongPress}
+              delayLongPress={300}
               style={{
                 width: 216,
                 height: 176,

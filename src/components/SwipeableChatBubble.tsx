@@ -13,6 +13,7 @@ interface SwipeableChatBubbleProps {
   onLongPress?: (message: Message, layout?: BubbleLayout) => void;
   onReply?: (message: Message) => void;
   onRetry?: (message: Message) => void;
+  onImagePress?: (message: Message, index: number) => void;
   isActiveTime?: boolean;
   onToggleTime?: (messageId: string) => void;
 }
@@ -44,6 +45,7 @@ export function SwipeableChatBubble({
   onLongPress,
   onReply,
   onRetry,
+  onImagePress,
   isActiveTime,
   onToggleTime,
 }: SwipeableChatBubbleProps) {
@@ -98,6 +100,7 @@ export function SwipeableChatBubble({
           onLongPress={onLongPress}
           onReply={onReply}
           onRetry={onRetry}
+          onImagePress={onImagePress}
           isActiveTime={isActiveTime}
           onToggleTime={onToggleTime}
         />
@@ -133,6 +136,7 @@ export function SwipeableChatBubble({
         onLongPress={onLongPress}
         onReply={onReply}
         onRetry={onRetry}
+        onImagePress={onImagePress}
         isActiveTime={isActiveTime}
         onToggleTime={onToggleTime}
       />

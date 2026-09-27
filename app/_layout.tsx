@@ -198,6 +198,7 @@ function RootLayoutNav() {
       <Stack.Screen name="pages/settings" options={{ headerShown: false, animation: "slide_from_right" }} />
       <Stack.Screen name="pages/edit-profile" options={{ headerShown: false, animation: "slide_from_right" }} />
       <Stack.Screen name="pages/blocked-users" options={{ headerShown: false, animation: "slide_from_right" }} />
+      <Stack.Screen name="pages/roadmap" options={{ headerShown: false, animation: "slide_from_bottom" }} />
 
       {/* Modals */}
       <Stack.Screen name="modal" options={{ presentation: "modal" }} />

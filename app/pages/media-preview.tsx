@@ -2,7 +2,6 @@ import React, { useState, useMemo, useEffect, useCallback, useRef } from "react"
 import {
   View,
   Text,
-  Image,
   Pressable,
   TouchableOpacity,
   Dimensions,
@@ -17,6 +16,7 @@ import {
   Keyboard,
   Alert,
   ScrollView,
+  Image,
 } from "react-native";
 import { useLocalSearchParams, router } from "expo-router";
 import {

@@ -38,7 +38,6 @@ import {
   Ban,
   Drama,
   Sparkles,
-  Flame,
   ChevronRight,
   LogOut,
   Plus,
@@ -61,7 +60,11 @@ import {
   hideConversation as apiHideConversation,
 } from "@/lib/api/conversation";
 import * as Notifications from "expo-notifications";
-import { setAppBadgeCount } from "@/lib/pushNotifications";
+import {
+  setAppBadgeCount,
+  dismissPresentedNotificationByConversationId,
+  setActiveConversationId,
+} from "@/lib/pushNotifications";
 import { getProfilesBatch } from "@/lib/api/profiles";
 import { usePresence } from "@/context/PresenceContext";
 import { blockUser, reportUser } from "@/lib/api/moderation";
@@ -69,15 +72,17 @@ import { endMatch as apiEndMatch } from "@/lib/api/matchmaking";
 import { stageName } from "@/constants/matchOptions";
 import { getSocket } from "@/lib/socket";
 import * as ImagePicker from "expo-image-picker";
-import { uploadChatFile } from "@/lib/api/media";
+import { uploadChatFile, type LocalFile } from "@/lib/api/media";
 import { SwipeableChatBubble } from "@/components/SwipeableChatBubble";
 import { ChatBubble, isOnlyEmoji, type BubbleLayout } from "@/components/ChatBubble";
 import { ChatInput } from "@/components/ChatInput";
+import { MessageImageViewer } from "@/components/MessageImageViewer";
 import { UserAvatar, resolveImageUri } from "@/components/UserAvatar";
 import { AnonymousAvatar } from "@/components/AnonymousAvatar";
+import { ChatStreakBadge } from "@/components/ChatStreakBadge";
 import { FluentEmojiPickerModal } from "@/components/FluentEmojiPickerModal";
 import { OfflineAnimatedEmoji } from "@/components/OfflineAnimatedEmoji";
-import { MatchRevealSheet } from "@/components/MatchRevealSheet";
+// MatchRevealSheet replaced by standalone roadmap page
 import { RoadmapProgressionBadge } from "@/components/RoadmapProgressionBadge";
 import { KeyboardHugView } from "@/components/KeyboardHugView";
 import { KeyboardGestureArea } from "react-native-keyboard-controller";
@@ -299,7 +304,7 @@ export default function ConversationScreen() {
   const isEnded =
     conversationVariant === "anonymous_ended" ||
     Boolean(matchInfo?.ended);
-  const [showRevealSheet, setShowRevealSheet] = useState(false);
+  // showRevealSheet removed — replaced by router navigation to pages/roadmap
   const [showEndMatchConfirm, setShowEndMatchConfirm] = useState(false);
   const [draftText, setDraftText] = useState("");
 
@@ -339,6 +344,9 @@ export default function ConversationScreen() {
   const [showReportConfirm, setShowReportConfirm] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
   const [showDeleteConvConfirm, setShowDeleteConvConfirm] = useState(false);
+  // Web-mirror image viewer state
+  const [viewingImageMessage, setViewingImageMessage] = useState<Message | null>(null);
+  const [viewingImageIndex, setViewingImageIndex] = useState(0);
 
   // ── Minute-tick for realtime deadline countdown ──────────────────────
   useEffect(() => {
@@ -525,6 +533,8 @@ export default function ConversationScreen() {
           accessToken
         ).catch(() => { });
 
+        dismissPresentedNotificationByConversationId(conversationId).catch(() => null);
+
         if (Notifications && typeof Notifications.getBadgeCountAsync === "function") {
           Notifications.getBadgeCountAsync().then((count) => {
             setAppBadgeCount(Math.max(0, count - 1));
@@ -665,6 +675,7 @@ export default function ConversationScreen() {
         return nextList;
       });
       markConversationRead(conversationId, new Date().toISOString(), accessToken).catch(() => { });
+      dismissPresentedNotificationByConversationId(conversationId).catch(() => null);
       setTimeout(() => {
         flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
       }, 50);
@@ -673,12 +684,31 @@ export default function ConversationScreen() {
     const onConnect = () => void loadMessages(true);
 
     const onStageUpdated = (payload: any) => {
-      if (payload?.matchId === matchInfo?.id || payload?.conversationId === conversationId) {
+      if (
+        payload?.matchId === matchInfo?.id ||
+        payload?.matchId === matchInfo?.matchId ||
+        payload?.conversationId === conversationId
+      ) {
         setMatchInfo((prev: any) => ({
           ...prev,
           stage: payload.stage ?? prev?.stage,
+          stagePoints: payload.stagePoints ?? 0,
           dayStreak: payload.dayStreak ?? prev?.dayStreak,
           streakActiveToday: true,
+        }));
+      }
+    };
+
+    const onPointsUpdated = (payload: any) => {
+      if (
+        payload?.matchId === matchInfo?.id ||
+        payload?.matchId === matchInfo?.matchId
+      ) {
+        setMatchInfo((prev: any) => ({
+          ...prev,
+          stagePoints: payload.stagePoints ?? prev?.stagePoints,
+          matchPoints: payload.matchPoints ?? prev?.matchPoints,
+          stage: payload.stage ?? prev?.stage,
         }));
       }
     };
@@ -731,6 +761,7 @@ export default function ConversationScreen() {
     socket.on("conversation:streak_updated", onStreakUpdate);
     socket.on("matchmaking:stage_updated", onStageUpdated);
     socket.on("matchmaking:streak_update", onStreakUpdate);
+    socket.on("match:points_updated", onPointsUpdated);
     socket.on("matchmaking:match_ended", onMatchEnded);
     socket.on("matchmaking:chat_expired", onMatchEnded);
     socket.on("connect", onConnect);
@@ -738,13 +769,17 @@ export default function ConversationScreen() {
     if (socket.connected) {
       void loadMessages(true);
     }
+    setActiveConversationId(conversationId);
+    dismissPresentedNotificationByConversationId(conversationId).catch(() => null);
 
     return () => {
+      setActiveConversationId(null);
       socket.off("conversation:message_new", onMessageNew);
       socket.off("conversation:message_deleted", onMessageDeleted);
       socket.off("conversation:streak_updated", onStreakUpdate);
       socket.off("matchmaking:stage_updated", onStageUpdated);
       socket.off("matchmaking:streak_update", onStreakUpdate);
+      socket.off("match:points_updated", onPointsUpdated);
       socket.off("matchmaking:match_ended", onMatchEnded);
       socket.off("matchmaking:chat_expired", onMatchEnded);
       socket.off("connect", onConnect);
@@ -778,29 +813,36 @@ export default function ConversationScreen() {
     }
   }, [conversationId, accessToken]);
 
-  // ── Send message (Optimistic UI — 0ms instant display) ───────────────
+  // ── Send message (Optimistic UI — 0ms instant display with multiupload support) ───
   const handleSend = useCallback(
-
-    async (content: string, imageUrl?: string | null) => {
+    async (content: string, media?: LocalFile[] | string | null) => {
       if (!conversationId || !accessToken || !user) return;
 
       const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
       const activeReply = replyTo;
       setReplyTo(null);
 
+      // Derive optimistic image URL (single local URI or stringified JSON array of local URIs)
+      let optimisticImageUrl: string | null = null;
+      if (Array.isArray(media) && media.length > 0) {
+        optimisticImageUrl = media.length === 1 ? media[0].uri : JSON.stringify(media.map((f) => f.uri));
+      } else if (typeof media === "string" && media) {
+        optimisticImageUrl = media;
+      }
+
       const optimisticMsg: Message = {
         id: tempId,
         conversation_id: conversationId,
         sender_id: user.id,
         content,
-        image_url: imageUrl || null,
+        image_url: optimisticImageUrl,
         created_at: new Date().toISOString(),
         reply_to_message_id: activeReply?.id || null,
         replied_message: activeReply || null,
         reactions: [],
         status: "sending",
       };
-      (optimisticMsg as any).imageUrl = imageUrl || null;
+      (optimisticMsg as any).imageUrl = optimisticImageUrl;
 
       // 1. Immediately display message on screen (0ms delay)
       setMessages((prev) => [...prev, optimisticMsg]);
@@ -810,13 +852,23 @@ export default function ConversationScreen() {
         flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
       });
 
-      // 3. Send to server in background
+      // 3. Process upload if LocalFile[] provided, then send to server
       try {
+        let finalImageUrl: string | null = null;
+        if (Array.isArray(media) && media.length > 0) {
+          const uploadPromises = media.map((file) => uploadChatFile(file, accessToken));
+          const uploadRes = await Promise.all(uploadPromises);
+          const urls = uploadRes.map((r) => r?.url).filter((u): u is string => Boolean(u));
+          finalImageUrl = urls.length === 1 ? urls[0] : JSON.stringify(urls);
+        } else if (typeof media === "string" && media) {
+          finalImageUrl = media;
+        }
+
         const savedMsg = await sendMessage(
           conversationId,
           {
             content,
-            imageUrl: imageUrl || null,
+            imageUrl: finalImageUrl,
             replyToMessageId: activeReply?.id || null,
           },
           accessToken
@@ -841,7 +893,7 @@ export default function ConversationScreen() {
         );
       }
     },
-    [conversationId, accessToken, user, replyTo]
+    [conversationId, accessToken, user, replyTo, hasMore, nextCursor]
   );
 
   // ── Pick media & take photo handlers (up to 6 images) ────────────────
@@ -1096,6 +1148,10 @@ export default function ConversationScreen() {
           onLongPress={handleLongPress}
           onReply={(msg) => setReplyTo(msg)}
           onRetry={handleRetry}
+          onImagePress={(msg, idx) => {
+            setViewingImageIndex(idx);
+            setViewingImageMessage(msg);
+          }}
           isActiveTime={activeTimeMessageId === item.data.id}
           onToggleTime={handleToggleTime}
         />
@@ -1159,7 +1215,7 @@ export default function ConversationScreen() {
 
         {isAnonymous ? (
           <Pressable
-            onPress={() => setShowRevealSheet(true)}
+            onPress={() => router.push({ pathname: "/pages/roadmap" as any, params: { matchId: matchInfo?.matchId || matchInfo?.id || conversationId, stage: String(matchInfo?.stage ?? 1), stagePoints: String(matchInfo?.stagePoints ?? 0), dayStreak: String(convStreak || matchInfo?.dayStreak || 0), partnerAlias: matchInfo?.partnerAlias || prefillName || "Anonymous Ally", partnerAvatar: matchInfo?.partnerAvatar || prefillAvatar || "fox" } })}
             style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 10 }}
           >
             <AnonymousAvatar
@@ -1176,20 +1232,13 @@ export default function ConversationScreen() {
                 </Text>
                 <Drama size={15} color="#1A6B3C" />
 
-                {/* Streak badge — no background pill, just flame icon + count text */}
+                {/* Streak badge — mirrors web */}
                 {(convStreak || matchInfo?.dayStreak || 0) > 0 && (
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 2 }}>
-                    <Flame size={14} color={isStreakActiveToday ? "#eb5600" : "#9CA3AF"} />
-                    <Text
-                      style={{
-                        fontSize: 12,
-                        fontWeight: "700",
-                        color: isStreakActiveToday ? "#eb5600" : "#9CA3AF",
-                      }}
-                    >
-                      {(convStreak || matchInfo?.dayStreak || 0)}d
-                    </Text>
-                  </View>
+                  <ChatStreakBadge
+                    dayStreak={convStreak || matchInfo?.dayStreak || 0}
+                    isStreakActiveToday={isStreakActiveToday}
+                    size="md"
+                  />
                 )}
               </View>
 
@@ -1231,20 +1280,13 @@ export default function ConversationScreen() {
                   {otherProfile?.full_name || otherProfile?.username || "User"}
                 </Text>
 
-                {/* Streak badge — no background pill, just flame icon + count text */}
+                {/* Streak badge — mirrors web */}
                 {(convStreak || matchInfo?.dayStreak || 0) > 0 && (
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 2 }}>
-                    <Flame size={14} color={isStreakActiveToday ? "#eb5600" : "#9CA3AF"} />
-                    <Text
-                      style={{
-                        fontSize: 12,
-                        fontWeight: "700",
-                        color: isStreakActiveToday ? "#eb5600" : "#9CA3AF",
-                      }}
-                    >
-                      {(convStreak || matchInfo?.dayStreak || 0)}d
-                    </Text>
-                  </View>
+                  <ChatStreakBadge
+                    dayStreak={convStreak || matchInfo?.dayStreak || 0}
+                    isStreakActiveToday={isStreakActiveToday}
+                    size="md"
+                  />
                 )}
               </View>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 1 }}>
@@ -1278,9 +1320,10 @@ export default function ConversationScreen() {
         {isAnonymous && (
           <RoadmapProgressionBadge
             stage={matchInfo?.stage ?? 1}
+            stagePoints={matchInfo?.stagePoints ?? 0}
             dayStreak={convStreak || matchInfo?.dayStreak || 0}
             avatarKey={matchInfo?.partnerAvatar || prefillAvatar || "fox"}
-            onPress={() => setShowRevealSheet(true)}
+            onPress={() => router.push({ pathname: "/pages/roadmap" as any, params: { matchId: matchInfo?.matchId || matchInfo?.id || conversationId, stage: String(matchInfo?.stage ?? 1), stagePoints: String(matchInfo?.stagePoints ?? 0), dayStreak: String(convStreak || matchInfo?.dayStreak || 0), partnerAlias: matchInfo?.partnerAlias || prefillName || "Anonymous Ally", partnerAvatar: matchInfo?.partnerAvatar || prefillAvatar || "fox" } })}
             style={{ position: "absolute", top: 10, right: 14, zIndex: 30 }}
           />
         )}
@@ -1912,7 +1955,7 @@ export default function ConversationScreen() {
                 label="View Clues & Roadmap"
                 onPress={() => {
                   setShowOverflow(false);
-                  setShowRevealSheet(true);
+                  router.push({ pathname: "/pages/roadmap" as any, params: { matchId: matchInfo?.matchId || matchInfo?.id || conversationId, stage: String(matchInfo?.stage ?? 1), stagePoints: String(matchInfo?.stagePoints ?? 0), dayStreak: String(convStreak || matchInfo?.dayStreak || 0), partnerAlias: matchInfo?.partnerAlias || prefillName || "Anonymous Ally", partnerAvatar: matchInfo?.partnerAvatar || prefillAvatar || "fox" } });
                 }}
               />
             )}
@@ -2005,24 +2048,17 @@ export default function ConversationScreen() {
         onCancel={() => setShowEndMatchConfirm(false)}
       />
 
-      {/* ── Match Reveal & Roadmap Sheet ──────────────────────────────────── */}
-      {isAnonymous && (
-        <MatchRevealSheet
-          visible={showRevealSheet}
-          onClose={() => setShowRevealSheet(false)}
-          matchId={matchInfo?.matchId || matchInfo?.id || conversationId}
-          stage={matchInfo?.stage ?? 0}
-          dayStreak={matchInfo?.dayStreak ?? 0}
-          partnerAlias={matchInfo?.partnerAlias || prefillName || "Anonymous Ally"}
-          partnerAvatar={matchInfo?.partnerAvatar || prefillAvatar || "fox"}
-          onSelectIcebreaker={(text) => setDraftText(text)}
-          onMatchEnded={() => {
-            setConversationVariant("anonymous_ended");
-            setMatchInfo((prev: any) => ({ ...prev, ended: true }));
-          }}
-          ended={isEnded}
-        />
-      )}
+      {/* ── Web-Mirror Chat Message Image Viewer ─────────────────────────── */}
+      <MessageImageViewer
+        visible={Boolean(viewingImageMessage)}
+        message={viewingImageMessage}
+        initialIndex={viewingImageIndex}
+        onClose={() => setViewingImageMessage(null)}
+        onReply={(msg) => {
+          setReplyTo(msg);
+          setViewingImageMessage(null);
+        }}
+      />
     </View>
   );
 }

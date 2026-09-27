@@ -5,10 +5,12 @@
  */
 export class ApiError extends Error {
   status: number;
+  isMaintenance: boolean;
 
-  constructor(message: string, status: number) {
+  constructor(message: string, status: number, isMaintenance: boolean = false) {
     super(message);
     this.name = "ApiError";
     this.status = status;
+    this.isMaintenance = isMaintenance;
   }
 }

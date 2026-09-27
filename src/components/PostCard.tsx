@@ -82,6 +82,7 @@ export function PostCard({
   const isAlly = Boolean(post.author?.is_ally || isOwnPost);
 
   const handleAuthorPress = () => {
+    if (!post.author?.avatar_url) return;
     if (onPressAuthor) {
       onPressAuthor(post.author.id);
     } else if (post.author?.id) {

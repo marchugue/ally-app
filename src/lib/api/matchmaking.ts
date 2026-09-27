@@ -121,31 +121,66 @@ export function endMatch(
 }
 
 export interface RevealPartnerView {
-  userId?: string | null;
-  fullName?: string | null;
-  username?: string | null;
-  bio?: string | null;
-  avatarUrl?: string | null;
-  blurredAvatarUrl?: string | null;
+  // Stage 2+ (non-identifying)
   ageRange?: string | null;
   zodiacSign?: string | null;
   personalityType?: string | null;
   musicTaste?: string[];
   movieInterests?: string[];
   studyCategory?: string | null;
-  firstNameLetter?: string | null;
+  // Stage 3+
   favoriteHobby?: string | null;
+  // Profile Unlocked (500 points reached)
+  userId?: string | null;
+  fullName?: string | null;
+  username?: string | null;
+  avatarUrl?: string | null;
+  bio?: string | null;
+  department?: string | null;
+  course?: string | null;
+}
+
+export interface DailyTaskStatus {
+  taskId: string;
+  label: string;
+  description: string;
+  basePoints: number;
+  myCompleted: boolean;
+  partnerCompleted: boolean;
+  myPointsAwarded: number;
+}
+
+export interface StageTask {
+  id: string;
+  label: string;
+  description: string;
+  basePoints: number;
+  unlockedAtStage: number;
 }
 
 export interface RevealData {
   stage: number;
   stageName: string;
   dayStreak: number;
+  targetStreak?: number;
+  streakProgressPercent?: number;
+  // Points progression & 500-pt profile unlock
+  matchPoints: number;
+  stagePoints: number;
+  profileUnlockTarget?: number;
+  pointsToProfileUnlock?: number;
+  isProfileUnlocked?: boolean;
+  pointsToNextStage: number;
+  effectiveMultiplier: number;
+  // Partner info
   compatibilityScore: number | null;
   sharedInterests: string[];
   sharedCategories: string[];
   conversationInsights: { totalMessages: number; daysActive: number } | null;
   icebreakers: string[];
+  // Daily tasks (reset 12am PHT)
+  dailyTasks: DailyTaskStatus[];
+  activeTasks: StageTask[];
   partner: RevealPartnerView;
 }
 
@@ -159,6 +194,7 @@ export interface TimelineData {
     likesCount: number;
     commentsCount: number;
     createdAt: string;
+    isAnonymous?: boolean;
   }>;
 }
 

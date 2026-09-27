@@ -15,6 +15,15 @@ export type NotificationType =
   | "system"
   | string;
 
+export type NotificationCategory =
+  | 'all'
+  | 'unread'
+  | 'messages'
+  | 'connections'
+  | 'ally'
+  | 'safety'
+  | 'activity';
+
 export interface NotificationRedirection {
   entityType: 'post' | 'comment' | 'conversation' | 'profile' | 'requests' | 'discover';
   targetId: string;
@@ -26,11 +35,17 @@ export interface NotificationRedirection {
 export interface NotificationItem {
   id: string;
   type: NotificationType;
+  category?: NotificationCategory;
+  group_key?: string;
+  groupKey?: string;
+  unread_count?: number;
+  unreadCount?: number;
   message?: string;
   title?: string;
   description?: string;
   timestamp?: string;
   created_at?: string;
+  updated_at?: string;
   isRead?: boolean;
   read?: boolean;
   is_read?: boolean;

@@ -24,7 +24,12 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AnonymousAvatar } from "@/components/AnonymousAvatar";
 import { EmptyState } from "@/components/EmptyState";
 import { useAuth } from "@/lib/auth/AuthContext";
-import { getFriendRequestNotifications, markNotificationRead } from "@/lib/api/notification";
+import {
+  getFriendRequestNotifications,
+  markNotificationRead,
+  markTargetNotificationsRead,
+} from "@/lib/api/notification";
+import { dismissPresentedNotificationsByCategory } from "@/lib/pushNotifications";
 import {
   acceptConnection,
   rejectConnection,
@@ -85,6 +90,8 @@ export default function RequestsScreen() {
     try {
       const items = await getFriendRequestNotifications(accessToken);
       setRequests(items || []);
+      dismissPresentedNotificationsByCategory("connections").catch(() => null);
+      markTargetNotificationsRead("connections", accessToken).catch(() => null);
     } catch (err) {
       console.warn("Failed to load requests", err);
     }

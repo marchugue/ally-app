@@ -48,21 +48,22 @@ export const STAGE_NAMES = [
   "Stranger",
   "Anonymous Chat",
   "Play Games Together",
-  "Image Sharing",
+  "Media Sharing",
   "Campus Allies",
 ] as const;
 
+/** Points required to unlock real profile / mutual identity. */
+export const TOTAL_POINTS_FOR_PROFILE_UNLOCK = 500;
+
+/** Backward-compat alias */
+export const POINTS_PER_STAGE = 500;
+
+/** Consecutive daily streak required to enter each stage: 0d (Stage 1), 3d (Stage 2), 7d (Stage 3), 10d (Stage 4). */
 export const STAGE_THRESHOLDS = [0, 0, 3, 7, 10];
 
-export function stageForStreak(days: number): number {
-  let stage = 0;
-  for (let i = STAGE_THRESHOLDS.length - 1; i >= 0; i--) {
-    if (days >= STAGE_THRESHOLDS[i]) {
-      stage = i;
-      break;
-    }
-  }
-  return stage;
+/** @deprecated Use points-based progression instead. */
+export function stageForStreak(_days: number): number {
+  return 1;
 }
 
 export function stageName(stage: number): string {

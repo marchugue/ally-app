@@ -18,10 +18,11 @@ import {
 } from "@/lib/chatCache";
 import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
 import { router, useFocusEffect } from "expo-router";
-import { Search, X, MessageCircle, Trash2, Drama, Flame } from "lucide-react-native";
+import { Search, X, MessageCircle, Trash2, Drama } from "lucide-react-native";
 import { ScreenHeader } from "@/components/ScreenHeader";
 import { UserAvatar } from "@/components/UserAvatar";
 import { AnonymousAvatar } from "@/components/AnonymousAvatar";
+import { ChatStreakBadge } from "@/components/ChatStreakBadge";
 import { FilterChip } from "@/components/FilterChip";
 import { EmptyState } from "@/components/EmptyState";
 import { useAuth } from "@/lib/auth/AuthContext";
@@ -65,7 +66,7 @@ function getParticipantInfo(conv: any, myId: string) {
   return {
     participantId: profile?.id || profile?.user_id || conv.id,
     participantName: profile?.full_name || (profile?.username ? `@${profile.username}` : "Student"),
-    participantAvatar: profile?.avatar_url || null,
+    participantAvatar: profile?.avatar_url || profile?.avatarUrl || profile?.avatar || null,
     isAnonymous: false,
     dayStreak,
     streakActiveToday,
@@ -74,7 +75,11 @@ function getParticipantInfo(conv: any, myId: string) {
 
 function getLastMessage(conv: Conversation) {
   if (!conv.messages || conv.messages.length === 0) return null;
-  return conv.messages[conv.messages.length - 1];
+  // Ensure messages are sorted by created_at ascending so last item is always newest
+  const sorted = [...conv.messages].sort(
+    (a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+  );
+  return sorted[sorted.length - 1];
 }
 
 function getUnreadInfo(conv: Conversation, myId: string) {
@@ -244,46 +249,64 @@ const SwipeableRow = React.memo(function SwipeableRow({
               </Text>
               {info.isAnonymous && <Drama size={13} color="#1A6B3C" />}
               {info.dayStreak > 0 && (
-                <View
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    gap: 2,
-                    backgroundColor: info.streakActiveToday ? "rgba(235, 86, 0, 0.1)" : "#F3F4F6",
-                    paddingHorizontal: 5,
-                    paddingVertical: 1,
-                    borderRadius: 6,
-                  }}
-                >
-                  <Flame size={11} color={info.streakActiveToday ? "#eb5600" : "#9CA3AF"} />
-                  <Text
-                    style={{
-                      fontSize: 11,
-                      fontWeight: "700",
-                      color: info.streakActiveToday ? "#eb5600" : "#9CA3AF",
-                    }}
-                  >
-                    {info.dayStreak}d
-                  </Text>
-                </View>
+                <ChatStreakBadge
+                  dayStreak={info.dayStreak}
+                  isStreakActiveToday={info.streakActiveToday}
+                  size="sm"
+                />
               )}
             </View>
-            <Text
-              className="text-[13px] mt-0.5"
-              style={{
-                color: unreadInfo.isUnread ? "#111827" : lastMsg ? "#6B7280" : "#9CA3AF",
-                fontWeight: unreadInfo.isUnread ? "700" : "400",
-                fontStyle: (lastMsg && lastMsg.is_deleted) ? "italic" : lastMsg ? "normal" : "italic",
-              }}
-              numberOfLines={1}
-              ellipsizeMode="tail"
-            >
-              {lastMsg
-                ? lastMsg.is_deleted
-                  ? "Message deleted"
-                  : `${isMine ? "You: " : ""}${lastMsg.content || (lastMsg.image_url ? "📷 Photo" : "")}`
-                : "Start the conversation"}
-            </Text>
+            {(() => {
+              if (!lastMsg) {
+                return (
+                  <Text
+                    className="text-[13px] mt-0.5"
+                    style={{ color: "#9CA3AF", fontStyle: "italic" }}
+                    numberOfLines={1}
+                    ellipsizeMode="tail"
+                  >
+                    Start the conversation
+                  </Text>
+                );
+              }
+              if (lastMsg.is_deleted) {
+                return (
+                  <Text
+                    className="text-[13px] mt-0.5"
+                    style={{ color: "#9CA3AF", fontStyle: "italic" }}
+                    numberOfLines={1}
+                    ellipsizeMode="tail"
+                  >
+                    Message deleted
+                  </Text>
+                );
+              }
+              const hasPhoto = Boolean(
+                lastMsg.image_url ||
+                (lastMsg as any).imageUrl ||
+                (lastMsg as any).images ||
+                (lastMsg.content && /^https?:\/\/.+\.(jpg|jpeg|png|webp|gif)(\?.*)?$/i.test(lastMsg.content.trim()))
+              );
+              const isDirectImgUrl = Boolean(
+                lastMsg.content && /^https?:\/\/.+\.(jpg|jpeg|png|webp|gif)(\?.*)?$/i.test(lastMsg.content.trim())
+              );
+              const contentText = isDirectImgUrl ? "" : lastMsg.content?.trim();
+              const text = contentText || (hasPhoto ? "📷 Photo" : "");
+
+              return (
+                <Text
+                  className="text-[13px] mt-0.5"
+                  style={{
+                    color: unreadInfo.isUnread ? "#111827" : "#6B7280",
+                    fontWeight: unreadInfo.isUnread ? "700" : "400",
+                  }}
+                  numberOfLines={1}
+                  ellipsizeMode="tail"
+                >
+                  {`${isMine ? "You: " : ""}${text || "Start the conversation"}`}
+                </Text>
+              );
+            })()}
           </View>
 
           {/* Timestamp & Red Unread Badge */}

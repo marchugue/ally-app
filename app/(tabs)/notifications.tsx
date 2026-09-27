@@ -28,6 +28,7 @@ import {
   X,
   Filter,
   ChevronDown,
+  ShieldAlert,
 } from "lucide-react-native";
 import { useAuth } from "@/lib/auth/AuthContext";
 import { UserAvatar } from "@/components/UserAvatar";
@@ -35,16 +36,20 @@ import { AnonymousAvatar } from "@/components/AnonymousAvatar";
 import { acceptConnection, rejectConnection } from "@/lib/api/interaction";
 import { getSocket } from "@/lib/socket";
 import * as Notifications from "expo-notifications";
-import { setAppBadgeCount } from "@/lib/pushNotifications";
+import {
+  setAppBadgeCount,
+  dismissPresentedNotificationByConversationId,
+  dismissPresentedNotificationsByCategory,
+} from "@/lib/pushNotifications";
 import {
   listNotifications,
   markNotificationRead,
   markAllNotificationsRead,
   clearAllNotifications,
 } from "@/lib/api/notification";
-import type { NotificationItem } from "@/types/notification";
+import type { NotificationItem, NotificationCategory } from "@/types/notification";
 
-type FilterCategory = "all" | "unread" | "requests" | "matches";
+type FilterCategory = NotificationCategory;
 
 const POLL_INTERVAL_MS = 10000;
 
@@ -106,7 +111,31 @@ function getDateGroup(dateStr?: string): DateGroupKey {
   return "earlier";
 }
 
-const EXCLUDED_NOTIFICATION_TYPES = ["message"];
+const EXCLUDED_NOTIFICATION_TYPES: string[] = [];
+
+function deriveCategory(type?: string): NotificationCategory {
+  if (!type) return "activity";
+  const t = type.toLowerCase();
+  if (t === "message") return "messages";
+  if (
+    t.includes("friend") ||
+    t.includes("connection") ||
+    t.includes("request") ||
+    t.includes("accepted")
+  ) {
+    return "connections";
+  }
+  if (t.includes("match") || t.includes("ally")) return "ally";
+  if (
+    t.includes("safety") ||
+    t.includes("emergency") ||
+    t.includes("alert") ||
+    t.includes("warning")
+  ) {
+    return "safety";
+  }
+  return "activity";
+}
 
 const ANIMAL_KEYS = [
   "fox", "wolf", "whale", "owl", "panda", "otter", "falcon", "koala", "lynx", "dolphin", "raven", "badger"
@@ -268,11 +297,69 @@ export default function NotificationsScreen() {
       void loadNotifications(false);
     };
 
+    const onNotificationUpdated = (payload: any) => {
+      if (!payload) return;
+      setNotifications((prev) => {
+        const idx = prev.findIndex(
+          (n) => n.id === payload.id || (payload.group_key && n.group_key === payload.group_key)
+        );
+        if (idx !== -1) {
+          const next = [...prev];
+          next[idx] = { ...next[idx], ...payload, isRead: false, read: false, is_read: false };
+          return next;
+        }
+        return [payload, ...prev];
+      });
+    };
+
+    const onNotificationRead = (payload: any) => {
+      if (!payload) return;
+      setNotifications((prev) =>
+        prev.map((n) => {
+          if (
+            (payload.id && n.id === payload.id) ||
+            (payload.targetId && (n.target_id === payload.targetId || n.group_key?.includes(payload.targetId)))
+          ) {
+            return { ...n, isRead: true, read: true, is_read: true, unread_count: 0 };
+          }
+          return n;
+        })
+      );
+    };
+
+    const onNotificationCleared = (payload: any) => {
+      if (!payload) return;
+      if (payload.conversationId) {
+        dismissPresentedNotificationByConversationId(payload.conversationId).catch(() => null);
+      }
+      if (payload.category) {
+        dismissPresentedNotificationsByCategory(payload.category, payload.targetId).catch(() => null);
+      }
+      setNotifications((prev) =>
+        prev.map((n) => {
+          if (
+            (payload.conversationId && (n.target_id === payload.conversationId || n.group_key?.includes(payload.conversationId))) ||
+            (payload.targetId && (n.target_id === payload.targetId || n.group_key?.includes(payload.targetId))) ||
+            (payload.groupKey && n.group_key === payload.groupKey)
+          ) {
+            return { ...n, isRead: true, read: true, is_read: true, unread_count: 0 };
+          }
+          return n;
+        })
+      );
+    };
+
     socket.on("notification:new", onRealtimeNotification);
+    socket.on("notification:updated", onNotificationUpdated);
+    socket.on("notification:read", onNotificationRead);
+    socket.on("notification:cleared", onNotificationCleared);
     socket.on("notification", onRealtimeNotification);
 
     return () => {
       socket.off("notification:new", onRealtimeNotification);
+      socket.off("notification:updated", onNotificationUpdated);
+      socket.off("notification:read", onNotificationRead);
+      socket.off("notification:cleared", onNotificationCleared);
       socket.off("notification", onRealtimeNotification);
     };
   }, [accessToken, loadNotifications]);
@@ -390,6 +477,18 @@ export default function NotificationsScreen() {
         }).catch(() => null);
       }
 
+      // Automatically clear corresponding notification from device tray
+      if (item.type === "message" || item.type === "anon_match" || item.type === "streak_reminder" || item.type === "accepted") {
+        const targetConvId = item.target_id || item.post_id;
+        if (targetConvId) {
+          dismissPresentedNotificationByConversationId(targetConvId).catch(() => null);
+        }
+      } else if (item.type === "friend_request" || item.type === "connection_request") {
+        dismissPresentedNotificationsByCategory("connections").catch(() => null);
+      } else if (item.category) {
+        dismissPresentedNotificationsByCategory(item.category).catch(() => null);
+      }
+
       // 1. Direct Redirection from Backend (if provided)
       if (item.redirection?.route) {
         router.push({
@@ -481,14 +580,35 @@ export default function NotificationsScreen() {
     return notifications.filter((n) => !(n.is_read ?? n.isRead ?? n.read ?? false)).length;
   }, [notifications]);
 
+  const categoryCounts = useMemo(() => {
+    const counts = {
+      all: notifications.length,
+      unread: 0,
+      messages: 0,
+      connections: 0,
+      ally: 0,
+      safety: 0,
+      activity: 0,
+    };
+    for (const n of notifications) {
+      const isUnread = !(n.is_read ?? n.isRead ?? n.read ?? false);
+      if (isUnread) counts.unread++;
+      const cat = n.category || deriveCategory(n.type);
+      if (cat in counts && cat !== "all" && cat !== "unread") {
+        counts[cat as keyof typeof counts]++;
+      }
+    }
+    return counts;
+  }, [notifications]);
+
   const filteredNotifications = useMemo(() => {
     return notifications.filter((n) => {
       if (EXCLUDED_NOTIFICATION_TYPES.includes(n.type)) return false;
       const isUnread = !(n.is_read ?? n.isRead ?? n.read ?? false);
       if (activeFilter === "unread") return isUnread;
-      if (activeFilter === "requests") return n.type === "friend_request" || n.type === "accepted" || n.type === "connection_request";
-      if (activeFilter === "matches") return n.type === "match" || n.type === "anon_match";
-      return true;
+      if (activeFilter === "all") return true;
+      const cat = n.category || deriveCategory(n.type);
+      return cat === activeFilter;
     });
   }, [notifications, activeFilter]);
 
@@ -558,6 +678,15 @@ export default function NotificationsScreen() {
       case "streak_reminder":
         badgeIcon = <Flame size={10} color="#FFFFFF" />;
         badgeBg = "#EB5600";
+        break;
+      case "message":
+        badgeIcon = <MessageCircle size={10} color="#FFFFFF" />;
+        badgeBg = "#1A6B3C";
+        break;
+      case "safety":
+      case "safety_alert":
+        badgeIcon = <ShieldAlert size={10} color="#FFFFFF" />;
+        badgeBg = "#DC2626";
         break;
       default:
         badgeIcon = <Bell size={10} color="#FFFFFF" />;
@@ -643,15 +772,24 @@ export default function NotificationsScreen() {
     const fromUser = Array.isArray(item.from_user) ? item.from_user[0] : item.from_user;
     const anonInfo = getAnonymousInfo(item);
 
-    const name = anonInfo.isAnon
+    let name = anonInfo.isAnon
       ? anonInfo.anonName!
       : item.type === "streak_reminder"
       ? "Streak Reminder"
       : item.username || item.author_name || fromUser?.username || fromUser?.full_name || "Someone";
 
+    const unreadCountForNotif = item.unread_count ?? (item as any).unreadCount ?? 1;
+
+    // Facebook / Messenger style: Alex (3 new messages)
+    if (item.type === "message" && unreadCountForNotif > 1) {
+      name = `${name} (${unreadCountForNotif} new messages)`;
+    }
+
     // 1. Build Action Headline (e.g., "charlotte commented on your post")
     let actionText = "";
-    if (item.type === "post_comment" || item.type === "comment") {
+    if (item.type === "message") {
+      actionText = unreadCountForNotif > 1 ? "" : "sent you a message";
+    } else if (item.type === "post_comment" || item.type === "comment") {
       actionText = "commented on your post";
     } else if (item.type === "post_like" || item.type === "like") {
       actionText = "liked your post";
@@ -669,6 +807,8 @@ export default function NotificationsScreen() {
       actionText = "messaged you";
     } else if (item.type === "streak_reminder") {
       actionText = "🔥";
+    } else if (item.type === "safety" || item.type === "safety_alert") {
+      actionText = "Safety Alert";
     } else {
       actionText = item.title || "interacted with your post";
     }
@@ -677,10 +817,12 @@ export default function NotificationsScreen() {
     const reqStatus = handledRequests[item.id];
     const isBusy = busyIds[item.id];
 
-    // 2. Extract Subtitle / Description content (e.g. comment text "asd")
+    // 2. Extract Subtitle / Description content
     let subtext = "";
     if (item.type === "streak_reminder") {
       subtext = (item.description || item.message || "Your streak is not yet activated! Send a message to activate.").trim();
+    } else if (item.type === "message") {
+      subtext = (item.description || item.message || "").trim();
     } else if (!isMatchReq) {
       const rawDesc = (item.description || item.message || "").trim();
       if (rawDesc) {
@@ -843,9 +985,7 @@ export default function NotificationsScreen() {
           </Text>
 
           <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-            {(item.type === "message" ||
-              item.type === "anon_match" ||
-              item.type === "comment" ||
+            {(item.type === "comment" ||
               item.type === "post_comment" ||
               item.type === "comment_reply" ||
               item.type === "comment_mention") && (
@@ -1004,14 +1144,8 @@ export default function NotificationsScreen() {
           }}
         >
           <Filter size={13} color="#1A6B3C" />
-          <Text style={{ fontSize: 12, fontWeight: "700", color: "#111827" }}>
-            {activeFilter === "all"
-              ? "All"
-              : activeFilter === "unread"
-              ? "Unread"
-              : activeFilter === "requests"
-              ? "Requests"
-              : "Matches"}
+          <Text style={{ fontSize: 12, fontWeight: "700", color: "#111827", textTransform: "capitalize" }}>
+            {activeFilter}
           </Text>
           <View
             style={{
@@ -1022,13 +1156,7 @@ export default function NotificationsScreen() {
             }}
           >
             <Text style={{ fontSize: 10, fontWeight: "700", color: "#1A6B3C" }}>
-              {activeFilter === "all"
-                ? notifications.filter((n) => n.type !== "message").length
-                : activeFilter === "unread"
-                ? notifications.filter((n) => n.type !== "message" && !(n.is_read ?? n.isRead ?? n.read ?? false)).length
-                : activeFilter === "requests"
-                ? notifications.filter((n) => n.type === "friend_request" || n.type === "accepted" || n.type === "connection_request").length
-                : notifications.filter((n) => n.type === "match" || n.type === "anon_match").length}
+              {categoryCounts[activeFilter] ?? 0}
             </Text>
           </View>
           <ChevronDown size={13} color="#6B7280" />
@@ -1191,35 +1319,13 @@ export default function NotificationsScreen() {
             }}
           >
             {[
-              {
-                id: "all",
-                label: "All",
-                count: notifications.filter((n) => n.type !== "message").length,
-              },
-              {
-                id: "unread",
-                label: "Unread",
-                count: notifications.filter(
-                  (n) => n.type !== "message" && !(n.is_read ?? n.isRead ?? n.read ?? false)
-                ).length,
-              },
-              {
-                id: "requests",
-                label: "Requests",
-                count: notifications.filter(
-                  (n) =>
-                    n.type === "friend_request" ||
-                    n.type === "accepted" ||
-                    n.type === "connection_request"
-                ).length,
-              },
-              {
-                id: "matches",
-                label: "Matches",
-                count: notifications.filter(
-                  (n) => n.type === "match" || n.type === "anon_match"
-                ).length,
-              },
+              { id: "all", label: "All", count: categoryCounts.all },
+              { id: "unread", label: "Unread", count: categoryCounts.unread },
+              { id: "messages", label: "Messages", count: categoryCounts.messages },
+              { id: "connections", label: "Connections", count: categoryCounts.connections },
+              { id: "ally", label: "Ally", count: categoryCounts.ally },
+              { id: "safety", label: "Safety", count: categoryCounts.safety },
+              { id: "activity", label: "Activity", count: categoryCounts.activity },
             ].map((option) => {
               const isSelected = activeFilter === option.id;
               return (

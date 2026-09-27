@@ -60,11 +60,14 @@ export async function apiRequest<T>(
   const data = await response.json().catch(() => null);
 
   if (!response.ok) {
+    const isMaintenance =
+      response.status === 503 &&
+      Boolean(data && typeof data === "object" && "maintenance" in data && (data as any).maintenance);
     const message =
       data && typeof data === "object" && "message" in data
         ? String((data as { message: unknown }).message)
         : "Something went wrong";
-    throw new ApiError(message, response.status);
+    throw new ApiError(message, response.status, isMaintenance);
   }
 
   return data as T;
