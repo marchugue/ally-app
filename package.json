@@ -15,6 +15,9 @@
     "web": "expo start --web",
     "lint": "eslint .",
     "type-check": "tsc --noEmit",
+    "eas:build:prod": "eas build --platform android --profile production",
+    "eas:build:dev": "eas build --platform android --profile development",
+    "eas:build:all": "eas build --platform android --profile production && eas build --platform android --profile development",
     "postinstall": "patch-package"
   },
   "dependencies": {
