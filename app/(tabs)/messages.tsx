@@ -518,9 +518,12 @@ export default function MessagesScreen() {
             (payload?.conversationId && c.id === payload.conversationId) ||
             (payload?.matchId && c.matchInfo?.matchId === payload.matchId);
           if (!isMatch) return c;
-          const isInactive = payload.status === "inactive" || payload.dayStreak === 0 || payload.streak === 0;
-          const streak = isInactive ? 0 : (payload.dayStreak ?? payload.streak ?? c.dayStreak ?? 0);
-          const activeToday = isInactive ? false : (payload.streakActiveToday ?? true);
+          const isInactive =
+            payload.status === "inactive" ||
+            payload.streakStatus === "inactive" ||
+            payload.streakStatus === "expired";
+          const streak = isInactive ? 0 : (payload.currentStreak ?? payload.dayStreak ?? c.dayStreak ?? 0);
+          const activeToday = isInactive ? false : (payload.streakActiveToday ?? false);
           return {
             ...c,
             dayStreak: streak,
@@ -535,40 +538,23 @@ export default function MessagesScreen() {
 
     socket.on("conversation:message_new", onMessageNew);
     socket.on("conversation:streak_updated", onStreakUpdated);
-    socket.on("matchmaking:streak_update", onStreakUpdated);
     socket.on("connect", onConnect);
 
     return () => {
       socket.off("conversation:message_new", onMessageNew);
       socket.off("conversation:streak_updated", onStreakUpdated);
-      socket.off("matchmaking:streak_update", onStreakUpdated);
       socket.off("connect", onConnect);
     };
   }, [accessToken, loadConversations, refreshOnlineUsers]);
 
-  // Midnight end-of-day watcher on mobile
+  // Midnight end-of-day watcher: refresh authoritative streak state from server
   useEffect(() => {
     let lastDate = new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10);
     const interval = setInterval(() => {
       const currentDate = new Date(Date.now() + 8 * 3600_000).toISOString().slice(0, 10);
       if (currentDate !== lastDate) {
         lastDate = currentDate;
-        // Day has ended! Reset unactivated streaks
-        setConversations((prev) =>
-          prev.map((c) => {
-            if (c.dayStreak && !c.streakActiveToday && !c.matchInfo?.streakActiveToday) {
-              return {
-                ...c,
-                dayStreak: 0,
-                streakActiveToday: false,
-                matchInfo: c.matchInfo
-                  ? { ...c.matchInfo, dayStreak: 0, streakActiveToday: false }
-                  : c.matchInfo,
-              };
-            }
-            return c;
-          })
-        );
+        // Day has ended — re-fetch conversations to display server's authoritative state
         void loadConversations(true);
       }
     }, 30_000);

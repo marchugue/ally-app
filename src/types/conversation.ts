@@ -40,7 +40,8 @@ export interface Message {
   reply_to_message_id: string | null;
   replied_message: Message | null;
   reactions: MessageReaction[];
-  status?: "sending" | "sent" | "failed";
+  clientMessageId?: string | null;
+  status?: "sending" | "sent" | "delivered" | "read" | "failed";
   /** True when the sender deleted the message for everyone (tombstone). */
   is_deleted?: boolean;
   deleted_at?: string | null;
@@ -65,4 +66,5 @@ export interface SendMessagePayload {
   content: string;
   imageUrl?: string | null;
   replyToMessageId?: string | null;
+  clientMessageId?: string | null;
 }

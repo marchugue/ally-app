@@ -30,7 +30,7 @@ interface ChatInputProps {
   canUploadImages?: boolean;
 }
 
-export function ChatInput({
+function ChatInputComponent({
   onSend,
   onAttach,
   onPickMedia,
@@ -58,15 +58,23 @@ export function ChatInput({
     }
   }, [draftText]);
 
-  const canSend = text.trim().length > 0 || pendingImages.length > 0;
+  const hasText = text.length > 0 && text.trim().length > 0;
+  const canSend = hasText || pendingImages.length > 0;
 
   const handleSend = () => {
     if (!canSend) return;
     const trimmed = text.trim();
-    onSend(trimmed, pendingImages.length > 0 ? pendingImages : undefined);
+    const imgs = pendingImages.length > 0 ? pendingImages : undefined;
+
+    // 1. Immediately reset input field and pending images (0ms synchronous UI update)
     setText("");
     setPendingImages([]);
     setShowMenu(false);
+
+    // 2. Dispatch sending action in next tick to avoid blocking the input UI clear
+    setTimeout(() => {
+      onSend(trimmed, imgs);
+    }, 0);
   };
 
   const handlePickMedia = async () => {
@@ -528,7 +536,7 @@ export function ChatInput({
           />
           <TouchableOpacity
             onPress={handleSend}
-            disabled={!canSend || sending}
+            disabled={!canSend}
             hitSlop={6}
             activeOpacity={0.85}
             style={{
@@ -544,14 +552,12 @@ export function ChatInput({
               marginBottom: 3,
             }}
           >
-            {sending ? (
-              <ActivityIndicator size="small" color="#FFFFFF" />
-            ) : (
-              <Send size={15} color="#FFFFFF" />
-            )}
+            <Send size={15} color="#FFFFFF" />
           </TouchableOpacity>
         </View>
       </View>
     </View>
   );
 }
+
+export const ChatInput = React.memo(ChatInputComponent);

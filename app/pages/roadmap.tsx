@@ -60,29 +60,28 @@ const MASTER_DAILY_TASKS: RoadmapTaskDef[] = [
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 📏 ROAD & CARD LAYOUT CONFIG
-//  CARD_PEEK_VISIBLE_BASE → height in px of the card visible above safe area
-//                           on initial load. Set to ~84px so ONLY the "DAILY TASKS"
-//                           header is showing when not scrolled.
 // ─────────────────────────────────────────────────────────────────────────────
-const ROAD_BG_RATIO = 1.96; // natural h/w ratio of roadmap-bg.png
-const ROAD_BG_HEIGHT = SCREEN_W * ROAD_BG_RATIO;
+const ROAD_SCALE = Math.max(SCREEN_W / 1024, SCREEN_H / 512);
+const ROAD_IMG_WIDTH = Math.round(1024 * ROAD_SCALE);
+const ROAD_IMG_HEIGHT = Math.round(512 * ROAD_SCALE);
+const ROAD_IMG_LEFT = (SCREEN_W - ROAD_IMG_WIDTH) / 2; // centers the path horizontally
 const CARD_PEEK_VISIBLE_BASE = 112; // reveals progress bar (~34px) + card header (~78px) on load
 
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 🎮  PLATFORM LAYOUT — edit these to reposition / rescale each stage stop
+// 🎮  PLATFORM LAYOUT — unified across desktop web, mobile web & mobile app
 //
 //  top   → 0.0 (image top) … 1.0 (image bottom)  — vertical placement
-//  left  → 0.0 (screen left) … 1.0 (screen right) — horizontal placement
+//  left  → 0.0 (image left) … 1.0 (image right) — horizontal placement
 //  scale → platform image scale multiplier (1.0 = default size)
 // ─────────────────────────────────────────────────────────────────────────────
 const PLATFORM_BASE_SIZE = 104; // base width/height in px before scaling
 
-const PLATFORM_CONFIG: { top: number; left: number; scale: number }[] = [
-  { top: 0.70, left: 0.66, scale: 0.65 }, // Stage 1
-  { top: 0.56, left: 0.39, scale: 0.60 }, // Stage 2
-  { top: 0.42, left: 0.50, scale: 0.55 }, // Stage 3
-  { top: 0.35, left: 0.86, scale: 0.50 }, // Stage 4
+export const PLATFORM_CONFIG: { top: number; left: number; scale: number }[] = [
+  { top: 0.80, left: 0.58, scale: 0.70 }, // Stage 1 (foreground path)
+  { top: 0.67, left: 0.50, scale: 0.60 }, // Stage 2 (mid-lower curve)
+  { top: 0.58, left: 0.44, scale: 0.53 }, // Stage 3 (mid-upper curve)
+  { top: 0.48, left: 0.64, scale: 0.45 }, // Stage 4 (crest of the hill)
 ];
 
 // ── Main page ────────────────────────────────────────────────────────────────
@@ -151,85 +150,26 @@ export default function RoadmapPage() {
 
   return (
     <View style={styles.root}>
-      {/* ── SECTION 1: Fixed Road Background (Pinned at top, never moves) ── */}
-      <View
-        style={[
-          styles.roadFixedContainer,
-          { height: ROAD_BG_HEIGHT },
-        ]}
-      >
-        {/* Road background */}
-        <Image
-          source={require("../../assets/images/roadmap-bg.png")}
-          style={{ width: SCREEN_W, height: ROAD_BG_HEIGHT }}
-          resizeMode="cover"
-        />
-
-          {/* Platform stops on the road */}
-          {STAGES.map((s) => {
-            const cfg = PLATFORM_CONFIG[s - 1];
-            const size = PLATFORM_BASE_SIZE * cfg.scale;
-            const isCompleted = s < stage;
-            const isActive = s === stage;
-            const isLocked = s > stage;
-            const topPx = ROAD_BG_HEIGHT * cfg.top - size / 2;
-            const leftPx = SCREEN_W * cfg.left - size / 2;
-
-            return (
-              <View
-                key={s}
-                style={{
-                  position: "absolute",
-                  top: topPx,
-                  left: leftPx,
-                  width: size,
-                  height: size,
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <Image
-                  source={require("../../assets/images/roadmap-platform.png")}
-                  style={{
-                    width: size,
-                    height: size * 0.82,
-                    position: "absolute",
-                    opacity: 1,
-                  }}
-                  resizeMode="contain"
-                />
-                {/* Overlay label */}
-                <View style={styles.platformLabelWrap}>
-                  {isLocked ? (
-                    <Lock size={13} color="#64748B" strokeWidth={2} />
-                  ) : isCompleted ? (
-                    <Text style={styles.platformCheckText}>✓</Text>
-                  ) : (
-                    <Text style={styles.platformActiveText}>S{s}</Text>
-                  )}
-                  <Text
-                    style={[
-                      styles.platformStageName,
-                      {
-                        color: isLocked
-                          ? "#64748B"
-                          : isCompleted
-                            ? "#16A34A"
-                            : "#92400E",
-                      },
-                    ]}
-                    numberOfLines={1}
-                    adjustsFontSizeToFit
-                  >
-                    {stageName(s)}
-                  </Text>
-                </View>
-              </View>
-            );
-          })}
-
-
+      {/* ── SECTION 1: Full-Bleed Road Background (Covers entire screen, never moves) ── */}
+      <View style={[StyleSheet.absoluteFill, { overflow: "hidden" }]}>
+        {/* Centered 2:1 Landscape Image and Platform Anchor, bottom-anchored */}
+        <View
+          style={{
+            position: "absolute",
+            bottom: 0,
+            left: ROAD_IMG_LEFT,
+            width: ROAD_IMG_WIDTH,
+            height: ROAD_IMG_HEIGHT,
+          }}
+        >
+          {/* Road background */}
+          <Image
+            source={require("../../assets/images/roadmap-bg.png")}
+            style={{ width: ROAD_IMG_WIDTH, height: ROAD_IMG_HEIGHT }}
+            resizeMode="cover"
+          />
         </View>
+      </View>
 
       {/* ── SECTION 2: Scrollable Layer (Limited scroll, reveals bottom info) ─ */}
       <ScrollView

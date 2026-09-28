@@ -1,6 +1,6 @@
 import { useState, useMemo, useRef } from "react";
 import { View, Text, Pressable, Image } from "react-native";
-import { Clock, Check, AlertCircle } from "lucide-react-native";
+import { Clock, Check, CheckCheck, AlertCircle } from "lucide-react-native";
 import { router } from "expo-router";
 import type { Message, MessageReaction, MessageGroupPosition } from "@/types/conversation";
 import { resolveImageUri } from "./UserAvatar";
@@ -251,8 +251,10 @@ export function ChatBubble({
     });
   };
 
-  const isSending = isMine && (message.status === "sending" || (message.id?.startsWith("temp-") && message.status !== "failed"));
+  const isSending = isMine && (message.status === "sending" || ((message.id?.startsWith("temp-") || message.id?.startsWith("cmsg-")) && message.status !== "failed"));
   const isFailed = isMine && message.status === "failed";
+  const isRead = isMine && message.status === "read";
+  const isDelivered = isMine && message.status === "delivered";
   const isSent = isMine && !isSending && !isFailed;
 
   const radii = getBorderRadii(isMine, groupPosition);
@@ -581,8 +583,14 @@ export function ChatBubble({
                 >
                   {formatMessageTime(message.created_at)}
                 </Text>
-                {isSent && !message.id.startsWith("temp-") && (
-                  <Check size={11} color={isImageOnly ? "#FFFFFF" : isMine ? "rgba(255,255,255,0.7)" : "#9CA3AF"} />
+                {isSent && !message.id.startsWith("temp-") && !message.id.startsWith("cmsg-") && (
+                  isRead ? (
+                    <CheckCheck size={12} color={isImageOnly ? "#34D399" : isMine ? "#6EE7B7" : "#10B981"} />
+                  ) : isDelivered ? (
+                    <CheckCheck size={12} color={isImageOnly ? "#FFFFFF" : isMine ? "rgba(255,255,255,0.7)" : "#9CA3AF"} />
+                  ) : (
+                    <Check size={11} color={isImageOnly ? "#FFFFFF" : isMine ? "rgba(255,255,255,0.7)" : "#9CA3AF"} />
+                  )
                 )}
               </>
             )}

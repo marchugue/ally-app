@@ -213,6 +213,72 @@ function canGroupMessages(current: Message, adjacent: Message | null | undefined
 // No hard poll — socket delivers messages in real-time.
 // onConnect handler below reconciles anything missed on reconnect.
 
+function sortMessagesChronologically(list: Message[]): Message[] {
+  return [...list].sort((a, b) => {
+    const timeA = new Date(a.created_at || (a as any).timestamp || 0).getTime();
+    const timeB = new Date(b.created_at || (b as any).timestamp || 0).getTime();
+    if (!isNaN(timeA) && !isNaN(timeB) && timeA !== timeB) {
+      return timeA - timeB;
+    }
+    return (a.id || "").localeCompare(b.id || "");
+  });
+}
+
+function reconcileMessageList(
+  currentList: Message[],
+  incomingMsg: Message,
+  clientMsgId?: string | null
+): Message[] {
+  const targetClientId = clientMsgId || incomingMsg.clientMessageId || null;
+  const existingIdIndex = currentList.findIndex((m) => m.id === incomingMsg.id);
+  const optimisticIndex = targetClientId
+    ? currentList.findIndex(
+        (m) =>
+          m.clientMessageId === targetClientId ||
+          m.id === targetClientId ||
+          (m.id.startsWith("cmsg-") && m.id === targetClientId) ||
+          (m.id.startsWith("temp-") && m.id === targetClientId)
+      )
+    : -1;
+
+  let nextList = [...currentList];
+
+  if (existingIdIndex !== -1 && optimisticIndex !== -1 && existingIdIndex !== optimisticIndex) {
+    // Drop optimistic placeholder since real server message already exists
+    nextList = nextList.filter((_, idx) => idx !== optimisticIndex);
+    const updatedIdx = nextList.findIndex((m) => m.id === incomingMsg.id);
+    if (updatedIdx !== -1) {
+      nextList[updatedIdx] = {
+        ...nextList[updatedIdx],
+        ...incomingMsg,
+        clientMessageId: targetClientId || nextList[updatedIdx].clientMessageId,
+        status: incomingMsg.status || "sent",
+      };
+    }
+  } else if (optimisticIndex !== -1) {
+    // Reconcile optimistic message in-place
+    nextList[optimisticIndex] = {
+      ...nextList[optimisticIndex],
+      ...incomingMsg,
+      clientMessageId: targetClientId || nextList[optimisticIndex].clientMessageId,
+      status: incomingMsg.status || "sent",
+    };
+  } else if (existingIdIndex !== -1) {
+    // In-place update of existing server message
+    nextList[existingIdIndex] = {
+      ...nextList[existingIdIndex],
+      ...incomingMsg,
+      clientMessageId: targetClientId || nextList[existingIdIndex].clientMessageId,
+      status: incomingMsg.status || nextList[existingIdIndex].status || "sent",
+    };
+  } else {
+    // New message (partner sent or newly arrived)
+    nextList.push(incomingMsg);
+  }
+
+  return sortMessagesChronologically(nextList);
+}
+
 interface StreakNoticeAnchor {
   messageId: string;
   timestamp: number;
@@ -482,14 +548,22 @@ export default function ConversationScreen() {
 
       setMessages((prev) => {
         const pending = prev.filter(
-          (m) => m.id.startsWith("temp-") || m.status === "sending" || m.status === "failed"
+          (m) =>
+            m.id.startsWith("temp-") ||
+            m.id.startsWith("cmsg-") ||
+            m.status === "sending" ||
+            m.status === "failed"
         );
 
         // Keep any older messages already loaded into history before msgs
         const serverIds = new Set(msgs.map((m) => m.id));
         const firstServerTime = msgs.length > 0 ? new Date(msgs[0].created_at).getTime() : Infinity;
         const olderHistory = prev.filter(
-          (m) => !serverIds.has(m.id) && !m.id.startsWith("temp-") && new Date(m.created_at).getTime() < firstServerTime
+          (m) =>
+            !serverIds.has(m.id) &&
+            !m.id.startsWith("temp-") &&
+            !m.id.startsWith("cmsg-") &&
+            new Date(m.created_at).getTime() < firstServerTime
         );
 
         const combined = [...olderHistory, ...msgs].map((m) => {
@@ -501,8 +575,9 @@ export default function ConversationScreen() {
         });
 
         if (pending.length === 0) {
-          setCachedChat(conversationId, combined, res.hasMore, res.nextCursor, user?.id);
-          return combined;
+          const sorted = sortMessagesChronologically(combined);
+          setCachedChat(conversationId, sorted, res.hasMore, res.nextCursor, user?.id);
+          return sorted;
         }
 
         // Retain any pending/sending/failed messages that haven't been reconciled into msgs yet
@@ -511,6 +586,7 @@ export default function ConversationScreen() {
           const alreadyInList = result.some(
             (m) =>
               m.id === p.id ||
+              (p.clientMessageId && m.clientMessageId === p.clientMessageId) ||
               (m.content === p.content &&
                 m.sender_id === p.sender_id &&
                 Math.abs(new Date(m.created_at).getTime() - new Date(p.created_at).getTime()) < 15000)
@@ -519,8 +595,9 @@ export default function ConversationScreen() {
             result.push(p);
           }
         }
-        setCachedChat(conversationId, combined, res.hasMore, res.nextCursor, user?.id);
-        return result;
+        const sorted = sortMessagesChronologically(result);
+        setCachedChat(conversationId, sorted, res.hasMore, res.nextCursor, user?.id);
+        return sorted;
       });
 
       hasLoadedOnceRef.current = true;
@@ -648,37 +725,48 @@ export default function ConversationScreen() {
     const onMessageNew = (payload: { conversationId: string; message: Message }) => {
       if (payload.conversationId !== conversationId) return;
       const rawMsg = payload.message as any;
+      const isMine = rawMsg.sender_id === user?.id || rawMsg.senderId === user?.id;
       const incomingMsg: Message = {
         ...rawMsg,
         image_url: rawMsg.image_url || rawMsg.imageUrl || null,
-        status: "sent",
+        clientMessageId: rawMsg.clientMessageId || rawMsg.client_message_id || null,
+        status: isMine ? (rawMsg.status || "sent") : "delivered",
       };
       (incomingMsg as any).imageUrl = rawMsg.imageUrl || rawMsg.image_url || null;
-      setMessages((prev) => {
-        if (prev.some((m) => m.id === incomingMsg.id)) return prev;
 
-        let nextList: Message[];
-        // Reconcile optimistic temp message if already present
-        const pendingIndex = prev.findIndex(
-          (m) =>
-            m.id.startsWith("temp-") &&
-            m.sender_id === incomingMsg.sender_id &&
-            m.content === incomingMsg.content
-        );
-        if (pendingIndex !== -1) {
-          nextList = [...prev];
-          nextList[pendingIndex] = incomingMsg;
-        } else {
-          nextList = [...prev, incomingMsg];
-        }
+      setMessages((prev) => {
+        const nextList = reconcileMessageList(prev, incomingMsg, incomingMsg.clientMessageId);
         setCachedChat(conversationId, nextList, hasMore, nextCursor, user?.id);
         return nextList;
       });
-      markConversationRead(conversationId, new Date().toISOString(), accessToken).catch(() => { });
-      dismissPresentedNotificationByConversationId(conversationId).catch(() => null);
+
+      if (!isMine) {
+        markConversationRead(conversationId, new Date().toISOString(), accessToken).catch(() => { });
+        dismissPresentedNotificationByConversationId(conversationId).catch(() => null);
+      }
+
       setTimeout(() => {
         flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
       }, 50);
+    };
+
+    const onConversationRead = (payload: { conversationId: string; userId: string; readAt: string }) => {
+      if (payload?.conversationId !== conversationId) return;
+      if (payload.userId === user?.id) return; // Only process read receipts from other members
+      setMessages((prev) => {
+        let changed = false;
+        const updated = prev.map((m) => {
+          if (m.sender_id === user?.id && m.status !== "read" && m.status !== "failed") {
+            changed = true;
+            return { ...m, status: "read" as const };
+          }
+          return m;
+        });
+        if (changed && conversationId) {
+          setCachedChat(conversationId, updated, hasMore, nextCursor, user?.id);
+        }
+        return changed ? updated : prev;
+      });
     };
 
     const onConnect = () => void loadMessages(true);
@@ -717,9 +805,12 @@ export default function ConversationScreen() {
       if (payload?.matchId === matchInfo?.id || payload?.conversationId === conversationId) {
         // 'inactive' status → streak lapsed. 'restored' → streak brought back.
         // Do NOT treat dayStreak===0 alone as inactive (could be a valid day-1 restore).
-        const isInactive = payload.status === "inactive";
+        const isInactive =
+          payload.status === "inactive" ||
+          payload.streakStatus === "inactive" ||
+          payload.streakStatus === "expired";
         const isRestored = payload.status === "restored";
-        const streak = isInactive ? 0 : (payload.dayStreak ?? payload.streak ?? convStreak);
+        const streak = isInactive ? 0 : (payload.currentStreak ?? payload.dayStreak ?? convStreak);
         const activeToday = isInactive ? false : (payload.streakActiveToday ?? convStreakActiveToday);
         setConvStreak(streak);
         setConvStreakActiveToday(activeToday);
@@ -757,10 +848,10 @@ export default function ConversationScreen() {
     };
 
     socket.on("conversation:message_new", onMessageNew);
+    socket.on("conversation:read", onConversationRead);
     socket.on("conversation:message_deleted", onMessageDeleted);
     socket.on("conversation:streak_updated", onStreakUpdate);
     socket.on("matchmaking:stage_updated", onStageUpdated);
-    socket.on("matchmaking:streak_update", onStreakUpdate);
     socket.on("match:points_updated", onPointsUpdated);
     socket.on("matchmaking:match_ended", onMatchEnded);
     socket.on("matchmaking:chat_expired", onMatchEnded);
@@ -775,10 +866,10 @@ export default function ConversationScreen() {
     return () => {
       setActiveConversationId(null);
       socket.off("conversation:message_new", onMessageNew);
+      socket.off("conversation:read", onConversationRead);
       socket.off("conversation:message_deleted", onMessageDeleted);
       socket.off("conversation:streak_updated", onStreakUpdate);
       socket.off("matchmaking:stage_updated", onStageUpdated);
-      socket.off("matchmaking:streak_update", onStreakUpdate);
       socket.off("match:points_updated", onPointsUpdated);
       socket.off("matchmaking:match_ended", onMatchEnded);
       socket.off("matchmaking:chat_expired", onMatchEnded);
@@ -787,7 +878,7 @@ export default function ConversationScreen() {
     // NOTE: convStreak intentionally excluded from deps — it changes on every
     // streak tick, which would cause the socket to re-attach constantly.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [conversationId, accessToken, loadMessages, matchInfo?.id]);
+  }, [conversationId, accessToken, loadMessages, matchInfo?.id, user?.id]);
 
   // Midnight streak expiry is handled server-side (streakReminder.service.ts).
   // The backend emits 'conversation:streak_updated' with status:'inactive' and
@@ -813,12 +904,12 @@ export default function ConversationScreen() {
     }
   }, [conversationId, accessToken]);
 
-  // ── Send message (Optimistic UI — 0ms instant display with multiupload support) ───
+  // ── Send message (Optimistic UI — 0ms instant display with clientMessageId reconciliation) ───
   const handleSend = useCallback(
     async (content: string, media?: LocalFile[] | string | null) => {
       if (!conversationId || !accessToken || !user) return;
 
-      const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+      const clientMessageId = `cmsg-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
       const activeReply = replyTo;
       setReplyTo(null);
 
@@ -831,7 +922,8 @@ export default function ConversationScreen() {
       }
 
       const optimisticMsg: Message = {
-        id: tempId,
+        id: clientMessageId,
+        clientMessageId,
         conversation_id: conversationId,
         sender_id: user.id,
         content,
@@ -845,14 +937,18 @@ export default function ConversationScreen() {
       (optimisticMsg as any).imageUrl = optimisticImageUrl;
 
       // 1. Immediately display message on screen (0ms delay)
-      setMessages((prev) => [...prev, optimisticMsg]);
+      setMessages((prev) => {
+        const nextList = sortMessagesChronologically([...prev, optimisticMsg]);
+        setCachedChat(conversationId, nextList, hasMore, nextCursor, user?.id);
+        return nextList;
+      });
 
       // 2. Immediately scroll to bottom (offset 0 in inverted list)
       requestAnimationFrame(() => {
         flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
       });
 
-      // 3. Process upload if LocalFile[] provided, then send to server
+      // 3. Process upload if LocalFile[] provided, then send to server in background
       try {
         let finalImageUrl: string | null = null;
         if (Array.isArray(media) && media.length > 0) {
@@ -870,27 +966,35 @@ export default function ConversationScreen() {
             content,
             imageUrl: finalImageUrl,
             replyToMessageId: activeReply?.id || null,
+            clientMessageId,
           },
           accessToken
         );
 
-        // Replace temp optimistic message with real saved message and mark sent
+        // Reconcile optimistic message with confirmed server message in-place
+        const confirmedMsg: Message = {
+          ...savedMsg,
+          clientMessageId,
+          status: "sent",
+        };
+
         setMessages((prev) => {
-          let updated: Message[];
-          if (prev.some((m) => m.id === savedMsg.id)) {
-            updated = prev.filter((m) => m.id !== tempId);
-          } else {
-            updated = prev.map((m) => (m.id === tempId ? { ...savedMsg, status: "sent" } : m));
-          }
+          const updated = reconcileMessageList(prev, confirmedMsg, clientMessageId);
           setCachedChat(conversationId, updated, hasMore, nextCursor, user?.id);
           return updated;
         });
       } catch (err) {
         console.warn("Failed to send message", err);
         // Retain message and mark as failed so user can tap to retry
-        setMessages((prev) =>
-          prev.map((m) => (m.id === tempId ? { ...m, status: "failed" } : m))
-        );
+        setMessages((prev) => {
+          const updated = prev.map((m) =>
+            m.clientMessageId === clientMessageId || m.id === clientMessageId
+              ? { ...m, status: "failed" as const }
+              : m
+          );
+          setCachedChat(conversationId, updated, hasMore, nextCursor, user?.id);
+          return updated;
+        });
       }
     },
     [conversationId, accessToken, user, replyTo, hasMore, nextCursor]
@@ -974,15 +1078,19 @@ export default function ConversationScreen() {
     }
   }, [conversationId, accessToken, handleSend, isAnonymous, matchInfo?.stage]);
 
-  // ── Retry failed message ─────────────────────────────────────────────
+  // ── Retry failed message (Optimistic background retry with clientMessageId) ───
   const handleRetry = useCallback(
     async (failedMsg: Message) => {
       if (!conversationId || !accessToken || !user) return;
-      const targetId = failedMsg.id;
+      const targetClientId = failedMsg.clientMessageId || failedMsg.id;
 
-      // Set status back to sending
+      // 1. Immediately transition status back to "sending" (0ms UI update)
       setMessages((prev) =>
-        prev.map((m) => (m.id === targetId ? { ...m, status: "sending" } : m))
+        prev.map((m) =>
+          (m.clientMessageId && m.clientMessageId === targetClientId) || m.id === targetClientId
+            ? { ...m, status: "sending" as const }
+            : m
+        )
       );
 
       try {
@@ -990,26 +1098,43 @@ export default function ConversationScreen() {
           conversationId,
           {
             content: failedMsg.content,
+            imageUrl: failedMsg.image_url,
             replyToMessageId: failedMsg.reply_to_message_id,
+            clientMessageId: targetClientId,
           },
           accessToken
         );
 
+        const confirmedMsg: Message = {
+          ...savedMsg,
+          clientMessageId: targetClientId,
+          status: "sent",
+        };
+
         setMessages((prev) => {
-          if (prev.some((m) => m.id === savedMsg.id)) {
-            return prev.filter((m) => m.id !== targetId);
-          }
-          return prev.map((m) => (m.id === targetId ? { ...savedMsg, status: "sent" } : m));
+          const updated = reconcileMessageList(prev, confirmedMsg, targetClientId);
+          setCachedChat(conversationId, updated, hasMore, nextCursor, user?.id);
+          return updated;
         });
       } catch (err) {
         console.warn("Failed to retry message", err);
-        setMessages((prev) =>
-          prev.map((m) => (m.id === targetId ? { ...m, status: "failed" } : m))
-        );
+        setMessages((prev) => {
+          const updated = prev.map((m) =>
+            (m.clientMessageId && m.clientMessageId === targetClientId) || m.id === targetClientId
+              ? { ...m, status: "failed" as const }
+              : m
+          );
+          setCachedChat(conversationId, updated, hasMore, nextCursor, user?.id);
+          return updated;
+        });
       }
     },
-    [conversationId, accessToken, user]
+    [conversationId, accessToken, user, hasMore, nextCursor]
   );
+
+  const handleCancelReply = useCallback(() => {
+    setReplyTo(null);
+  }, []);
 
   // ── Reactions ─────────────────────────────────────────────────────────
   const handleReaction = useCallback(
@@ -1421,7 +1546,7 @@ export default function ConversationScreen() {
               onPickMedia={handlePickMedia}
               onTakePhoto={handleTakePhoto}
               replyTo={replyTo}
-              onCancelReply={() => setReplyTo(null)}
+              onCancelReply={handleCancelReply}
               draftText={draftText}
               canUploadImages={!isAnonymous || (matchInfo?.stage ?? 1) >= 3}
             />
