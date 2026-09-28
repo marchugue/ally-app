@@ -22,6 +22,13 @@ export function getSession(accessToken: string): Promise<AuthSession> {
   return apiRequest<AuthSession>("/auth/session", { accessToken });
 }
 
+export function refreshSessionWithToken(refreshToken: string): Promise<AuthSession> {
+  return apiRequest<AuthSession>("/auth/refresh", {
+    method: "POST",
+    body: { refreshToken },
+  });
+}
+
 type ForgotPasswordResponse = {
   trackingToken?: string;
   tracking_token?: string;

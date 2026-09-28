@@ -1,14 +1,19 @@
-import { createContext, useContext, useEffect, useState, ReactNode } from "react";
-import * as SecureStore from "expo-secure-store";
+import { createContext, useContext, useEffect, useState, useRef, ReactNode } from "react";
+import { AppState, type AppStateStatus } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as authApi from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/apiError";
 import { disconnectSocket, initSocket } from "@/lib/socket";
 import type { AuthSession, AuthUser, RegisterPayload, RegisterResponse } from "@/types/auth";
-
-const ACCESS_TOKEN_KEY = "ally_access_token";
-const REFRESH_TOKEN_KEY = "ally_refresh_token";
-const USER_CACHE_KEY = "ally_user_data";
+import {
+  ACCESS_TOKEN_KEY,
+  REFRESH_TOKEN_KEY,
+  USER_CACHE_KEY,
+  SESSION_CACHE_KEY,
+  getPersistedItem,
+  setPersistedItem,
+  removePersistedItem,
+} from "./tokenStorage";
 
 interface AuthContextValue {
   user: AuthUser | null;
@@ -35,48 +40,100 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [accessToken, setAccessToken] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const isRefreshingRef = useRef(false);
 
-  // On launch: check for a stored token and validate it against the
-  // backend via GET /api/auth/session. If it's expired/invalid, clear it
-  // silently and fall back to the login screen.
+  // ── On launch: Instant cache hydration + background token validation/refresh ──
   useEffect(() => {
     async function restoreSession() {
       try {
-        const storedToken = await SecureStore.getItemAsync(ACCESS_TOKEN_KEY);
-        if (!storedToken) {
+        // Step 1: Read all persisted session markers in parallel
+        const [storedAccessToken, storedRefreshToken, cachedUserStr, cachedSessionStr] = await Promise.all([
+          getPersistedItem(ACCESS_TOKEN_KEY),
+          getPersistedItem(REFRESH_TOKEN_KEY),
+          getPersistedItem(USER_CACHE_KEY),
+          getPersistedItem(SESSION_CACHE_KEY),
+        ]);
+
+        let initialUser: AuthUser | null = null;
+        let initialToken: string | null = storedAccessToken;
+        let initialRefreshToken: string | null = storedRefreshToken;
+
+        if (cachedSessionStr) {
+          try {
+            const parsedSession: AuthSession = JSON.parse(cachedSessionStr);
+            if (parsedSession.user) {
+              initialUser = parsedSession.user;
+            }
+            if (parsedSession.accessToken && !initialToken) {
+              initialToken = parsedSession.accessToken;
+            }
+            if (parsedSession.refreshToken && !initialRefreshToken) {
+              initialRefreshToken = parsedSession.refreshToken;
+            }
+          } catch {}
+        }
+
+        if (!initialUser && cachedUserStr) {
+          try {
+            initialUser = JSON.parse(cachedUserStr);
+          } catch {}
+        }
+
+        // ── 0ms Instant Hydration: Apply cached user & token to state immediately ──
+        if (initialUser) {
+          setUser(initialUser);
+        }
+        if (initialToken) {
+          setAccessToken(initialToken);
+          initSocket(initialToken);
+        }
+
+        // If no credentials exist anywhere, we are unauthenticated
+        if (!initialToken && !initialRefreshToken && !initialUser) {
           setIsLoading(false);
           return;
         }
 
-        // Restore cached user profile immediately for instant UI availability
-        let parsedUser: AuthUser | null = null;
-        try {
-          const cachedUserStr = await AsyncStorage.getItem(USER_CACHE_KEY);
-          if (cachedUserStr) {
-            parsedUser = JSON.parse(cachedUserStr);
-            setUser(parsedUser);
-            setAccessToken(storedToken);
-          }
-        } catch {}
+        // Step 2: Validate or Refresh session with the server in background
+        let sessionConfirmed = false;
 
-        try {
-          const session = await authApi.getSession(storedToken);
-          await applySession(session);
-        } catch (err: any) {
-          // If token was rejected by server (401/403), invalidate session
-          if (err?.status === 401 || err?.status === 403) {
-            await clearStoredTokens();
-          } else if (!parsedUser) {
-            // Cannot reach backend and have no cached user
-            await clearStoredTokens();
-          } else {
-            // Network error (offline / connectivity issue) — keep device session
-            console.log("[AuthContext] Backend unreachable during restore, retaining cached session.");
-            setAccessToken(storedToken);
+        if (initialToken) {
+          try {
+            const serverSession = await authApi.getSession(initialToken);
+            await applySession(serverSession);
+            sessionConfirmed = true;
+          } catch (err: any) {
+            console.log("[AuthContext] getSession status:", err?.status);
+            // 401/403 means the short-lived access token expired, we attempt refresh below
           }
         }
-      } catch {
-        await clearStoredTokens();
+
+        // If access token was expired or absent, attempt silent refresh using refresh token
+        if (!sessionConfirmed && initialRefreshToken) {
+          try {
+            console.log("[AuthContext] Attempting silent token refresh on launch...");
+            const refreshedSession = await authApi.refreshSessionWithToken(initialRefreshToken);
+            await applySession(refreshedSession);
+            sessionConfirmed = true;
+            console.log("[AuthContext] Silent token refresh succeeded on launch!");
+          } catch (refreshErr: any) {
+            console.warn("[AuthContext] Launch token refresh failed:", refreshErr?.status);
+            // ONLY if the refresh token was explicitly rejected (401/403) by backend,
+            // revoke the session. Network errors do NOT clear tokens!
+            if (refreshErr?.status === 401 || refreshErr?.status === 403) {
+              console.log("[AuthContext] Refresh token invalid/revoked. Clearing session.");
+              await clearStoredTokens();
+              return;
+            }
+          }
+        }
+
+        // If offline / server unreachable but we had a cached user, RETAIN the session!
+        if (!sessionConfirmed && initialUser) {
+          console.log("[AuthContext] Retaining cached auth session for offline use.");
+        }
+      } catch (err) {
+        console.warn("[AuthContext] Restore session error:", err);
       } finally {
         setIsLoading(false);
       }
@@ -85,37 +142,73 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     restoreSession();
   }, []);
 
+  // ── AppState watcher: Re-validate/refresh session when app comes to foreground ──
+  useEffect(() => {
+    const handleAppStateChange = async (nextState: AppStateStatus) => {
+      if (nextState === "active" && !isRefreshingRef.current) {
+        const storedRefreshToken = await getPersistedItem(REFRESH_TOKEN_KEY);
+        const storedAccessToken = await getPersistedItem(ACCESS_TOKEN_KEY);
+        if (!storedAccessToken && !storedRefreshToken) return;
+
+        isRefreshingRef.current = true;
+        try {
+          if (storedAccessToken) {
+            try {
+              const freshSession = await authApi.getSession(storedAccessToken);
+              await applySession(freshSession);
+              return;
+            } catch (err: any) {
+              if (err?.status !== 401 && err?.status !== 403) {
+                return; // Network error, retain session
+              }
+            }
+          }
+          if (storedRefreshToken) {
+            const refreshed = await authApi.refreshSessionWithToken(storedRefreshToken);
+            await applySession(refreshed);
+          }
+        } catch {
+          // Do not log out on transient errors
+        } finally {
+          isRefreshingRef.current = false;
+        }
+      }
+    };
+
+    const sub = AppState.addEventListener("change", handleAppStateChange);
+    return () => sub.remove();
+  }, []);
+
   async function applySession(session: AuthSession) {
     setUser(session.user);
     setAccessToken(session.accessToken ?? null);
 
     if (session.user) {
-      await AsyncStorage.setItem(USER_CACHE_KEY, JSON.stringify(session.user)).catch(() => {});
+      await setPersistedItem(USER_CACHE_KEY, JSON.stringify(session.user));
     }
 
     if (session.accessToken) {
-      await SecureStore.setItemAsync(ACCESS_TOKEN_KEY, session.accessToken);
+      await setPersistedItem(ACCESS_TOKEN_KEY, session.accessToken);
       initSocket(session.accessToken);
     } else {
-      await SecureStore.deleteItemAsync(ACCESS_TOKEN_KEY);
+      await removePersistedItem(ACCESS_TOKEN_KEY);
       disconnectSocket();
     }
+
     if (session.refreshToken) {
-      await SecureStore.setItemAsync(REFRESH_TOKEN_KEY, session.refreshToken);
-    } else {
-      await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);
+      await setPersistedItem(REFRESH_TOKEN_KEY, session.refreshToken);
     }
+
+    // Persist full session bundle
+    await setPersistedItem(SESSION_CACHE_KEY, JSON.stringify(session));
   }
 
   async function clearStoredTokens() {
-    try {
-      await SecureStore.deleteItemAsync(ACCESS_TOKEN_KEY);
-    } catch {}
-    try {
-      await SecureStore.deleteItemAsync(REFRESH_TOKEN_KEY);
-    } catch {}
-    await AsyncStorage.removeItem(USER_CACHE_KEY).catch(() => {});
-    // Clear all chat and conversation caches on logout to protect user privacy
+    await removePersistedItem(ACCESS_TOKEN_KEY);
+    await removePersistedItem(REFRESH_TOKEN_KEY);
+    await removePersistedItem(USER_CACHE_KEY);
+    await removePersistedItem(SESSION_CACHE_KEY);
+
     try {
       const allKeys = await AsyncStorage.getAllKeys();
       const chatKeys = allKeys.filter(
@@ -125,6 +218,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await AsyncStorage.multiRemove(chatKeys);
       }
     } catch {}
+
     disconnectSocket();
     setUser(null);
     setAccessToken(null);
@@ -136,7 +230,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       await applySession(session);
       return session;
     } catch (err: any) {
-      // Surface OTP-required as a special error shape the caller can act on
       if (err?.status === 403 && err?.body?.requiresOtp) {
         const otpErr: any = new Error('Email not verified');
         otpErr.requiresOtp = true;
@@ -157,9 +250,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function refreshSession(): Promise<AuthSession | undefined> {
-    if (!accessToken) return undefined;
+    const refreshToken = await getPersistedItem(REFRESH_TOKEN_KEY);
+    if (!refreshToken) return undefined;
     try {
-      const session = await authApi.getSession(accessToken);
+      const session = await authApi.refreshSessionWithToken(refreshToken);
       await applySession(session);
       return session;
     } catch (err) {
@@ -178,7 +272,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           ...metadata,
         },
       };
-      AsyncStorage.setItem(USER_CACHE_KEY, JSON.stringify(updatedUser)).catch(() => {});
+      setPersistedItem(USER_CACHE_KEY, JSON.stringify(updatedUser)).catch(() => {});
       return updatedUser;
     });
   }
@@ -188,10 +282,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (accessToken) {
         await authApi.logout(accessToken);
       }
-    } catch {
-      // Even if the network call fails, still clear local state so the
-      // user isn't stuck signed in on-device.
-    } finally {
+    } catch {} finally {
       await clearStoredTokens();
     }
   }
@@ -201,9 +292,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (accessToken) {
         await authApi.deleteAccount(accessToken);
       }
-    } catch {
-      // Clear tokens even if network fails
-    } finally {
+    } catch {} finally {
       await clearStoredTokens();
     }
   }

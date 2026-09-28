@@ -70,23 +70,27 @@ function RootLayoutNav() {
   useEffect(() => {
     if (isLoading || hasSeenOnboarding === null) return;
 
-    const atRoot = segments.length === 0;
+    const atRoot = segments.length === 0 || (segments.length === 1 && segments[0] === "index");
 
     const onAuthPages =
-      segments[0] === "pages" &&
-      (segments[1] === "onboarding" ||
-        segments[1] === "landing" ||
-        segments[1] === "select-email" ||
-        segments[1] === "id-upload" ||
-        segments[1] === "id-scan-front" ||
-        segments[1] === "id-scan-back" ||
-        segments[1] === "id-upload-success" ||
-        segments[1] === "verify-otp" ||
-        segments[1] === "login" ||
-        segments[1] === "register" ||
-        segments[1] === "forgot-password" ||
-        segments[1] === "password-reset-success" ||
-        segments.length === 1);
+      (segments[0] === "pages" &&
+        (segments[1] === "onboarding" ||
+          segments[1] === "landing" ||
+          segments[1] === "select-email" ||
+          segments[1] === "id-upload" ||
+          segments[1] === "id-scan-front" ||
+          segments[1] === "id-scan-back" ||
+          segments[1] === "id-upload-success" ||
+          segments[1] === "verify-otp" ||
+          segments[1] === "login" ||
+          segments[1] === "register" ||
+          segments[1] === "forgot-password" ||
+          segments[1] === "password-reset-success" ||
+          segments.length === 1)) ||
+      segments[0] === "login" ||
+      segments[0] === "register" ||
+      segments[0] === "landing" ||
+      segments[0] === "onboarding";
 
     const onPendingPage = segments[0] === "pages" && segments[1] === "pending-approval";
     const onRegisterPage = segments[0] === "pages" && segments[1] === "register";
@@ -104,6 +108,7 @@ function RootLayoutNav() {
       const isComplete = Boolean(
         user.user_metadata?.onboarding_complete === true ||
         user.user_metadata?.onboarding_complete === "true" ||
+        user.user_metadata?.username ||
         hasAcademicMetadata
       );
       const needsOnboarding = !isComplete;
@@ -136,8 +141,7 @@ function RootLayoutNav() {
       }
 
       // Fully authenticated, onboarded & approved:
-      // If at root or on ANY auth/entry page (including onboarding, landing, login, etc.),
-      // route directly to dashboard with no need to go to Get Started or Login!
+      // Always redirect to home / feed / dashboard whenever at root or on any auth/entry screen!
       if (atRoot || onAuthPages) {
         router.replace("/(tabs)");
       }
