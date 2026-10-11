@@ -1,5 +1,26 @@
 import { apiRequest } from "./client";
-import type { Profile, ProfileSummary, UpdateProfilePayload } from "@/types/profile";
+import type {
+  Profile,
+  ProfileSummary,
+  UpdateProfilePayload,
+  UserPreferences,
+  UpdateUserPreferencesPayload,
+} from "@/types/profile";
+
+export function getMyPreferences(accessToken: string): Promise<UserPreferences> {
+  return apiRequest<UserPreferences>("/profiles/me/preferences", { accessToken });
+}
+
+export function updateMyPreferences(
+  payload: UpdateUserPreferencesPayload,
+  accessToken: string
+): Promise<UserPreferences> {
+  return apiRequest<UserPreferences>("/profiles/me/preferences", {
+    method: "PATCH",
+    body: payload,
+    accessToken,
+  });
+}
 
 export function getMyProfile(accessToken: string): Promise<Profile> {
   return apiRequest<Profile>("/profiles/me", { accessToken });

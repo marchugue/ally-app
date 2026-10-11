@@ -141,6 +141,46 @@ export function unhideConversation(id: string, accessToken: string): Promise<voi
   });
 }
 
+export interface StreakEventItem {
+  id: string;
+  conversation_id: string;
+  event_type: 'ended' | 'restored';
+  streak_count: number;
+  actor_id: string | null;
+  last_active_pht: string | null;
+  restore_deadline: string | null;
+  created_at: string;
+}
+
+export function getConversationStreakEvents(
+  id: string,
+  accessToken: string
+): Promise<StreakEventItem[]> {
+  return apiRequest<StreakEventItem[]>(`/conversations/${id}/streak/events`, {
+    accessToken,
+  });
+}
+
+export interface ConversationStreakResponse {
+  dayStreak: number;
+  streakActiveToday: boolean;
+  streakStatus: 'active' | 'at_risk' | 'lapsed' | 'expired' | 'inactive';
+  lastQualifyingDate: string | null;
+  expiresAt: string | null;
+  streakRestoreDeadline: string | null;
+  lapsedStreak?: number;
+  userRestoresRemaining: number;
+}
+
+export function getConversationStreak(
+  id: string,
+  accessToken: string
+): Promise<ConversationStreakResponse> {
+  return apiRequest<ConversationStreakResponse>(`/conversations/${id}/streak`, {
+    accessToken,
+  });
+}
+
 /** Use a restore token to revive a lapsed streak — backend: POST /conversations/:id/streak/restore */
 export function restoreConversationStreak(
   id: string,

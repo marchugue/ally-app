@@ -56,6 +56,10 @@ import {
   getConversationById,
   setMessageReaction,
   restoreConversationStreak,
+  getConversationStreak,
+  getConversationStreakEvents,
+  type ConversationStreakResponse,
+  type StreakEventItem,
   deleteMessage as apiDeleteMessage,
   hideConversation as apiHideConversation,
 } from "@/lib/api/conversation";
@@ -69,7 +73,7 @@ import { getProfilesBatch } from "@/lib/api/profiles";
 import { usePresence } from "@/context/PresenceContext";
 import { blockUser, reportUser } from "@/lib/api/moderation";
 import { endMatch as apiEndMatch } from "@/lib/api/matchmaking";
-import { stageName } from "@/constants/matchOptions";
+import { stageName, resolveStageForStreak } from "@/constants/matchOptions";
 import { getSocket } from "@/lib/socket";
 import * as ImagePicker from "expo-image-picker";
 import { uploadChatFile, type LocalFile } from "@/lib/api/media";
@@ -367,6 +371,9 @@ export default function ConversationScreen() {
     isAnonymousParam === "true" ? "anonymous" : null
   );
 
+  // Media sharing is locked for anonymous matches below Stage 3 (including when streak ends & resets level)
+  const isImagesLocked = Boolean(isAnonymous && (matchInfo?.stage ?? 1) < 3);
+
   const isEnded =
     conversationVariant === "anonymous_ended" ||
     Boolean(matchInfo?.ended);
@@ -385,24 +392,75 @@ export default function ConversationScreen() {
   // to avoid false positives caused by timezone or clock drift.
   const isStreakActiveToday = convStreakActiveToday || Boolean(matchInfo?.streakActiveToday);
 
+  const [streakState, setStreakState] = useState<ConversationStreakResponse | null>(null);
+  const [streakEvents, setStreakEvents] = useState<StreakEventItem[]>([]);
+
+  useEffect(() => {
+    if (!conversationId || !accessToken) {
+      setStreakState(null);
+      setStreakEvents([]);
+      return;
+    }
+    let isMounted = true;
+    getConversationStreak(conversationId, accessToken)
+      .then((res) => {
+        if (isMounted && res) {
+          setStreakState(res);
+          if (res.streakRestoreDeadline) setStreakRestoreDeadline(res.streakRestoreDeadline);
+        }
+      })
+      .catch(() => {});
+
+    getConversationStreakEvents(conversationId, accessToken)
+      .then((evs) => {
+        if (isMounted && evs) setStreakEvents(evs);
+      })
+      .catch(() => {});
+
+    return () => {
+      isMounted = false;
+    };
+  }, [conversationId, accessToken]);
+
   // ── Restore window derived values ─────────────────────────────────────
-  // True when the streak has lapsed AND the backend restore deadline hasn't passed yet.
-  const deadlineRaw = streakRestoreDeadline ?? matchInfo?.streakRestoreDeadline ?? null;
-  const canRestoreStreak = useMemo(() => {
+  // The deadline is an ISO UTC string computed server-side from streak_last_active_pht + 42h.
+  const deadlineRaw = streakRestoreDeadline ?? streakState?.streakRestoreDeadline ?? matchInfo?.streakRestoreDeadline ?? null;
+  const userRestoresRemaining = streakState?.userRestoresRemaining ?? 5;
+
+  const isWindowActive = useMemo(() => {
     return Boolean(deadlineRaw && new Date() < new Date(deadlineRaw));
   }, [deadlineRaw, nowTick]);
-  // Hours remaining (floor), updated every minute by the tick interval below.
+
+  const canRestoreStreak = useMemo(() => {
+    return isWindowActive && userRestoresRemaining > 0;
+  }, [isWindowActive, userRestoresRemaining]);
+
+  // Hours remaining in the restore window (rounded up, e.g. 42h, 41h ... 1h), for the hint text.
   const restoreHoursRemaining = useMemo(() => {
     if (!deadlineRaw) return 0;
     const diffMs = new Date(deadlineRaw).getTime() - Date.now();
-    return Math.max(0, Math.floor(diffMs / (1000 * 60 * 60)));
+    return Math.max(0, Math.ceil(diffMs / (1000 * 60 * 60)));
   }, [deadlineRaw, nowTick]);
 
-  // Exact timestamp when the streak lapsed (deadline minus 42 hours window).
+  // Find the latest ended event (if any)
+  const latestEndedEvent = useMemo(() => {
+    const ended = streakEvents.filter((e) => e.event_type === 'ended');
+    return ended.length > 0 ? ended[ended.length - 1] : null;
+  }, [streakEvents]);
+
+  // Exact timestamp when the streak lapsed (from event or deadline minus 42 hours window).
   const streakEndedAt = useMemo(() => {
+    if (latestEndedEvent?.created_at) return new Date(latestEndedEvent.created_at);
     if (!deadlineRaw) return null;
     return new Date(new Date(deadlineRaw).getTime() - 42 * 60 * 60 * 1000);
-  }, [deadlineRaw]);
+  }, [latestEndedEvent, deadlineRaw]);
+
+  // Lapsed streak count
+  const lapsedStreakCount = useMemo(() => {
+    if (streakState?.lapsedStreak && streakState.lapsedStreak > 0) return streakState.lapsedStreak;
+    if (latestEndedEvent?.streak_count && latestEndedEvent.streak_count > 0) return latestEndedEvent.streak_count;
+    return 0;
+  }, [streakState, latestEndedEvent]);
 
   // Overflow menu
   const [showOverflow, setShowOverflow] = useState(false);
@@ -449,7 +507,7 @@ export default function ConversationScreen() {
     | { type: 'message'; data: Message }
     | { type: 'streak_notice'; id: '__streak_notice__' };
 
-  const showStreakNotice = !isEnded && convStreak === 0;
+  const showStreakNotice = !isEnded && convStreak === 0 && (lapsedStreakCount > 0 || deadlineRaw !== null || latestEndedEvent !== null);
 
   // In an inverted list, index 0 is at the bottom (newest message).
   // The streak notice is inserted chronologically based on when the streak ended,
@@ -780,9 +838,9 @@ export default function ConversationScreen() {
         setMatchInfo((prev: any) => ({
           ...prev,
           stage: payload.stage ?? prev?.stage,
-          stagePoints: payload.stagePoints ?? 0,
+          stagePoints: payload.downgraded ? (prev?.stagePoints ?? 0) : (payload.stagePoints ?? 0),
           dayStreak: payload.dayStreak ?? prev?.dayStreak,
-          streakActiveToday: true,
+          streakActiveToday: payload.downgraded ? false : true,
         }));
       }
     };
@@ -816,11 +874,70 @@ export default function ConversationScreen() {
         setConvStreakActiveToday(activeToday);
         // When restored, clear the deadline window immediately
         if (isRestored) setStreakRestoreDeadline(null);
-        setMatchInfo((prev: any) => ({
-          ...prev,
-          dayStreak: streak,
-          streakActiveToday: activeToday,
-        }));
+        if (payload?.conversationId === conversationId) {
+          setStreakState((prev) => prev ? {
+            ...prev,
+            dayStreak: streak,
+            streakActiveToday: activeToday,
+            streakStatus: payload.streakStatus ?? (isInactive ? 'lapsed' : 'active'),
+            streakRestoreDeadline: isRestored ? null : (payload.streakRestoreDeadline !== undefined ? payload.streakRestoreDeadline : prev.streakRestoreDeadline),
+            lapsedStreak: payload.lapsedStreak !== undefined ? payload.lapsedStreak : prev.lapsedStreak,
+          } : null);
+        }
+        setMatchInfo((prev: any) => {
+          if (!prev) return prev;
+          const nextStreak = streak;
+          const nextStage = resolveStageForStreak(prev.stage, nextStreak);
+          return {
+            ...prev,
+            dayStreak: nextStreak,
+            streakActiveToday: activeToday,
+            stage: nextStage,
+          };
+        });
+      }
+    };
+
+    const onStreakEvent = (payload: StreakEventItem) => {
+      if (payload.conversation_id === conversationId) {
+        setStreakEvents((prev) => [...prev.filter((e) => e.id !== payload.id), payload]);
+        if (payload.event_type === 'ended') {
+          setStreakState((prev) => prev ? {
+            ...prev,
+            dayStreak: 0,
+            streakActiveToday: false,
+            streakStatus: 'lapsed',
+            streakRestoreDeadline: payload.restore_deadline,
+            lapsedStreak: payload.streak_count,
+          } : null);
+          setStreakRestoreDeadline(payload.restore_deadline);
+          setConvStreak(0);
+          setConvStreakActiveToday(false);
+          setMatchInfo((prev: any) => prev ? {
+            ...prev,
+            dayStreak: 0,
+            streakActiveToday: false,
+            stage: resolveStageForStreak(prev.stage, 0),
+          } : prev);
+        } else if (payload.event_type === 'restored') {
+          setStreakState((prev) => prev ? {
+            ...prev,
+            dayStreak: payload.streak_count,
+            streakActiveToday: true,
+            streakStatus: 'active',
+            streakRestoreDeadline: null,
+            lapsedStreak: 0,
+          } : null);
+          setStreakRestoreDeadline(null);
+          setConvStreak(payload.streak_count);
+          setConvStreakActiveToday(true);
+          setMatchInfo((prev: any) => prev ? {
+            ...prev,
+            dayStreak: payload.streak_count,
+            streakActiveToday: true,
+            stage: resolveStageForStreak(prev.stage, payload.streak_count),
+          } : prev);
+        }
       }
     };
 
@@ -851,6 +968,7 @@ export default function ConversationScreen() {
     socket.on("conversation:read", onConversationRead);
     socket.on("conversation:message_deleted", onMessageDeleted);
     socket.on("conversation:streak_updated", onStreakUpdate);
+    socket.on("conversation:streak_event", onStreakEvent);
     socket.on("matchmaking:stage_updated", onStageUpdated);
     socket.on("match:points_updated", onPointsUpdated);
     socket.on("matchmaking:match_ended", onMatchEnded);
@@ -869,6 +987,7 @@ export default function ConversationScreen() {
       socket.off("conversation:read", onConversationRead);
       socket.off("conversation:message_deleted", onMessageDeleted);
       socket.off("conversation:streak_updated", onStreakUpdate);
+      socket.off("conversation:streak_event", onStreakEvent);
       socket.off("matchmaking:stage_updated", onStageUpdated);
       socket.off("match:points_updated", onPointsUpdated);
       socket.off("matchmaking:match_ended", onMatchEnded);
@@ -894,10 +1013,28 @@ export default function ConversationScreen() {
       setConvStreak(result.newStreak);
       setConvStreakActiveToday(true);
       setStreakRestoreDeadline(null); // window consumed
-      setMatchInfo((prev: any) => prev ? { ...prev, dayStreak: result.newStreak, streakActiveToday: true } : prev);
+      setStreakState((prev) => prev ? {
+        ...prev,
+        dayStreak: result.newStreak,
+        streakActiveToday: true,
+        streakStatus: 'active',
+        streakRestoreDeadline: null,
+        lapsedStreak: 0,
+        userRestoresRemaining: result.restoresRemaining,
+      } : null);
+      setMatchInfo((prev: any) =>
+        prev
+          ? {
+              ...prev,
+              dayStreak: result.newStreak,
+              streakActiveToday: true,
+              stage: resolveStageForStreak(prev.stage, result.newStreak),
+            }
+          : prev
+      );
       Alert.alert(
         "Successfully restored",
-        `Your streak is back! You have ${result.restoresRemaining} restore${result.restoresRemaining !== 1 ? "s" : ""} remaining.`
+        `Your streak is back! You have ${result.restoresRemaining} restore${result.restoresRemaining !== 1 ? "s" : ""} left this month.`
       );
     } catch (err: any) {
       Alert.alert("Couldn't Restore", err?.message ?? "You may be out of restore tokens.");
@@ -1003,7 +1140,7 @@ export default function ConversationScreen() {
   // ── Pick media & take photo handlers (up to 6 images) ────────────────
   const handlePickMedia = useCallback(async () => {
     if (!conversationId || !accessToken) return;
-    if (isAnonymous && (matchInfo?.stage ?? 1) < 3) {
+    if (isImagesLocked) {
       Alert.alert("Feature Locked", "Photo and media sharing unlocks at Stage 3 of your roadmap.");
       return;
     }
@@ -1041,11 +1178,11 @@ export default function ConversationScreen() {
       console.warn("Failed to pick and send image", err);
       Alert.alert("Upload Failed", err?.message || "Could not upload image. Please try again.");
     }
-  }, [conversationId, accessToken, handleSend, isAnonymous, matchInfo?.stage]);
+  }, [conversationId, accessToken, handleSend, isImagesLocked]);
 
   const handleTakePhoto = useCallback(async () => {
     if (!conversationId || !accessToken) return;
-    if (isAnonymous && (matchInfo?.stage ?? 1) < 3) {
+    if (isImagesLocked) {
       Alert.alert("Feature Locked", "Photo and media sharing unlocks at Stage 3 of your roadmap.");
       return;
     }
@@ -1076,7 +1213,7 @@ export default function ConversationScreen() {
       console.warn("Failed to take photo and send", err);
       Alert.alert("Camera Failed", err?.message || "Could not upload photo. Please try again.");
     }
-  }, [conversationId, accessToken, handleSend, isAnonymous, matchInfo?.stage]);
+  }, [conversationId, accessToken, handleSend, isImagesLocked]);
 
   // ── Retry failed message (Optimistic background retry with clientMessageId) ───
   const handleRetry = useCallback(
@@ -1218,27 +1355,25 @@ export default function ConversationScreen() {
         return (
           <View
             style={{
-              paddingVertical: 16,
-              paddingHorizontal: 24,
+              paddingVertical: 10,
+              paddingHorizontal: 16,
               alignItems: "center",
+              marginVertical: 6,
             }}
           >
             {canRestoreStreak ? (
               <Text style={{ fontSize: 13, color: "#9CA3AF", textAlign: "center", lineHeight: 20 }}>
-                Your daily streak has ended.{" "}
+                {`Your ${lapsedStreakCount > 0 ? `${lapsedStreakCount}-day ` : ''}streak ended · ${restoreHoursRemaining}h left · ${userRestoresRemaining} ${userRestoresRemaining === 1 ? 'restore' : 'restores'} left. `}
                 <Text
                   onPress={handleRestoreStreak}
                   style={{ color: "#1A6B3C", fontWeight: "700", textDecorationLine: "underline" }}
                 >
-                  Restore Streak
+                  Restore
                 </Text>
-                {restoreHoursRemaining > 0 && (
-                  <Text style={{ color: "#C4B8A8" }}>{` (${restoreHoursRemaining}h left)`}</Text>
-                )}
               </Text>
             ) : (
               <Text style={{ fontSize: 13, color: "#9CA3AF", textAlign: "center", lineHeight: 20 }}>
-                Your streak has ended. Keep chatting to start a new one! 🔥
+                {`Your ${lapsedStreakCount > 0 ? `${lapsedStreakCount}-day ` : ''}streak ended.`}
               </Text>
             )}
           </View>
@@ -1279,13 +1414,15 @@ export default function ConversationScreen() {
           }}
           isActiveTime={activeTimeMessageId === item.data.id}
           onToggleTime={handleToggleTime}
+          imagesLocked={isImagesLocked}
         />
       );
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [
       invertedChatItems, canRestoreStreak, restoreHoursRemaining, handleRestoreStreak,
-      user?.id, isAnonymous, matchInfo?.partnerAlias, otherProfile, prefillName,
+      lapsedStreakCount, userRestoresRemaining,
+      user?.id, isAnonymous, isImagesLocked, matchInfo?.partnerAlias, otherProfile, prefillName,
       handleRetry, activeTimeMessageId, handleToggleTime, setReplyTo,
     ]
   );
@@ -1548,7 +1685,7 @@ export default function ConversationScreen() {
               replyTo={replyTo}
               onCancelReply={handleCancelReply}
               draftText={draftText}
-              canUploadImages={!isAnonymous || (matchInfo?.stage ?? 1) >= 3}
+              canUploadImages={!isImagesLocked}
             />
           )}
         </View>

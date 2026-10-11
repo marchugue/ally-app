@@ -61,11 +61,25 @@ export const POINTS_PER_STAGE = 500;
 /** Consecutive daily streak required to enter each stage: 0d (Stage 1), 3d (Stage 2), 7d (Stage 3), 10d (Stage 4). */
 export const STAGE_THRESHOLDS = [0, 0, 3, 7, 10];
 
-/** @deprecated Use points-based progression instead. */
-export function stageForStreak(_days: number): number {
+/** Stage corresponding to a consecutive day streak. */
+export function stageForStreak(days: number): number {
+  if (days >= 10) return 4;
+  if (days >= 7) return 3;
+  if (days >= 3) return 2;
   return 1;
+}
+
+/**
+ * Authoritative stage for a match given its live day streak.
+ * Levels 1–3 follow the streak: when a streak ends, level drops back with it.
+ * Level 4 (Campus Allies) is permanent and never decreases.
+ */
+export function resolveStageForStreak(currentStage: number | null | undefined, dayStreak: number): number {
+  if ((currentStage ?? 1) >= 4) return 4;
+  return stageForStreak(dayStreak);
 }
 
 export function stageName(stage: number): string {
   return STAGE_NAMES[stage] ?? STAGE_NAMES[0];
 }
+

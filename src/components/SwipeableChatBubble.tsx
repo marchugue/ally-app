@@ -16,6 +16,7 @@ interface SwipeableChatBubbleProps {
   onImagePress?: (message: Message, index: number) => void;
   isActiveTime?: boolean;
   onToggleTime?: (messageId: string) => void;
+  imagesLocked?: boolean;
 }
 
 /** Reply arrow indicator shown during swipe */
@@ -48,6 +49,7 @@ export function SwipeableChatBubble({
   onImagePress,
   isActiveTime,
   onToggleTime,
+  imagesLocked = false,
 }: SwipeableChatBubbleProps) {
   const swipeRef = useRef<any>(null);
 
@@ -65,6 +67,7 @@ export function SwipeableChatBubble({
         isMine={isMine}
         groupPosition={groupPosition}
         senderName={senderName}
+        imagesLocked={imagesLocked}
       />
     );
   }
@@ -103,6 +106,7 @@ export function SwipeableChatBubble({
           onImagePress={onImagePress}
           isActiveTime={isActiveTime}
           onToggleTime={onToggleTime}
+          imagesLocked={imagesLocked}
         />
       </ReanimatedSwipeable>
     );
@@ -139,6 +143,7 @@ export function SwipeableChatBubble({
         onImagePress={onImagePress}
         isActiveTime={isActiveTime}
         onToggleTime={onToggleTime}
+        imagesLocked={imagesLocked}
       />
     </ReanimatedSwipeable>
   );

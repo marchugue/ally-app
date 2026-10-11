@@ -18,6 +18,20 @@ export function deleteAccount(accessToken: string): Promise<void> {
   return apiRequest<void>("/auth/delete-account", { method: "DELETE", accessToken });
 }
 
+export function changePassword(
+  currentPassword: string,
+  newPassword: string,
+  accessToken: string
+): Promise<void> {
+  return apiRequest<void>("/auth/change-password", {
+    method: "POST",
+    body: { currentPassword, newPassword },
+    accessToken,
+    noContent: true,
+  });
+}
+
+
 export function getSession(accessToken: string): Promise<AuthSession> {
   return apiRequest<AuthSession>("/auth/session", { accessToken });
 }

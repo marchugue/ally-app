@@ -6,6 +6,7 @@ import type { Message, MessageReaction, MessageGroupPosition } from "@/types/con
 import { resolveImageUri } from "./UserAvatar";
 import { getFluentEmojiUrl } from "@/lib/fluentEmoji";
 import { OfflineAnimatedEmoji } from "@/components/OfflineAnimatedEmoji";
+import { LockedMediaThumbnail } from "@/components/LockedMediaThumbnail";
 
 export interface BubbleLayout {
   x: number;
@@ -33,6 +34,7 @@ interface ChatBubbleProps {
   onImagePress?: (message: Message, index: number) => void;
   isActiveTime?: boolean;
   onToggleTime?: (messageId: string) => void;
+  imagesLocked?: boolean;
 }
 
 export function formatMessageTime(dateStr?: string | null): string {
@@ -163,6 +165,7 @@ export function ChatBubble({
   onImagePress,
   isActiveTime = false,
   onToggleTime,
+  imagesLocked = false,
 }: ChatBubbleProps) {
   // Parse images (supports single URL, JSON array string, camelCase, snake_case, images array, media, content URL)
   const images: string[] = useMemo(() => {
@@ -234,7 +237,7 @@ export function ChatBubble({
   };
 
   const handleImagePress = (index: number = 0) => {
-    if (images.length === 0) return;
+    if (images.length === 0 || imagesLocked) return;
     if (onImagePress) {
       onImagePress(message, index);
       return;
@@ -375,8 +378,19 @@ export function ChatBubble({
           elevation: isImageOnly || isEmojiOnly ? 0 : 1,
         }}
       >
+        {/* Locked image replacement (streak ended → level dropped below Lv.3) */}
+        {hasImage && imagesLocked && (
+          <LockedMediaThumbnail
+            uri={images[0]}
+            count={images.length}
+            style={{
+              marginBottom: message.content ? 6 : 0,
+            }}
+          />
+        )}
+
         {/* Image attachment / Stacked cards UI */}
-        {hasImage && images.length === 1 && (
+        {hasImage && !imagesLocked && images.length === 1 && (
           <Pressable
             onPress={() => handleImagePress(0)}
             onLongPress={handleBubbleLongPress}
@@ -395,7 +409,7 @@ export function ChatBubble({
           </Pressable>
         )}
 
-        {hasImage && images.length > 1 && (
+        {hasImage && !imagesLocked && images.length > 1 && (
           <View
             style={{
               position: "relative",
