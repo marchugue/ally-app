@@ -96,6 +96,11 @@ import { ConfirmModal } from "@/components/ConfirmModal";
 import { ReportModal } from "@/components/ReportModal";
 import { BlurView } from "expo-blur";
 import { getMatchReveal, type AvatarRevealView } from "@/lib/api/matchmaking";
+import {
+  getEffectiveAvatarReveal,
+  loadCachedAvatarReveal,
+  setCachedAvatarReveal,
+} from "@/lib/avatarRevealCache";
 import type { Message, Conversation, MessageGroupPosition } from "@/types/conversation";
 import type { Profile } from "@/types/profile";
 
@@ -376,17 +381,49 @@ export default function ConversationScreen() {
   const [avatarReveal, setAvatarReveal] = useState<AvatarRevealView | null>(null);
 
   const fetchAvatarReveal = useCallback(async (mId?: string) => {
-    const targetId = mId || matchInfo?.matchId || matchInfo?.id;
-    if (!targetId || !accessToken) return;
+    const targetId = mId || matchInfo?.matchId || matchInfo?.id || conversationId;
+    if (!targetId) return;
+
+    // 1. Immediately preload from cache if present (0ms instant render)
+    const cached = await loadCachedAvatarReveal(targetId);
+    if (cached) {
+      setAvatarReveal(cached);
+    }
+
+    if (!accessToken) return;
     try {
       const data = await getMatchReveal(targetId, accessToken);
       if (data?.avatarReveal) {
         setAvatarReveal(data.avatarReveal);
+        void setCachedAvatarReveal(targetId, data.avatarReveal);
       }
     } catch {
       // quiet fail
     }
-  }, [matchInfo?.matchId, matchInfo?.id, accessToken]);
+  }, [matchInfo?.matchId, matchInfo?.id, conversationId, accessToken]);
+
+  const effectiveAvatarReveal = useMemo(() => {
+    const targetId = matchInfo?.matchId || matchInfo?.id || conversationId;
+    return getEffectiveAvatarReveal(
+      targetId,
+      matchInfo?.matchPoints ?? matchInfo?.stagePoints ?? 0,
+      avatarReveal,
+      {
+        partnerAvatar: matchInfo?.partnerAvatar || prefillAvatar || "fox",
+        previewUrl: otherProfile?.avatar_url,
+      }
+    );
+  }, [
+    matchInfo?.matchId,
+    matchInfo?.id,
+    matchInfo?.matchPoints,
+    matchInfo?.stagePoints,
+    matchInfo?.partnerAvatar,
+    conversationId,
+    avatarReveal,
+    prefillAvatar,
+    otherProfile?.avatar_url,
+  ]);
 
   // Media sharing is locked for anonymous matches below Stage 3 (including when streak ends & resets level)
   const isImagesLocked = Boolean(isAnonymous && (matchInfo?.stage ?? 1) < 3);
@@ -1435,7 +1472,7 @@ export default function ConversationScreen() {
           onToggleTime={handleToggleTime}
           imagesLocked={isImagesLocked}
           isAnonymous={isAnonymous}
-          avatarReveal={avatarReveal}
+          avatarReveal={effectiveAvatarReveal}
           partnerAvatar={matchInfo?.partnerAvatar || prefillAvatar || "fox"}
           partnerProfileImage={otherProfile?.avatar_url}
         />
@@ -1447,7 +1484,7 @@ export default function ConversationScreen() {
       lapsedStreakCount, userRestoresRemaining,
       user?.id, isAnonymous, isImagesLocked, matchInfo?.partnerAlias, otherProfile, prefillName,
       handleRetry, activeTimeMessageId, handleToggleTime, setReplyTo,
-      avatarReveal, matchInfo?.partnerAvatar, prefillAvatar,
+      effectiveAvatarReveal, matchInfo?.partnerAvatar, prefillAvatar,
     ]
   );
 
@@ -1505,12 +1542,13 @@ export default function ConversationScreen() {
             style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 10 }}
           >
             <RevealAvatar
-              reveal={avatarReveal}
+              reveal={effectiveAvatarReveal}
               avatarKey={matchInfo?.partnerAvatar || prefillAvatar || "fox"}
               size={40}
               showRing={false}
               showGainChip={false}
               fallbackInitials={otherProfile?.full_name || matchInfo?.partnerAlias}
+              matchPoints={matchInfo?.matchPoints ?? matchInfo?.stagePoints ?? 0}
             />
             <View style={{ flex: 1 }}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "nowrap" }}>
@@ -1614,7 +1652,7 @@ export default function ConversationScreen() {
             matchPoints={matchInfo?.matchPoints ?? 0}
             dayStreak={convStreak || matchInfo?.dayStreak || 0}
             avatarKey={matchInfo?.partnerAvatar || prefillAvatar || "fox"}
-            avatarReveal={avatarReveal}
+            avatarReveal={effectiveAvatarReveal}
             onPress={() => router.push({ pathname: "/pages/roadmap" as any, params: { matchId: matchInfo?.matchId || matchInfo?.id || conversationId, stage: String(matchInfo?.stage ?? 1), stagePoints: String(matchInfo?.stagePoints ?? 0), dayStreak: String(convStreak || matchInfo?.dayStreak || 0), partnerAlias: matchInfo?.partnerAlias || prefillName || "Anonymous Ally", partnerAvatar: matchInfo?.partnerAvatar || prefillAvatar || "fox" } })}
             style={{ position: "absolute", top: 10, right: 14, zIndex: 30 }}
           />
@@ -2205,12 +2243,13 @@ export default function ConversationScreen() {
                 }}
               >
                 <RevealAvatar
-                  reveal={avatarReveal}
+                  reveal={effectiveAvatarReveal}
                   avatarKey={matchInfo?.partnerAvatar || prefillAvatar || "fox"}
                   size={48}
                   showRing={false}
                   showGainChip={false}
                   fallbackInitials={otherProfile?.full_name || matchInfo?.partnerAlias}
+                  matchPoints={matchInfo?.matchPoints ?? matchInfo?.stagePoints ?? 0}
                 />
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontSize: 16, fontWeight: "700", color: "#111827" }}>
@@ -2360,8 +2399,8 @@ export default function ConversationScreen() {
       {isAnonymous && (
         <AvatarRevealCeremony
           matchId={matchInfo?.matchId || matchInfo?.id || conversationId}
-          isRevealed={Boolean((avatarReveal?.tier ?? 0) >= 5 || (matchInfo?.matchPoints ?? 0) >= 250)}
-          avatarUrl={avatarReveal?.previewUrl}
+          isRevealed={Boolean((effectiveAvatarReveal?.tier ?? 0) >= 5 || (matchInfo?.matchPoints ?? 0) >= 250)}
+          avatarUrl={effectiveAvatarReveal?.previewUrl}
           avatarKey={matchInfo?.partnerAvatar || prefillAvatar || "fox"}
           fullName={otherProfile?.full_name}
           partnerAlias={matchInfo?.partnerAlias || prefillName || "Anonymous Ally"}

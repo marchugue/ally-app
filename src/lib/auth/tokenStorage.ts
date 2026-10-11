@@ -14,12 +14,12 @@ export const SESSION_CACHE_KEY = "ally_auth_session_data";
 export async function getPersistedItem(key: string): Promise<string | null> {
   try {
     const val = await SecureStore.getItemAsync(key);
-    if (val) return val;
+    if (val && val !== "undefined" && val !== "null") return val;
   } catch {}
 
   try {
     const val = await AsyncStorage.getItem(key);
-    if (val) return val;
+    if (val && val !== "undefined" && val !== "null") return val;
   } catch {}
 
   return null;

@@ -45,10 +45,12 @@ export interface RevealVisual {
   blurPx: number;
   /** 0..1 how far inside the current tier we are. */
   inTier: number;
-  /** Animal mask transform: 0 = full/centered, 1 = docked corner badge. */
+  /** Legacy dock parameter maintained as 0 for center alignment. */
   dock: number;
-  /** Opacity of the photo layer (tier 0 shows only the colour glow). */
+  /** Opacity of the photo layer (0 at tier 0, rises smoothly to 1.0). */
   photoOpacity: number;
+  /** Opacity of the centered animal emoji (1.0 at 0 pts, dissolves to 0.0 at 100%). */
+  petOpacity: number;
 }
 
 export function computeRevealVisual(input: RevealVisualInput, size: number): RevealVisual {
@@ -57,11 +59,21 @@ export function computeRevealVisual(input: RevealVisualInput, size: number): Rev
   const [b0, b1] = TIER_BLUR[input.tier] ?? TIER_BLUR[0];
   const blurPx = Math.round(lerp(b0, b1, inTier) * size);
 
-  // Animal starts docking once the photo begins to show (20%) and is fully docked at 90%
-  const dock = clamp01((input.progress - 0.2) / 0.7);
-  const photoOpacity = input.tier === 0 ? 0 : 1;
+  // Both real avatar and avatar emoji are strictly in the center:
+  // Pet opacity starts at 1.0 (100% visible) at 0 points,
+  // and smoothly dissolves to 0.0 as points/progress reach 100% (250 pts / tier 5).
+  const isRevealed = input.tier >= 5 || input.progress >= 1;
+  const petOpacity = isRevealed ? 0 : Math.max(0, 1 - Math.pow(clamp01(input.progress), 0.72));
 
-  return { blurPx, inTier, dock, photoOpacity };
+  // Photo opacity starts at 0 at tier 0 (only ambient aura glow showing),
+  // then smoothly emerges from 0.35 up to 1.0 as points increase.
+  const photoOpacity = input.tier === 0
+    ? (input.matchPoints > 10 ? Math.min(0.25, (input.matchPoints / 50) * 0.25) : 0)
+    : Math.min(1, 0.35 + clamp01(input.progress) * 0.65);
+
+  const dock = 0; // Center aligned
+
+  return { blurPx, inTier, dock, photoOpacity, petOpacity };
 }
 
 export function revealSeenKey(matchId: string): string {

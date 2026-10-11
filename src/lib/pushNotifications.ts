@@ -139,8 +139,15 @@ export async function registerForPushNotificationsAsync(accessToken: string): Pr
     const token = tokenData?.data;
     console.log("[PushNotifications] Expo push token retrieved:", token);
 
-    if (token) {
-      await updatePushToken(token, accessToken);
+    if (token && accessToken) {
+      try {
+        await updatePushToken(token, accessToken);
+      } catch (syncErr: any) {
+        console.warn(
+          "[PushNotifications] Failed to sync push token to server:",
+          syncErr?.message || syncErr
+        );
+      }
     }
 
     return token;

@@ -3,6 +3,7 @@ import { AppState, type AppStateStatus } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as authApi from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/apiError";
+import { registerAuthSessionListener } from "@/lib/api/client";
 import { disconnectSocket, initSocket } from "@/lib/socket";
 import type { AuthSession, AuthUser, RegisterPayload, RegisterResponse } from "@/types/auth";
 import {
@@ -96,6 +97,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         // Step 2: Validate or Refresh session with the server in background
         let sessionConfirmed = false;
+        let authRejected = false;
 
         if (initialToken) {
           try {
@@ -104,7 +106,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             sessionConfirmed = true;
           } catch (err: any) {
             console.log("[AuthContext] getSession status:", err?.status);
-            // 401/403 means the short-lived access token expired, we attempt refresh below
+            if (err?.status === 401 || err?.status === 403) {
+              authRejected = true;
+            }
           }
         }
 
@@ -115,20 +119,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             const refreshedSession = await authApi.refreshSessionWithToken(initialRefreshToken);
             await applySession(refreshedSession);
             sessionConfirmed = true;
+            authRejected = false;
             console.log("[AuthContext] Silent token refresh succeeded on launch!");
           } catch (refreshErr: any) {
             console.warn("[AuthContext] Launch token refresh failed:", refreshErr?.status);
-            // ONLY if the refresh token was explicitly rejected (401/403) by backend,
-            // revoke the session. Network errors do NOT clear tokens!
-            if (refreshErr?.status === 401 || refreshErr?.status === 403) {
-              console.log("[AuthContext] Refresh token invalid/revoked. Clearing session.");
-              await clearStoredTokens();
-              return;
+            if (
+              refreshErr?.status === 400 ||
+              refreshErr?.status === 401 ||
+              refreshErr?.status === 403
+            ) {
+              authRejected = true;
             }
           }
         }
 
-        // If offline / server unreachable but we had a cached user, RETAIN the session!
+        // If authentication was explicitly rejected (401/403) and refresh failed or wasn't available:
+        if (!sessionConfirmed && authRejected) {
+          console.warn("[AuthContext] Session invalid or expired. Revoking local session.");
+          await clearStoredTokens();
+          return;
+        }
+
+        // If offline / server unreachable (network error) but we had a cached user, RETAIN the session!
         if (!sessionConfirmed && initialUser) {
           console.log("[AuthContext] Retaining cached auth session for offline use.");
         }
@@ -140,6 +152,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
 
     restoreSession();
+  }, []);
+
+  // ── Listen for auto-refreshed tokens and 401 session expirations from API client ──
+  useEffect(() => {
+    const unsubscribe = registerAuthSessionListener({
+      onTokenRefreshed: (newToken: string) => {
+        setAccessToken(newToken);
+      },
+      onSessionExpired: () => {
+        clearStoredTokens();
+      },
+    });
+    return unsubscribe;
   }, []);
 
   // ── AppState watcher: Re-validate/refresh session when app comes to foreground ──
@@ -164,8 +189,23 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             }
           }
           if (storedRefreshToken) {
-            const refreshed = await authApi.refreshSessionWithToken(storedRefreshToken);
-            await applySession(refreshed);
+            try {
+              const refreshed = await authApi.refreshSessionWithToken(storedRefreshToken);
+              await applySession(refreshed);
+              return;
+            } catch (refreshErr: any) {
+              if (
+                refreshErr?.status === 400 ||
+                refreshErr?.status === 401 ||
+                refreshErr?.status === 403
+              ) {
+                console.log("[AuthContext] AppState refresh token invalid. Clearing session.");
+                await clearStoredTokens();
+              }
+            }
+          } else {
+            console.log("[AuthContext] AppState access token expired with no refresh token. Clearing session.");
+            await clearStoredTokens();
           }
         } catch {
           // Do not log out on transient errors
@@ -195,12 +235,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       disconnectSocket();
     }
 
-    if (session.refreshToken) {
-      await setPersistedItem(REFRESH_TOKEN_KEY, session.refreshToken);
+    // Preserve existing refresh token if current session payload doesn't contain a new one
+    let effectiveRefreshToken = session.refreshToken;
+    if (effectiveRefreshToken) {
+      await setPersistedItem(REFRESH_TOKEN_KEY, effectiveRefreshToken);
+    } else {
+      effectiveRefreshToken = (await getPersistedItem(REFRESH_TOKEN_KEY)) || undefined;
     }
 
-    // Persist full session bundle
-    await setPersistedItem(SESSION_CACHE_KEY, JSON.stringify(session));
+    // Persist full session bundle with refresh token preserved
+    const sessionToPersist: AuthSession = {
+      ...session,
+      refreshToken: effectiveRefreshToken || session.refreshToken,
+    };
+    await setPersistedItem(SESSION_CACHE_KEY, JSON.stringify(sessionToPersist));
   }
 
   async function clearStoredTokens() {

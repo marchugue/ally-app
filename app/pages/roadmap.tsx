@@ -21,6 +21,11 @@ import {
 import { stageName, TOTAL_POINTS_FOR_PROFILE_UNLOCK } from "@/constants/matchOptions";
 import { AvatarRevealCard } from "@/components/AvatarRevealCard";
 import { AvatarRevealCeremony } from "@/components/AvatarRevealCeremony";
+import {
+  getEffectiveAvatarReveal,
+  setCachedAvatarReveal,
+  loadCachedAvatarReveal,
+} from "@/lib/avatarRevealCache";
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get("window");
 
@@ -140,11 +145,20 @@ export default function RoadmapPage() {
   });
 
   const fetchReveal = useCallback(async () => {
-    if (!matchId || !accessToken) { setLoading(false); return; }
+    if (!matchId) { setLoading(false); return; }
+    // Preload from cache first if available
+    const cached = await loadCachedAvatarReveal(matchId);
+    if (cached) {
+      setRevealData((prev) => (prev ? { ...prev, avatarReveal: cached } : ({ avatarReveal: cached } as any)));
+    }
+    if (!accessToken) { setLoading(false); return; }
     setLoading(true);
     try {
       const data = await getMatchReveal(matchId, accessToken);
       setRevealData(data);
+      if (data?.avatarReveal) {
+        void setCachedAvatarReveal(matchId, data.avatarReveal);
+      }
     } catch (err) {
       console.warn("Roadmap: failed to load reveal data", err);
     } finally {
@@ -153,6 +167,17 @@ export default function RoadmapPage() {
   }, [matchId, accessToken]);
 
   useEffect(() => { fetchReveal(); }, [fetchReveal]);
+
+  const effectiveReveal = getEffectiveAvatarReveal(
+    matchId,
+    matchPoints,
+    revealData?.avatarReveal,
+    {
+      partnerAvatar,
+      target: goalPoints,
+      previewUrl: revealData?.avatarReveal?.previewUrl,
+    }
+  );
 
   return (
     <View style={styles.root}>
@@ -218,6 +243,16 @@ export default function RoadmapPage() {
             </View>
           ) : (
             <>
+              {/* ── Avatar Reveal Hero Card ── */}
+              <AvatarRevealCard
+                reveal={effectiveReveal}
+                avatarKey={partnerAvatar}
+                partnerAlias={partnerAlias}
+                partnerName={revealData?.partner?.fullName}
+                size={76}
+                style={{ marginBottom: 20 }}
+              />
+
               {/* ── Daily Tasks (Vertically aligned list, horizontal rows) ─ */}
               <Text style={styles.sectionLabel}>Daily Tasks</Text>
 
@@ -398,6 +433,16 @@ export default function RoadmapPage() {
           Stage {stage} · {stageName(stage)}
         </Text>
       </View>
+
+      {/* ── 100% Reveal Ceremony Modal ── */}
+      <AvatarRevealCeremony
+        matchId={matchId}
+        isRevealed={Boolean((stage >= 4 && matchPoints >= goalPoints) || (effectiveReveal?.tier ?? 0) >= 5)}
+        avatarUrl={effectiveReveal?.previewUrl || (revealData?.partner as any)?.avatarUrl}
+        avatarKey={partnerAvatar}
+        fullName={revealData?.partner?.fullName || partnerAlias}
+        partnerAlias={partnerAlias}
+      />
     </View>
   );
 }

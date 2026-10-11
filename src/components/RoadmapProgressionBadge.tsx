@@ -10,7 +10,8 @@ import {
   type ViewStyle,
 } from "react-native";
 import { getAvatarEmoji } from "@/constants/matchOptions";
-import { OfflineAnimatedEmoji } from "@/components/OfflineAnimatedEmoji";
+import { RevealAvatar } from "@/components/RevealAvatar";
+import { getEffectiveAvatarReveal } from "@/lib/avatarRevealCache";
 import type { AvatarRevealView } from "@/lib/api/matchmaking";
 
 export interface RoadmapProgressionBadgeProps {
@@ -82,7 +83,13 @@ export function RoadmapProgressionBadge({
   const currentPoints = matchPoints > 0 ? matchPoints : stagePoints;
   const targetPoints = profileUnlockTarget > 0 ? profileUnlockTarget : pointsPerStage;
   const progression = calculateStageProgression(stage, currentPoints, targetPoints);
-  const fallbackEmoji = getAvatarEmoji(avatarKey);
+
+  const effectiveReveal = getEffectiveAvatarReveal(
+    undefined,
+    currentPoints,
+    avatarReveal,
+    { partnerAvatar: avatarKey || undefined, target: targetPoints }
+  );
 
   const handlePressIn = () => {
     Animated.spring(pressScaleAnim, {
@@ -110,11 +117,14 @@ export function RoadmapProgressionBadge({
         accessibilityRole="button"
         accessibilityLabel="Open Ally Roadmap and progression"
       >
-        {/* 3D Animal with animated emoji */}
-        <OfflineAnimatedEmoji
+        {/* Reveal avatar: real avatar and emoji in center, smoothly transitioning based on points */}
+        <RevealAvatar
+          reveal={effectiveReveal}
           avatarKey={avatarKey}
           size={emojiSize}
-          fallbackText={fallbackEmoji}
+          showRing={false}
+          showGainChip={false}
+          matchPoints={currentPoints}
         />
 
         {/* Level / Progression Bar Horizontally — width strictly matches emoji scale */}
