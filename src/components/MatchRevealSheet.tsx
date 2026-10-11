@@ -24,6 +24,9 @@ import {
 } from "lucide-react-native";
 import { useAuth } from "@/lib/auth/AuthContext";
 import { AnonymousAvatar } from "@/components/AnonymousAvatar";
+import { RevealAvatar } from "@/components/RevealAvatar";
+import { AvatarRevealCard } from "@/components/AvatarRevealCard";
+import { AvatarRevealCeremony } from "@/components/AvatarRevealCeremony";
 import {
   getMatchReveal,
   RevealData,
@@ -132,9 +135,9 @@ export function MatchRevealSheet({
   const stagePoints = revealData?.stagePoints ?? initialStagePoints;
   const matchPoints = revealData?.matchPoints ?? 0;
   const effectiveMultiplier = revealData?.effectiveMultiplier ?? 1;
-  const isProfileUnlocked = Boolean(revealData?.isProfileUnlocked || matchPoints >= 500);
-  const pointsProgress = Math.min(100, Math.round((matchPoints / 500) * 100));
-  const pointsRemaining = Math.max(0, 500 - matchPoints);
+  const isProfileUnlocked = Boolean(revealData?.isProfileUnlocked || matchPoints >= 250);
+  const pointsProgress = Math.min(100, Math.round((matchPoints / 250) * 100));
+  const pointsRemaining = Math.max(0, 250 - matchPoints);
 
   // Next streak milestone
   let nextStageDays = 3;
@@ -203,12 +206,23 @@ export function MatchRevealSheet({
               }}
             >
               <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-                <AnonymousAvatar
-                  avatarKey={partnerAvatar}
-                  size={42}
-                  photoUrl={isProfileUnlocked ? partner?.avatarUrl : null}
-                  isBlurred={false}
-                />
+                {revealData?.avatarReveal && revealData.avatarReveal.tier >= 1 ? (
+                  <RevealAvatar
+                    reveal={revealData.avatarReveal}
+                    avatarKey={partnerAvatar}
+                    size={42}
+                    showRing={false}
+                    showGainChip={false}
+                    fallbackInitials={partner?.fullName || partnerAlias}
+                  />
+                ) : (
+                  <AnonymousAvatar
+                    avatarKey={partnerAvatar}
+                    size={42}
+                    photoUrl={isProfileUnlocked ? partner?.avatarUrl : null}
+                    isBlurred={false}
+                  />
+                )}
                 <View>
                   <Text style={{ fontSize: 17, fontWeight: "800", color: "#0F172A" }}>
                     {isProfileUnlocked && partner?.fullName ? partner.fullName : partnerAlias}
@@ -289,7 +303,18 @@ export function MatchRevealSheet({
                 {/* ── ABOUT TAB ── */}
                 {activeTab === "about" && (
                   <>
-                    {/* ── 500-PT PROFILE UNLOCK CARD ── */}
+                    {/* ── PROGRESSIVE AVATAR REVEAL CARD ── */}
+                    {revealData?.avatarReveal && (
+                      <AvatarRevealCard
+                        reveal={revealData.avatarReveal}
+                        avatarKey={partnerAvatar}
+                        partnerAlias={partnerAlias}
+                        partnerName={partner?.fullName}
+                        style={{ marginBottom: 14 }}
+                      />
+                    )}
+
+                    {/* ── 250-PT PROFILE UNLOCK CARD ── */}
                     <View
                       style={{
                         backgroundColor: "#F8FAFC",
@@ -305,15 +330,15 @@ export function MatchRevealSheet({
                         <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                           <Text style={{ fontSize: 16 }}>{isProfileUnlocked ? "🎉" : "🔓"}</Text>
                           <Text style={{ fontSize: 13, fontWeight: "800", color: "#0F172A" }}>
-                            {isProfileUnlocked ? "Real Identities Unlocked!" : "Profile Unlock Goal (500 pts)"}
+                            {isProfileUnlocked ? "Real Identities Unlocked!" : "Profile Unlock Goal (250 pts)"}
                           </Text>
                         </View>
                         <Text style={{ fontSize: 11, fontWeight: "700", color: isProfileUnlocked ? "#16A34A" : "#D97706" }}>
-                          {matchPoints} / 500 pts
+                          {matchPoints} / 250 pts
                         </Text>
                       </View>
 
-                      {/* 500-pt progress bar */}
+                      {/* 250-pt progress bar */}
                       <View
                         style={{
                           height: 8,
@@ -382,7 +407,7 @@ export function MatchRevealSheet({
                       </View>
                     </View>
 
-                    {/* ── REAL PROFILE DETAILS (when 500 pts reached) ── */}
+                    {/* ── REAL PROFILE DETAILS (when 250 pts reached) ── */}
                     {isProfileUnlocked && (
                       <View
                         style={{
@@ -482,7 +507,7 @@ export function MatchRevealSheet({
                             Campus Allies — Feed Unlocked!
                           </Text>
                           <Text style={{ fontSize: 12, color: "#64748B", lineHeight: 18 }}>
-                            {partnerAlias}'s posts appear in your Allies filter (anonymous until 500 pts).
+                            {partnerAlias}'s posts appear in your Allies filter (anonymous until 250 pts).
                           </Text>
                         </View>
                       </View>
@@ -572,7 +597,7 @@ export function MatchRevealSheet({
                       <Text style={{ fontSize: 12, color: "#9A3412", flex: 1, lineHeight: 18 }}>
                         Stage {stage} multiplier: <Text style={{ fontWeight: "800" }}>{effectiveMultiplier}×</Text> ({dayStreak}d streak)
                         {"\n"}
-                        <Text style={{ color: "#C2410C", fontSize: 11 }}>Resets at 12:00 AM PHT daily • 500 total points required to unlock real profiles!</Text>
+                        <Text style={{ color: "#C2410C", fontSize: 11 }}>Resets at 12:00 AM PHT daily • 250 total points required to unlock real profiles!</Text>
                       </Text>
                     </View>
 
@@ -699,6 +724,16 @@ export function MatchRevealSheet({
           </ScrollView>
         </View>
       </View>
+
+      {/* ── 100% Reveal Celebration Ceremony ── */}
+      <AvatarRevealCeremony
+        matchId={matchId}
+        isRevealed={Boolean(isProfileUnlocked)}
+        avatarUrl={partner?.avatarUrl || revealData?.avatarReveal?.previewUrl}
+        avatarKey={partnerAvatar}
+        fullName={partner?.fullName}
+        partnerAlias={partnerAlias}
+      />
     </Modal>
   );
 }

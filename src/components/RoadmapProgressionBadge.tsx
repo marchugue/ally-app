@@ -11,6 +11,7 @@ import {
 } from "react-native";
 import { getAvatarEmoji } from "@/constants/matchOptions";
 import { OfflineAnimatedEmoji } from "@/components/OfflineAnimatedEmoji";
+import type { AvatarRevealView } from "@/lib/api/matchmaking";
 
 export interface RoadmapProgressionBadgeProps {
   stage?: number;
@@ -24,6 +25,7 @@ export interface RoadmapProgressionBadgeProps {
   onPress: () => void;
   emojiSize?: number;
   style?: StyleProp<ViewStyle>;
+  avatarReveal?: AvatarRevealView | null;
 }
 
 export interface StageProgression {
@@ -41,7 +43,7 @@ export interface StageProgression {
 export function calculateStageProgression(
   stage: number = 1,
   matchPoints: number = 0,
-  profileUnlockTarget: number = 500
+  profileUnlockTarget: number = 250
 ): StageProgression {
   const currentStage = Math.max(1, Math.min(4, stage));
   const isProfileUnlocked = matchPoints >= profileUnlockTarget;
@@ -67,12 +69,13 @@ export function RoadmapProgressionBadge({
   dayStreak: _dayStreak = 0,
   matchPoints = 0,
   stagePoints = 0,
-  pointsPerStage = 500,
-  profileUnlockTarget = 500,
+  pointsPerStage = 250,
+  profileUnlockTarget = 250,
   avatarKey,
   onPress,
   emojiSize = 60,
   style,
+  avatarReveal,
 }: RoadmapProgressionBadgeProps) {
   const pressScaleAnim = useRef(new Animated.Value(1)).current;
 
@@ -107,23 +110,12 @@ export function RoadmapProgressionBadge({
         accessibilityRole="button"
         accessibilityLabel="Open Ally Roadmap and progression"
       >
-        {/* Microsoft Fluent 3D Animal Emoji */}
-        <View
-          style={{
-            width: emojiSize,
-            height: emojiSize,
-            alignItems: "center",
-            justifyContent: "center",
-          }}
-        >
-          <OfflineAnimatedEmoji
-            avatarKey={avatarKey}
-            emoji={fallbackEmoji}
-            size={emojiSize}
-            preferLottie={true}
-            fallbackText={fallbackEmoji}
-          />
-        </View>
+        {/* 3D Animal with animated emoji */}
+        <OfflineAnimatedEmoji
+          avatarKey={avatarKey}
+          size={emojiSize}
+          fallbackText={fallbackEmoji}
+        />
 
         {/* Level / Progression Bar Horizontally — width strictly matches emoji scale */}
         <View style={[styles.barContainer, { width: emojiSize }]}>

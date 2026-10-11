@@ -3,7 +3,9 @@ import { View, Text, Pressable, Image } from "react-native";
 import { Clock, Check, CheckCheck, AlertCircle } from "lucide-react-native";
 import { router } from "expo-router";
 import type { Message, MessageReaction, MessageGroupPosition } from "@/types/conversation";
-import { resolveImageUri } from "./UserAvatar";
+import { UserAvatar, resolveImageUri } from "./UserAvatar";
+import { RevealAvatar } from "@/components/RevealAvatar";
+import type { AvatarRevealView } from "@/lib/api/matchmaking";
 import { getFluentEmojiUrl } from "@/lib/fluentEmoji";
 import { OfflineAnimatedEmoji } from "@/components/OfflineAnimatedEmoji";
 import { LockedMediaThumbnail } from "@/components/LockedMediaThumbnail";
@@ -35,6 +37,10 @@ interface ChatBubbleProps {
   isActiveTime?: boolean;
   onToggleTime?: (messageId: string) => void;
   imagesLocked?: boolean;
+  isAnonymous?: boolean;
+  avatarReveal?: AvatarRevealView | null;
+  partnerAvatar?: string | null;
+  partnerProfileImage?: string | null;
 }
 
 export function formatMessageTime(dateStr?: string | null): string {
@@ -166,6 +172,10 @@ export function ChatBubble({
   isActiveTime = false,
   onToggleTime,
   imagesLocked = false,
+  isAnonymous = false,
+  avatarReveal,
+  partnerAvatar,
+  partnerProfileImage,
 }: ChatBubbleProps) {
   // Parse images (supports single URL, JSON array string, camelCase, snake_case, images array, media, content URL)
   const images: string[] = useMemo(() => {
@@ -268,40 +278,86 @@ export function ChatBubble({
 
   // ── Tombstone: deleted for everyone ──────────────────────────────────────
   if (message.is_deleted || (message as any).isDeleted) {
+    if (isMine) {
+      return (
+        <View
+          style={{
+            alignSelf: "flex-end",
+            maxWidth: "78%",
+            marginTop: margins.marginTop,
+            marginBottom: margins.marginBottom,
+            marginHorizontal: 16,
+            paddingHorizontal: 14,
+            paddingVertical: 8,
+            borderRadius: 16,
+            borderWidth: 1,
+            borderStyle: "dashed",
+            borderColor: "#D1D5DB",
+            backgroundColor: "#F9FAFB",
+          }}
+        >
+          <Text style={{ fontSize: 13, color: "#9CA3AF", fontStyle: "italic" }}>
+            This message was deleted
+          </Text>
+        </View>
+      );
+    }
+
     return (
       <View
         style={{
-          alignSelf: isMine ? "flex-end" : "flex-start",
-          maxWidth: "78%",
+          alignSelf: "flex-start",
+          maxWidth: "85%",
           marginTop: margins.marginTop,
           marginBottom: margins.marginBottom,
-          marginHorizontal: 16,
-          paddingHorizontal: 14,
-          paddingVertical: 8,
-          borderRadius: 16,
-          borderWidth: 1,
-          borderStyle: "dashed",
-          borderColor: "#D1D5DB",
-          backgroundColor: "#F9FAFB",
+          marginHorizontal: 12,
+          flexDirection: "row",
+          alignItems: "flex-end",
+          gap: 8,
         }}
       >
-        <Text style={{ fontSize: 13, color: "#9CA3AF", fontStyle: "italic" }}>
-          This message was deleted
-        </Text>
+        <View style={{ width: 28, height: 28, alignItems: "center", justifyContent: "center" }}>
+          {groupPosition === "single" || groupPosition === "last" ? (
+            isAnonymous ? (
+              <RevealAvatar
+                reveal={avatarReveal}
+                avatarKey={partnerAvatar}
+                size={28}
+                showRing={false}
+                showGainChip={false}
+                fallbackInitials={senderName}
+              />
+            ) : (
+              <UserAvatar
+                avatar={partnerProfileImage}
+                size="xs"
+                fallback={senderName ? senderName[0]?.toUpperCase() : "👤"}
+              />
+            )
+          ) : null}
+        </View>
+        <View
+          style={{
+            flexShrink: 1,
+            paddingHorizontal: 14,
+            paddingVertical: 8,
+            borderRadius: 16,
+            borderWidth: 1,
+            borderStyle: "dashed",
+            borderColor: "#D1D5DB",
+            backgroundColor: "#F9FAFB",
+          }}
+        >
+          <Text style={{ fontSize: 13, color: "#9CA3AF", fontStyle: "italic" }}>
+            This message was deleted
+          </Text>
+        </View>
       </View>
     );
   }
 
-  return (
-    <View
-      style={{
-        alignSelf: isMine ? "flex-end" : "flex-start",
-        maxWidth: "78%",
-        marginTop: margins.marginTop,
-        marginBottom: margins.marginBottom + extraBottom,
-        marginHorizontal: 16,
-      }}
-    >
+  const bubbleBody = (
+    <>
       {/* Sender name for the upper message only */}
       {showSenderName && (
         <Text
@@ -694,6 +750,69 @@ export function ChatBubble({
           </Text>
         </Pressable>
       )}
+    </>
+  );
+
+  if (isMine) {
+    return (
+      <View
+        style={{
+          alignSelf: "flex-end",
+          maxWidth: "78%",
+          marginTop: margins.marginTop,
+          marginBottom: margins.marginBottom + extraBottom,
+          marginHorizontal: 16,
+        }}
+      >
+        {bubbleBody}
+      </View>
+    );
+  }
+
+  return (
+    <View
+      style={{
+        alignSelf: "flex-start",
+        maxWidth: "85%",
+        marginTop: margins.marginTop,
+        marginBottom: margins.marginBottom + extraBottom,
+        marginHorizontal: 12,
+        flexDirection: "row",
+        alignItems: "flex-end",
+        gap: 8,
+      }}
+    >
+      <View
+        style={{
+          width: 28,
+          height: 28,
+          alignItems: "center",
+          justifyContent: "center",
+          marginBottom: extraBottom,
+        }}
+      >
+        {groupPosition === "single" || groupPosition === "last" ? (
+          isAnonymous ? (
+            <RevealAvatar
+              reveal={avatarReveal}
+              avatarKey={partnerAvatar}
+              size={28}
+              showRing={false}
+              showGainChip={false}
+              fallbackInitials={senderName}
+            />
+          ) : (
+            <UserAvatar
+              avatar={partnerProfileImage}
+              size="xs"
+              fallback={senderName ? senderName[0]?.toUpperCase() : "👤"}
+            />
+          )
+        ) : null}
+      </View>
+      <View style={{ flexShrink: 1, maxWidth: "100%" }}>
+        {bubbleBody}
+      </View>
     </View>
   );
 }

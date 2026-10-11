@@ -130,7 +130,7 @@ export interface RevealPartnerView {
   studyCategory?: string | null;
   // Stage 3+
   favoriteHobby?: string | null;
-  // Profile Unlocked (500 points reached)
+  // Profile Unlocked (250 points reached)
   userId?: string | null;
   fullName?: string | null;
   username?: string | null;
@@ -158,13 +158,27 @@ export interface StageTask {
   unlockedAtStage: number;
 }
 
+export interface AvatarRevealView {
+  tier: number;
+  maxTier: number;
+  progress: number;
+  matchPoints: number;
+  target: number;
+  tierStart: number;
+  tierEnd: number;
+  tierThresholds: number[];
+  hasPhoto: boolean;
+  dominantColor: string | null;
+  previewUrl: string | null;
+}
+
 export interface RevealData {
   stage: number;
   stageName: string;
   dayStreak: number;
   targetStreak?: number;
   streakProgressPercent?: number;
-  // Points progression & 500-pt profile unlock
+  // Points progression & 250-pt profile unlock
   matchPoints: number;
   stagePoints: number;
   profileUnlockTarget?: number;
@@ -182,6 +196,7 @@ export interface RevealData {
   dailyTasks: DailyTaskStatus[];
   activeTasks: StageTask[];
   partner: RevealPartnerView;
+  avatarReveal?: AvatarRevealView;
 }
 
 export interface TimelineData {

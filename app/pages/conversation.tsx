@@ -83,6 +83,8 @@ import { ChatInput } from "@/components/ChatInput";
 import { MessageImageViewer } from "@/components/MessageImageViewer";
 import { UserAvatar, resolveImageUri } from "@/components/UserAvatar";
 import { AnonymousAvatar } from "@/components/AnonymousAvatar";
+import { RevealAvatar } from "@/components/RevealAvatar";
+import { AvatarRevealCeremony } from "@/components/AvatarRevealCeremony";
 import { ChatStreakBadge } from "@/components/ChatStreakBadge";
 import { FluentEmojiPickerModal } from "@/components/FluentEmojiPickerModal";
 import { OfflineAnimatedEmoji } from "@/components/OfflineAnimatedEmoji";
@@ -93,6 +95,7 @@ import { KeyboardGestureArea } from "react-native-keyboard-controller";
 import { ConfirmModal } from "@/components/ConfirmModal";
 import { ReportModal } from "@/components/ReportModal";
 import { BlurView } from "expo-blur";
+import { getMatchReveal, type AvatarRevealView } from "@/lib/api/matchmaking";
 import type { Message, Conversation, MessageGroupPosition } from "@/types/conversation";
 import type { Profile } from "@/types/profile";
 
@@ -370,6 +373,20 @@ export default function ConversationScreen() {
   const [conversationVariant, setConversationVariant] = useState<string | null>(
     isAnonymousParam === "true" ? "anonymous" : null
   );
+  const [avatarReveal, setAvatarReveal] = useState<AvatarRevealView | null>(null);
+
+  const fetchAvatarReveal = useCallback(async (mId?: string) => {
+    const targetId = mId || matchInfo?.matchId || matchInfo?.id;
+    if (!targetId || !accessToken) return;
+    try {
+      const data = await getMatchReveal(targetId, accessToken);
+      if (data?.avatarReveal) {
+        setAvatarReveal(data.avatarReveal);
+      }
+    } catch {
+      // quiet fail
+    }
+  }, [matchInfo?.matchId, matchInfo?.id, accessToken]);
 
   // Media sharing is locked for anonymous matches below Stage 3 (including when streak ends & resets level)
   const isImagesLocked = Boolean(isAnonymous && (matchInfo?.stage ?? 1) < 3);
@@ -727,6 +744,7 @@ export default function ConversationScreen() {
         );
         if (conv.matchInfo) {
           setMatchInfo(conv.matchInfo);
+          void fetchAvatarReveal(conv.matchInfo?.matchId || conv.matchInfo?.id);
         }
         const members = (conv.conversation_members as any[]) || [];
         const otherMember = members.find((m: any) => {
@@ -856,6 +874,7 @@ export default function ConversationScreen() {
           matchPoints: payload.matchPoints ?? prev?.matchPoints,
           stage: payload.stage ?? prev?.stage,
         }));
+        void fetchAvatarReveal(payload.matchId);
       }
     };
 
@@ -1415,6 +1434,10 @@ export default function ConversationScreen() {
           isActiveTime={activeTimeMessageId === item.data.id}
           onToggleTime={handleToggleTime}
           imagesLocked={isImagesLocked}
+          isAnonymous={isAnonymous}
+          avatarReveal={avatarReveal}
+          partnerAvatar={matchInfo?.partnerAvatar || prefillAvatar || "fox"}
+          partnerProfileImage={otherProfile?.avatar_url}
         />
       );
     },
@@ -1424,6 +1447,7 @@ export default function ConversationScreen() {
       lapsedStreakCount, userRestoresRemaining,
       user?.id, isAnonymous, isImagesLocked, matchInfo?.partnerAlias, otherProfile, prefillName,
       handleRetry, activeTimeMessageId, handleToggleTime, setReplyTo,
+      avatarReveal, matchInfo?.partnerAvatar, prefillAvatar,
     ]
   );
 
@@ -1480,9 +1504,13 @@ export default function ConversationScreen() {
             onPress={() => router.push({ pathname: "/pages/roadmap" as any, params: { matchId: matchInfo?.matchId || matchInfo?.id || conversationId, stage: String(matchInfo?.stage ?? 1), stagePoints: String(matchInfo?.stagePoints ?? 0), dayStreak: String(convStreak || matchInfo?.dayStreak || 0), partnerAlias: matchInfo?.partnerAlias || prefillName || "Anonymous Ally", partnerAvatar: matchInfo?.partnerAvatar || prefillAvatar || "fox" } })}
             style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 10 }}
           >
-            <AnonymousAvatar
+            <RevealAvatar
+              reveal={avatarReveal}
               avatarKey={matchInfo?.partnerAvatar || prefillAvatar || "fox"}
               size={40}
+              showRing={false}
+              showGainChip={false}
+              fallbackInitials={otherProfile?.full_name || matchInfo?.partnerAlias}
             />
             <View style={{ flex: 1 }}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "nowrap" }}>
@@ -1583,8 +1611,10 @@ export default function ConversationScreen() {
           <RoadmapProgressionBadge
             stage={matchInfo?.stage ?? 1}
             stagePoints={matchInfo?.stagePoints ?? 0}
+            matchPoints={matchInfo?.matchPoints ?? 0}
             dayStreak={convStreak || matchInfo?.dayStreak || 0}
             avatarKey={matchInfo?.partnerAvatar || prefillAvatar || "fox"}
+            avatarReveal={avatarReveal}
             onPress={() => router.push({ pathname: "/pages/roadmap" as any, params: { matchId: matchInfo?.matchId || matchInfo?.id || conversationId, stage: String(matchInfo?.stage ?? 1), stagePoints: String(matchInfo?.stagePoints ?? 0), dayStreak: String(convStreak || matchInfo?.dayStreak || 0), partnerAlias: matchInfo?.partnerAlias || prefillName || "Anonymous Ally", partnerAvatar: matchInfo?.partnerAvatar || prefillAvatar || "fox" } })}
             style={{ position: "absolute", top: 10, right: 14, zIndex: 30 }}
           />
@@ -2174,9 +2204,13 @@ export default function ConversationScreen() {
                   borderBottomColor: "#E2DED7",
                 }}
               >
-                <AnonymousAvatar
+                <RevealAvatar
+                  reveal={avatarReveal}
                   avatarKey={matchInfo?.partnerAvatar || prefillAvatar || "fox"}
                   size={48}
+                  showRing={false}
+                  showGainChip={false}
+                  fallbackInitials={otherProfile?.full_name || matchInfo?.partnerAlias}
                 />
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontSize: 16, fontWeight: "700", color: "#111827" }}>
@@ -2321,6 +2355,18 @@ export default function ConversationScreen() {
           setViewingImageMessage(null);
         }}
       />
+
+      {/* ── 100% Reveal Ceremony Modal ── */}
+      {isAnonymous && (
+        <AvatarRevealCeremony
+          matchId={matchInfo?.matchId || matchInfo?.id || conversationId}
+          isRevealed={Boolean((avatarReveal?.tier ?? 0) >= 5 || (matchInfo?.matchPoints ?? 0) >= 250)}
+          avatarUrl={avatarReveal?.previewUrl}
+          avatarKey={matchInfo?.partnerAvatar || prefillAvatar || "fox"}
+          fullName={otherProfile?.full_name}
+          partnerAlias={matchInfo?.partnerAlias || prefillName || "Anonymous Ally"}
+        />
+      )}
     </View>
   );
 }

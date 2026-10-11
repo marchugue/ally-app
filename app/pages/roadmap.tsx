@@ -18,7 +18,9 @@ import {
   RevealData,
   DailyTaskStatus,
 } from "@/lib/api/matchmaking";
-import { stageName } from "@/constants/matchOptions";
+import { stageName, TOTAL_POINTS_FOR_PROFILE_UNLOCK } from "@/constants/matchOptions";
+import { AvatarRevealCard } from "@/components/AvatarRevealCard";
+import { AvatarRevealCeremony } from "@/components/AvatarRevealCeremony";
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get("window");
 
@@ -112,11 +114,15 @@ export default function RoadmapPage() {
   const matchPoints =
     revealData?.matchPoints ??
     (params.stagePoints ? parseInt(params.stagePoints, 10) : 0);
-  const goalPoints = revealData?.profileUnlockTarget ?? 500;
+  const goalPoints =
+    revealData?.profileUnlockTarget ?? TOTAL_POINTS_FOR_PROFILE_UNLOCK;
   const progressPercent = Math.min(
     100,
     Math.max(0, (matchPoints / goalPoints) * 100)
   );
+
+  const partnerAlias = params.partnerAlias || "Your ally";
+  const partnerAvatar = params.partnerAvatar || "fox";
 
   const tasksToDisplay = MASTER_DAILY_TASKS.map((def) => {
     const serverTask = dailyTasks.find((t) => t.taskId === def.taskId);

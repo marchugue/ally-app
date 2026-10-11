@@ -53,10 +53,10 @@ export const STAGE_NAMES = [
 ] as const;
 
 /** Points required to unlock real profile / mutual identity. */
-export const TOTAL_POINTS_FOR_PROFILE_UNLOCK = 500;
+export const TOTAL_POINTS_FOR_PROFILE_UNLOCK = 250;
 
 /** Backward-compat alias */
-export const POINTS_PER_STAGE = 500;
+export const POINTS_PER_STAGE = 250;
 
 /** Consecutive daily streak required to enter each stage: 0d (Stage 1), 3d (Stage 2), 7d (Stage 3), 10d (Stage 4). */
 export const STAGE_THRESHOLDS = [0, 0, 3, 7, 10];

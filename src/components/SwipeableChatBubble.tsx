@@ -4,6 +4,7 @@ import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeabl
 import { Reply } from "lucide-react-native";
 import { ChatBubble, type BubbleLayout } from "./ChatBubble";
 import type { Message, MessageGroupPosition } from "@/types/conversation";
+import type { AvatarRevealView } from "@/lib/api/matchmaking";
 
 interface SwipeableChatBubbleProps {
   message: Message;
@@ -17,6 +18,10 @@ interface SwipeableChatBubbleProps {
   isActiveTime?: boolean;
   onToggleTime?: (messageId: string) => void;
   imagesLocked?: boolean;
+  isAnonymous?: boolean;
+  avatarReveal?: AvatarRevealView | null;
+  partnerAvatar?: string | null;
+  partnerProfileImage?: string | null;
 }
 
 /** Reply arrow indicator shown during swipe */
@@ -50,6 +55,10 @@ export function SwipeableChatBubble({
   isActiveTime,
   onToggleTime,
   imagesLocked = false,
+  isAnonymous = false,
+  avatarReveal,
+  partnerAvatar,
+  partnerProfileImage,
 }: SwipeableChatBubbleProps) {
   const swipeRef = useRef<any>(null);
 
@@ -68,6 +77,10 @@ export function SwipeableChatBubble({
         groupPosition={groupPosition}
         senderName={senderName}
         imagesLocked={imagesLocked}
+        isAnonymous={isAnonymous}
+        avatarReveal={avatarReveal}
+        partnerAvatar={partnerAvatar}
+        partnerProfileImage={partnerProfileImage}
       />
     );
   }
@@ -107,6 +120,10 @@ export function SwipeableChatBubble({
           isActiveTime={isActiveTime}
           onToggleTime={onToggleTime}
           imagesLocked={imagesLocked}
+          isAnonymous={isAnonymous}
+          avatarReveal={avatarReveal}
+          partnerAvatar={partnerAvatar}
+          partnerProfileImage={partnerProfileImage}
         />
       </ReanimatedSwipeable>
     );
@@ -144,6 +161,10 @@ export function SwipeableChatBubble({
         isActiveTime={isActiveTime}
         onToggleTime={onToggleTime}
         imagesLocked={imagesLocked}
+        isAnonymous={isAnonymous}
+        avatarReveal={avatarReveal}
+        partnerAvatar={partnerAvatar}
+        partnerProfileImage={partnerProfileImage}
       />
     </ReanimatedSwipeable>
   );
