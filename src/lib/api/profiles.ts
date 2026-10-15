@@ -106,6 +106,8 @@ export interface ProfileRelationshipSummary {
   alliesCount: number;
   mutualAlliesCount: number;
   mutualFollowersCount: number;
+  /** Viewed account is private — only allies may see its posts. */
+  isPrivate?: boolean;
 }
 
 export async function getProfileRelationship(userId: string, accessToken: string): Promise<ProfileRelationshipSummary> {

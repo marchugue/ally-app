@@ -32,6 +32,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { UserAvatar } from "@/components/UserAvatar";
 import { AnonymousAvatar } from "@/components/AnonymousAvatar";
+import { ClickableAvatar } from "@/components/ClickableAvatar";
 import { usePresence } from "@/context/PresenceContext";
 import { EmptyState } from "@/components/EmptyState";
 import { MatchmakingOverlayModal } from "@/components/MatchmakingOverlayModal";
@@ -558,9 +559,11 @@ export default function DiscoverScreen() {
               >
                 <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 12, flex: 1 }}>
-                    <AnonymousAvatar
+                    <ClickableAvatar
+                      userId={(p as any).id}
                       avatarKey={index % 4 === 0 ? "fox" : index % 4 === 1 ? "panda" : index % 4 === 2 ? "owl" : "wolf"}
                       size={48}
+                      onPress={handleNavigateProfile}
                     />
                     <View style={{ flex: 1 }}>
                       <Text style={{ fontSize: 16, fontWeight: "700", color: "#111827" }} numberOfLines={1}>

@@ -12,8 +12,7 @@ import {
 } from "react-native";
 import { X, Search, Users, ArrowUpDown } from "lucide-react-native";
 import { router } from "expo-router";
-import { UserAvatar } from "./UserAvatar";
-import { AnonymousAvatar } from "./AnonymousAvatar";
+import { ClickableAvatar } from "./ClickableAvatar";
 import { listFollowers, listFollowing } from "@/lib/api/follow";
 import { listAllies } from "@/lib/api/interaction";
 import { useAuth } from "@/lib/auth/AuthContext";
@@ -323,11 +322,14 @@ export function RelationshipListModal({
                     gap: 12,
                   }}
                 >
-                  {isAlly ? (
-                    <UserAvatar avatar={item.avatarUrl} size="md" />
-                  ) : (
-                    <AnonymousAvatar avatarKey={(item as any).avatarKey || "fox"} size={40} />
-                  )}
+                  <ClickableAvatar
+                    userId={item.id}
+                    avatarUrl={item.avatarUrl}
+                    avatarKey={(item as any).avatarKey}
+                    revealed={Boolean(isAlly)}
+                    size={40}
+                    onPress={handleSelectMember}
+                  />
                   <View style={{ flex: 1 }}>
                     <Text style={{ fontSize: 14, fontWeight: "700", color: "#111827" }} numberOfLines={1}>
                       {isAlly ? (item.fullName || `@${item.username}`) : "Anonymous Peer"}

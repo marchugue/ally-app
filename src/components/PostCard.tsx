@@ -11,9 +11,10 @@ import {
   Flag,
   ChevronRight,
 } from "lucide-react-native";
-import { UserAvatar, resolveImageUri } from "./UserAvatar";
-import { AnonymousAvatar } from "./AnonymousAvatar";
+import { resolveImageUri } from "./UserAvatar";
+import { ClickableAvatar } from "./ClickableAvatar";
 import { ReportModal } from "./ReportModal";
+import { AnimatedHeart } from "./AnimatedHeart";
 import type { FeedPost } from "@/types/feed";
 import { router } from "expo-router";
 import { useAuth } from "@/lib/auth/AuthContext";
@@ -82,13 +83,17 @@ export function PostCard({
   const isAlly = Boolean(post.author?.is_ally || isOwnPost);
 
   const handleAuthorPress = () => {
-    if (!post.author?.avatar_url) return;
-    if (onPressAuthor) {
+    if (onPressAuthor && post.author?.id) {
       onPressAuthor(post.author.id);
     } else if (post.author?.id) {
       router.push({
         pathname: "/pages/user-profile",
-        params: { userId: post.author.id },
+        params: {
+          userId: post.author.id,
+          avatarKey: post.author?.avatarKey || "",
+          avatarUrl: post.author?.avatar_url || "",
+          authorName: isAlly ? (post.author?.full_name || `@${post.author?.username}`) : "Anonymous Peer",
+        },
       } as any);
     }
   };
@@ -190,11 +195,14 @@ export function PostCard({
           onPress={handleAuthorPress}
           style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}
         >
-          {isAlly ? (
-            <UserAvatar avatar={post.author?.avatar_url} size="md" />
-          ) : (
-            <AnonymousAvatar avatarKey={post.author?.avatarKey || "fox"} size={40} />
-          )}
+          <ClickableAvatar
+            userId={post.author?.id}
+            avatarUrl={post.author?.avatar_url}
+            avatarKey={post.author?.avatarKey}
+            revealed={isAlly}
+            size={40}
+            onPress={onPressAuthor}
+          />
 
           <View style={{ flex: 1 }}>
             <Text
@@ -359,10 +367,11 @@ export function PostCard({
           }}
           hitSlop={6}
         >
-          <Heart
+          <AnimatedHeart
+            isLiked={Boolean(post.liked_by_me)}
             size={18}
-            color={post.liked_by_me ? "#1A6B3C" : "#9CA3AF"}
-            fill={post.liked_by_me ? "#1A6B3C" : "none"}
+            activeColor="#1A6B3C"
+            inactiveColor="#9CA3AF"
           />
           <Text
             style={{

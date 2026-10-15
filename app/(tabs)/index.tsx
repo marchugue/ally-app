@@ -9,9 +9,11 @@ import {
   TouchableOpacity,
   Modal,
   Animated,
+  AppState,
+  type AppStateStatus,
 } from "react-native";
-import { router } from "expo-router";
-import { Plus, Home, Users, UserCheck, SlidersHorizontal, Check } from "lucide-react-native";
+import { router, useFocusEffect } from "expo-router";
+import { Plus, Home, Users, UserCheck, SlidersHorizontal, Check, ArrowUp } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ResponsiveContainer } from "@/components/ResponsiveContainer";
 import { PostCard } from "@/components/PostCard";
@@ -19,6 +21,7 @@ import { CreatePostSheet } from "@/components/CreatePostSheet";
 import { EmptyState } from "@/components/EmptyState";
 import { useAuth } from "@/lib/auth/AuthContext";
 import { listFeed, likePost, unlikePost } from "@/lib/api/feed";
+import { newsfeedCache } from "@/lib/newsfeedCache";
 import type { FeedPost } from "@/types/feed";
 
 const PAGE_SIZE = 30;
@@ -33,16 +36,23 @@ const FILTER_OPTIONS: { value: FeedFilter; label: string; description: string }[
 
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
-  const { accessToken } = useAuth();
-  const [posts, setPosts] = useState<FeedPost[]>([]);
+  const { accessToken, user } = useAuth();
   const [activeFilter, setActiveFilter] = useState<FeedFilter>("all");
+  const initialMemCache = newsfeedCache.getMemory(activeFilter, user?.id);
+  const [posts, setPosts] = useState<FeedPost[]>(() => initialMemCache?.posts ?? []);
   const [showFilterDropdown, setShowFilterDropdown] = useState(false);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !initialMemCache?.posts?.length);
   const [refreshing, setRefreshing] = useState(false);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
+  const [newPostsCount, setNewPostsCount] = useState(0);
+
   const cursorRef = useRef<string | undefined>(undefined);
+  const postsRef = useRef<FeedPost[]>(posts);
+  postsRef.current = posts;
+  const flatListRef = useRef<FlatList>(null);
+  const isCheckingRef = useRef<boolean>(false);
 
   // Dynamic animations for Filter Icon
   const rotateAnim = useRef(new Animated.Value(0)).current;
@@ -131,7 +141,7 @@ export default function HomeScreen() {
   };
 
   const loadData = useCallback(
-    async (filterToUse = activeFilter) => {
+    async (filterToUse = activeFilter, isBackground = false) => {
       if (!accessToken) return;
       try {
         const feed = await listFeed(accessToken, {
@@ -141,22 +151,33 @@ export default function HomeScreen() {
         setPosts(feed);
         setHasMore(feed.length === PAGE_SIZE);
         cursorRef.current = feed.length > 0 ? feed[feed.length - 1].created_at : undefined;
+        // Cache up to 20 posts
+        await newsfeedCache.set(filterToUse, feed, user?.id);
+        setNewPostsCount(0);
       } catch (err) {
         console.warn("Failed to load feed data", err);
       }
     },
-    [accessToken, activeFilter]
+    [accessToken, activeFilter, user?.id]
   );
 
-  const handleSelectFilter = (newFilter: FeedFilter) => {
+  const handleSelectFilter = async (newFilter: FeedFilter) => {
     if (newFilter === activeFilter) {
       closeDropdown();
       return;
     }
     closeDropdown();
     setActiveFilter(newFilter);
-    setLoading(true);
-    setPosts([]);
+
+    // Instant display from cache if available
+    const cached = await newsfeedCache.get(newFilter, user?.id);
+    if (cached && cached.posts.length > 0) {
+      setPosts(cached.posts);
+      setLoading(false);
+    } else {
+      setLoading(true);
+      setPosts([]);
+    }
     cursorRef.current = undefined;
     loadData(newFilter).finally(() => setLoading(false));
   };
@@ -188,14 +209,101 @@ export default function HomeScreen() {
     }
   }, [accessToken, isLoadingMore, hasMore, activeFilter]);
 
+  // Initial load: check cache first, then fetch fresh
   useEffect(() => {
+    let isMounted = true;
     async function init() {
-      setLoading(true);
+      const cached = await newsfeedCache.get(activeFilter, user?.id);
+      if (cached && cached.posts.length > 0 && isMounted) {
+        setPosts(cached.posts);
+        setLoading(false);
+      } else {
+        setLoading(true);
+      }
       await loadData(activeFilter);
-      setLoading(false);
+      if (isMounted) setLoading(false);
     }
     init();
-  }, [loadData, activeFilter]);
+    return () => {
+      isMounted = false;
+    };
+  }, [loadData, activeFilter, user?.id]);
+
+  // Tab Reopen & App Foreground Watcher
+  const checkTabReopen = useCallback(async () => {
+    if (!accessToken || isCheckingRef.current) return;
+    isCheckingRef.current = true;
+    try {
+      const peek = await listFeed(accessToken, { limit: 1, filter: activeFilter });
+      if (peek.length === 0) return;
+
+      const currentTopId = postsRef.current[0]?.id;
+      const latestBackendPost = peek[0];
+
+      if (currentTopId && latestBackendPost.id !== currentTopId) {
+        // Backend has new post(s)! Reload feed and update cache
+        await loadData(activeFilter);
+      } else {
+        // No new posts: keep cache intact
+      }
+    } catch (err) {
+      console.warn("[HomeScreen] Peek on reopen failed:", err);
+    } finally {
+      isCheckingRef.current = false;
+    }
+  }, [accessToken, activeFilter, loadData]);
+
+  // Check when tab focuses (e.g. switching back from other tabs)
+  useFocusEffect(
+    useCallback(() => {
+      void checkTabReopen();
+    }, [checkTabReopen])
+  );
+
+  // Check when app returns from background to active foreground
+  useEffect(() => {
+    const sub = AppState.addEventListener("change", (nextState: AppStateStatus) => {
+      if (nextState === "active") {
+        void checkTabReopen();
+      }
+    });
+    return () => sub.remove();
+  }, [checkTabReopen]);
+
+  // In-app background polling: only refresh if >20 new posts, otherwise update pill count
+  useEffect(() => {
+    if (!accessToken) return;
+    const interval = setInterval(async () => {
+      if (AppState.currentState !== "active" || isCheckingRef.current) return;
+      const currentTop = postsRef.current[0];
+      if (!currentTop) return;
+
+      isCheckingRef.current = true;
+      try {
+        const peek = await listFeed(accessToken, { limit: 25, filter: activeFilter });
+        const topIdx = peek.findIndex((p) => p.id === currentTop.id);
+
+        let count = 0;
+        if (topIdx > -1) {
+          count = topIdx;
+        } else if (peek.length > 0) {
+          count = 25;
+        }
+
+        if (count > 20) {
+          // Rule: More than 20 new posts while in app -> auto-refresh
+          await loadData(activeFilter, true);
+        } else {
+          setNewPostsCount(count);
+        }
+      } catch {
+      } finally {
+        isCheckingRef.current = false;
+      }
+    }, 40000);
+
+    return () => clearInterval(interval);
+  }, [accessToken, activeFilter, loadData]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -207,43 +315,40 @@ export default function HomeScreen() {
     async (post: FeedPost) => {
       if (!accessToken) return;
       const wasLiked = post.liked_by_me;
+      const optimisticPost: FeedPost = {
+        ...post,
+        liked_by_me: !wasLiked,
+        likes_count: post.likes_count + (wasLiked ? -1 : 1),
+      };
 
       // Optimistic update
       setPosts((prev) =>
-        prev.map((p) =>
-          p.id === post.id
-            ? {
-              ...p,
-              liked_by_me: !wasLiked,
-              likes_count: p.likes_count + (wasLiked ? -1 : 1),
-            }
-            : p
-        )
+        prev.map((p) => (p.id === post.id ? optimisticPost : p))
       );
+      void newsfeedCache.updatePost(activeFilter, optimisticPost, user?.id);
 
       try {
         const result = wasLiked
           ? await unlikePost(post.id, accessToken)
           : await likePost(post.id, accessToken);
+        const resolved: FeedPost = {
+          ...post,
+          liked_by_me: result.liked,
+          likes_count: result.likesCount,
+        };
         setPosts((prev) =>
-          prev.map((p) =>
-            p.id === post.id
-              ? { ...p, liked_by_me: result.liked, likes_count: result.likesCount }
-              : p
-          )
+          prev.map((p) => (p.id === post.id ? resolved : p))
         );
+        void newsfeedCache.updatePost(activeFilter, resolved, user?.id);
       } catch {
         // Revert on error
         setPosts((prev) =>
-          prev.map((p) =>
-            p.id === post.id
-              ? { ...p, liked_by_me: wasLiked, likes_count: post.likes_count }
-              : p
-          )
+          prev.map((p) => (p.id === post.id ? post : p))
         );
+        void newsfeedCache.updatePost(activeFilter, post, user?.id);
       }
     },
-    [accessToken]
+    [accessToken, activeFilter, user?.id]
   );
 
   const navigateToPost = useCallback((post: FeedPost) => {
@@ -442,6 +547,48 @@ export default function HomeScreen() {
         </Pressable>
       </Modal>
 
+      {/* ── Floating New Posts Indicator (Tap or pull down) ── */}
+      {newPostsCount > 0 && (
+        <View
+          pointerEvents="box-none"
+          style={{
+            position: "absolute",
+            top: insets.top > 0 ? insets.top + 60 : 64,
+            left: 0,
+            right: 0,
+            alignItems: "center",
+            zIndex: 30,
+          }}
+        >
+          <TouchableOpacity
+            activeOpacity={0.85}
+            onPress={() => {
+              onRefresh();
+              flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
+            }}
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 6,
+              backgroundColor: "#1A6B3C",
+              paddingHorizontal: 16,
+              paddingVertical: 8,
+              borderRadius: 24,
+              shadowColor: "#000",
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.25,
+              shadowRadius: 6,
+              elevation: 6,
+            }}
+          >
+            <ArrowUp size={14} color="#FFFFFF" strokeWidth={2.5} />
+            <Text style={{ color: "#FFFFFF", fontSize: 13, fontWeight: "700" }}>
+              {newPostsCount} new {newPostsCount === 1 ? "post" : "posts"} • Tap to refresh
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
+
       {/* Main Feed Content List */}
       {loading ? (
         <View className="flex-1 bg-background items-center justify-center">
@@ -449,6 +596,7 @@ export default function HomeScreen() {
         </View>
       ) : (
         <FlatList
+          ref={flatListRef}
           data={posts}
           keyExtractor={(item) => item.id}
           refreshControl={

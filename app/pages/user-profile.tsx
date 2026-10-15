@@ -27,6 +27,7 @@ import {
 } from "lucide-react-native";
 import { UserAvatar, resolveImageUri } from "@/components/UserAvatar";
 import { AnonymousAvatar } from "@/components/AnonymousAvatar";
+import { getDeterministicAnonymousAvatar } from "@/constants/matchOptions";
 import { usePresence } from "@/context/PresenceContext";
 import { ResponsiveContainer } from "@/components/ResponsiveContainer";
 import { PostCard } from "@/components/PostCard";
@@ -56,7 +57,17 @@ const COLORS = {
 
 
 export default function UserProfileScreen() {
-  const { userId } = useLocalSearchParams<{ userId?: string }>();
+  const {
+    userId,
+    avatarKey: paramAvatarKey,
+    avatarUrl: paramAvatarUrl,
+    authorName: paramAuthorName,
+  } = useLocalSearchParams<{
+    userId?: string;
+    avatarKey?: string;
+    avatarUrl?: string;
+    authorName?: string;
+  }>();
   const { user, accessToken } = useAuth();
   const { isOnline } = usePresence();
 
@@ -139,10 +150,31 @@ export default function UserProfileScreen() {
   };
 
 
+  const isUnrevealedMatch = Boolean(
+    (profile as any)?.is_unrevealed_match ||
+    (profile as any)?.isUnrevealedMatch
+  );
+
   const isConfirmedAlly =
     isOwnProfile ||
     relationship?.allyStatus === "accepted" ||
-    (relationship?.allyStatus as any) === "allies";
+    (relationship?.allyStatus as any) === "allies" ||
+    Boolean((profile as any)?.is_ally);
+
+  const isIdentityRevealed = isConfirmedAlly && !isUnrevealedMatch;
+
+  const resolvedAvatarKey =
+    (profile as any)?.avatarKey ||
+    (profile as any)?.avatar_preset_id ||
+    paramAvatarKey ||
+    getDeterministicAnonymousAvatar(viewedUserId);
+
+  const resolvedAvatarUrl = profile?.avatar_url || paramAvatarUrl || null;
+  const showRealAvatar = isIdentityRevealed && Boolean(resolvedAvatarUrl);
+
+  // Public accounts show posts to everyone (identity stays anonymous unless allied);
+  // private accounts only show posts to allies.
+  const canViewPosts = isConfirmedAlly || !relationship?.isPrivate;
 
   // Handle Open Direct Chat
   const handleOpenChat = async () => {
@@ -157,8 +189,13 @@ export default function UserProfileScreen() {
         pathname: "/pages/chat",
         params: {
           id: (conversation as any).id || (conversation as any).conversationId,
-          name: isConfirmedAlly ? (profile?.full_name || `@${profile?.username}`) : "Anonymous Peer",
-          avatar: isConfirmedAlly ? (profile?.avatar_url || "") : "",
+          name: isIdentityRevealed
+            ? (profile?.full_name || `@${profile?.username}`)
+            : isUnrevealedMatch
+            ? (profile?.full_name || paramAuthorName || "Anonymous Ally")
+            : "Anonymous Peer",
+          avatar: isIdentityRevealed ? (resolvedAvatarUrl || "") : "",
+          avatarKey: resolvedAvatarKey,
           type: "direct",
         },
       } as any);
@@ -233,9 +270,9 @@ export default function UserProfileScreen() {
       <ResponsiveContainer maxContentWidth={540} backgroundColor={COLORS.bg}>
         <FlatList
           key={`user-profile-list-${activeTab}`}
-          data={isConfirmedAlly ? (activeTab === "feed" ? posts : activeTab === "media" ? mediaPosts : []) : []}
-          numColumns={isConfirmedAlly && activeTab === "media" ? 3 : 1}
-          columnWrapperStyle={isConfirmedAlly && activeTab === "media" ? { gap: 2, paddingHorizontal: 2 } : undefined}
+          data={canViewPosts ? (activeTab === "feed" ? posts : activeTab === "media" ? mediaPosts : []) : []}
+          numColumns={canViewPosts && activeTab === "media" ? 3 : 1}
+          columnWrapperStyle={canViewPosts && activeTab === "media" ? { gap: 2, paddingHorizontal: 2 } : undefined}
           keyExtractor={(item) => item.id}
           refreshControl={
             <RefreshControl
@@ -287,10 +324,10 @@ export default function UserProfileScreen() {
                       shadowRadius: 4,
                     }}
                   >
-                    {isConfirmedAlly ? (
-                      <UserAvatar avatar={profile.avatar_url} size="xl" online={isOwnProfile ? true : isOnline(profile?.id)} />
+                    {showRealAvatar ? (
+                      <UserAvatar avatar={resolvedAvatarUrl} size="xl" online={isOwnProfile ? true : isOnline(profile?.id)} />
                     ) : (
-                      <AnonymousAvatar avatarKey={(profile as any).avatarKey || "fox"} size={80} />
+                      <AnonymousAvatar avatarKey={resolvedAvatarKey} size={80} />
                     )}
                   </View>
 
@@ -384,10 +421,14 @@ export default function UserProfileScreen() {
                       color: "#111827",
                     }}
                   >
-                    {isConfirmedAlly ? (profile.full_name || `@${profile.username}`) : "Anonymous Peer"}
+                    {isIdentityRevealed
+                      ? (profile.full_name || `@${profile.username}`)
+                      : isUnrevealedMatch
+                      ? (profile.full_name || paramAuthorName || "Anonymous Ally")
+                      : "Anonymous Peer"}
                   </Text>
 
-                  {isConfirmedAlly && profile.username && (
+                  {isIdentityRevealed && profile.username && (
                     <View
                       style={{
                         flexDirection: "row",
@@ -416,8 +457,10 @@ export default function UserProfileScreen() {
 
                 {/* Username & Academic Tag */}
                 <Text style={{ fontSize: 13, color: "#6B7280", marginTop: 2 }}>
-                  {isConfirmedAlly
+                  {isIdentityRevealed
                     ? `@${profile.username} · ${profile.course || "CHMSU Student"} · ${profile.year_level || "1st Year"}`
+                    : isUnrevealedMatch
+                    ? `@campus-ally · Match Ally`
                     : `@anonymous · Protected Student`}
                 </Text>
 
@@ -425,13 +468,13 @@ export default function UserProfileScreen() {
                 <Text
                   style={{
                     fontSize: 14,
-                    color: isConfirmedAlly ? "#374151" : "#6B7280",
+                    color: isIdentityRevealed ? "#374151" : "#6B7280",
                     lineHeight: 20,
                     marginTop: 8,
-                    fontStyle: isConfirmedAlly && !profile.bio ? "italic" : isConfirmedAlly ? "normal" : "italic",
+                    fontStyle: isIdentityRevealed && !profile.bio ? "italic" : isIdentityRevealed ? "normal" : "italic",
                   }}
                 >
-                  {isConfirmedAlly
+                  {isIdentityRevealed
                     ? (profile.bio || "No bio provided yet.")
                     : "This student's profile is protected. Complete the matching roadmap to become campus allies and reveal full identity."}
                 </Text>
@@ -475,8 +518,8 @@ export default function UserProfileScreen() {
                       </View>
                     )}
 
-                    {/* Follow / Unfollow Button (Only for confirmed allies) */}
-                    {isConfirmedAlly && (
+                    {/* Follow / Unfollow Button (anyone can follow, identity stays anonymous) */}
+                    {!isOwnProfile && (
                       <Pressable
                         onPress={handleToggleFollow}
                         disabled={actionLoading}
@@ -521,7 +564,8 @@ export default function UserProfileScreen() {
                       onPress={handleOpenChat}
                       disabled={actionLoading}
                       style={{
-                        width: isConfirmedAlly ? 40 : "100%",
+                        width: isConfirmedAlly ? 40 : undefined,
+                        flex: isConfirmedAlly ? undefined : 1,
                         height: 40,
                         borderRadius: 12,
                         backgroundColor: isConfirmedAlly ? "#FFFFFF" : COLORS.forest,
@@ -571,7 +615,7 @@ export default function UserProfileScreen() {
               </View>
 
               {/* ── Feed & About Tab Switcher (Only if confirmed ally) ── */}
-              {isConfirmedAlly ? (
+              {canViewPosts ? (
                 <View
                   style={{
                     flexDirection: "row",
@@ -627,6 +671,7 @@ export default function UserProfileScreen() {
                     </Text>
                   </Pressable>
 
+                  {isConfirmedAlly && (
                   <Pressable
                     onPress={() => setActiveTab("about")}
                     style={{
@@ -649,6 +694,7 @@ export default function UserProfileScreen() {
                       About
                     </Text>
                   </Pressable>
+                  )}
                 </View>
               ) : null}
 
@@ -723,7 +769,7 @@ export default function UserProfileScreen() {
             );
           }}
           ListEmptyComponent={
-            !isConfirmedAlly ? (
+            !canViewPosts ? (
               <View style={{ alignItems: "center", paddingVertical: 48, paddingHorizontal: 24 }}>
                 <View
                   style={{
@@ -739,7 +785,7 @@ export default function UserProfileScreen() {
                   <Shield size={30} color={COLORS.forest} />
                 </View>
                 <Text style={{ fontSize: 17, fontWeight: "700", color: "#111827", textAlign: "center" }}>
-                  Profile is Protected
+                  This Account is Private
                 </Text>
                 <Text
                   style={{
@@ -751,7 +797,7 @@ export default function UserProfileScreen() {
                     maxWidth: 300,
                   }}
                 >
-                  Posts, media, and academic details are hidden until both students complete the matching roadmap and become campus allies.
+                  Posts and media on this account are only visible to confirmed campus allies.
                 </Text>
               </View>
             ) : activeTab === "feed" ? (

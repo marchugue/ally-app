@@ -18,6 +18,7 @@ import {
   StatusBar,
   TouchableOpacity,
   UIManager,
+  ScrollView,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { requireOptionalNativeModule } from "expo-modules-core";
@@ -78,7 +79,7 @@ import { getSocket } from "@/lib/socket";
 import * as ImagePicker from "expo-image-picker";
 import { uploadChatFile, type LocalFile } from "@/lib/api/media";
 import { SwipeableChatBubble } from "@/components/SwipeableChatBubble";
-import { ChatBubble, isOnlyEmoji, type BubbleLayout } from "@/components/ChatBubble";
+import { ChatBubble, isOnlyEmoji, formatWrapContent, type BubbleLayout } from "@/components/ChatBubble";
 import { ChatInput } from "@/components/ChatInput";
 import { MessageImageViewer } from "@/components/MessageImageViewer";
 import { UserAvatar, resolveImageUri } from "@/components/UserAvatar";
@@ -1357,6 +1358,14 @@ export default function ConversationScreen() {
     [selectedMessage, conversationId, accessToken]
   );
 
+  const handleExit = useCallback(() => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace("/(tabs)/messages" as any);
+    }
+  }, []);
+
   // ── Block / Report ────────────────────────────────────────────────────
   const handleBlock = useCallback(async () => {
     const targetId = partnerUserId || (otherProfile?.id && otherProfile.id !== "anonymous" ? otherProfile.id : null);
@@ -1364,11 +1373,11 @@ export default function ConversationScreen() {
     setShowBlockConfirm(false);
     try {
       await blockUser(targetId, accessToken);
-      router.back();
+      handleExit();
     } catch (err) {
       console.warn("Failed to block user", err);
     }
-  }, [partnerUserId, otherProfile, accessToken]);
+  }, [partnerUserId, otherProfile, accessToken, handleExit]);
 
   const handleReportSubmit = useCallback(async (reason: string, details?: string) => {
     const targetId = partnerUserId || (otherProfile?.id && otherProfile.id !== "anonymous" ? otherProfile.id : null);
@@ -1532,7 +1541,7 @@ export default function ConversationScreen() {
           zIndex: 10,
         }}
       >
-        <Pressable onPress={() => router.back()} hitSlop={10}>
+        <Pressable onPress={handleExit} hitSlop={10}>
           <ArrowLeft size={22} color="#111827" />
         </Pressable>
 
@@ -1548,7 +1557,6 @@ export default function ConversationScreen() {
               showRing={false}
               showGainChip={false}
               fallbackInitials={otherProfile?.full_name || matchInfo?.partnerAlias}
-              matchPoints={matchInfo?.matchPoints ?? matchInfo?.stagePoints ?? 0}
             />
             <View style={{ flex: 1 }}>
               <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "nowrap" }}>
@@ -1974,23 +1982,31 @@ export default function ConversationScreen() {
                   />
                 )}
                 {Boolean(selectedMessage.content) && (
-                  <Text
-                    style={
-                      isSelectedEmojiOnly
-                        ? {
-                          fontSize: 38,
-                          lineHeight: 46,
-                          textAlign: isSelectedMine ? "right" : "left",
-                        }
-                        : {
-                          fontSize: 15,
-                          lineHeight: 20,
-                          color: isSelectedMine ? "#FFFFFF" : "#111827",
-                        }
-                    }
+                  <ScrollView
+                    style={{ maxHeight: availableBubbleHeight - (parsedImages.length > 0 ? 120 : 0) }}
+                    showsVerticalScrollIndicator={false}
+                    bounces={false}
                   >
-                    {selectedMessage.content}
-                  </Text>
+                    <Text
+                      selectable
+                      textBreakStrategy="simple"
+                      style={
+                        isSelectedEmojiOnly
+                          ? {
+                            fontSize: 38,
+                            lineHeight: 46,
+                            textAlign: isSelectedMine ? "right" : "left",
+                          }
+                          : {
+                            fontSize: 15,
+                            lineHeight: 20,
+                            color: isSelectedMine ? "#FFFFFF" : "#111827",
+                          }
+                      }
+                    >
+                      {formatWrapContent(selectedMessage.content)}
+                    </Text>
+                  </ScrollView>
                 )}
               </View>
 
@@ -2242,14 +2258,9 @@ export default function ConversationScreen() {
                   borderBottomColor: "#E2DED7",
                 }}
               >
-                <RevealAvatar
-                  reveal={effectiveAvatarReveal}
+                <AnonymousAvatar
                   avatarKey={matchInfo?.partnerAvatar || prefillAvatar || "fox"}
                   size={48}
-                  showRing={false}
-                  showGainChip={false}
-                  fallbackInitials={otherProfile?.full_name || matchInfo?.partnerAlias}
-                  matchPoints={matchInfo?.matchPoints ?? matchInfo?.stagePoints ?? 0}
                 />
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontSize: 16, fontWeight: "700", color: "#111827" }}>
@@ -2361,7 +2372,7 @@ export default function ConversationScreen() {
           if (accessToken && conversationId) {
             await apiHideConversation(conversationId, accessToken).catch(() => {});
           }
-          router.back();
+          handleExit();
         }}
         onCancel={() => setShowDeleteConvConfirm(false)}
       />

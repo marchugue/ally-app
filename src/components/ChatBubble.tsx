@@ -1,5 +1,5 @@
 import { useState, useMemo, useRef } from "react";
-import { View, Text, Pressable, Image } from "react-native";
+import { View, Text, Pressable, Image, Platform } from "react-native";
 import { Clock, Check, CheckCheck, AlertCircle } from "lucide-react-native";
 import { router } from "expo-router";
 import type { Message, MessageReaction, MessageGroupPosition } from "@/types/conversation";
@@ -23,6 +23,17 @@ export function isOnlyEmoji(text?: string | null): boolean {
   const trimmed = text.trim();
   if (!trimmed || /[a-zA-Z0-9]/.test(trimmed)) return false;
   return EMOJI_ONLY_REGEX.test(trimmed);
+}
+
+/**
+ * Inserts zero-width spaces (\u200B) into unbroken sequences of characters (>25 chars)
+ * so React Native's native text layouters (CoreText on iOS & StaticLayout on Android)
+ * can break words across lines, allowing the chat bubble to dynamically expand its height
+ * based on the number of characters rather than staying fixed or clipping horizontally.
+ */
+export function formatWrapContent(text?: string | null): string {
+  if (!text) return "";
+  return text.replace(/([^\s\n]{25})(?=[^\s\n])/g, "$1\u200B");
 }
 
 interface ChatBubbleProps {
@@ -389,8 +400,8 @@ export function ChatBubble({
           }}
         >
           <Text
-            style={{ fontSize: 11, color: "#6B7280", fontWeight: "500" }}
-            numberOfLines={1}
+            style={{ fontSize: 11, color: "#6B7280", fontWeight: "500", flexShrink: 1 }}
+            numberOfLines={3}
           >
             {message.replied_message.content || "📷 Photo"}
           </Text>
@@ -398,7 +409,15 @@ export function ChatBubble({
       )}
 
       {/* Main bubble + overlapping reactions */}
-      <View ref={bubbleRef} collapsable={false} style={{ position: "relative" }}>
+      <View
+        ref={bubbleRef}
+        collapsable={false}
+        style={{
+          position: "relative",
+          maxWidth: "100%",
+          alignSelf: isMine ? "flex-end" : "flex-start",
+        }}
+      >
         <Pressable
           onPress={() => {
           if (!isImageOnly && !isEmojiOnly) {
@@ -409,6 +428,8 @@ export function ChatBubble({
         delayLongPress={300}
         android_ripple={isImageOnly || isEmojiOnly ? undefined : { color: "rgba(0,0,0,0.06)" }}
         style={{
+          alignSelf: isMine ? "flex-end" : "flex-start",
+          maxWidth: "100%",
           backgroundColor: isImageOnly || isEmojiOnly
             ? "transparent"
             : isMine
@@ -591,7 +612,7 @@ export function ChatBubble({
 
         {/* Text content */}
         {message.content ? (
-          <View style={{ paddingHorizontal: hasImage ? 10 : 0, paddingBottom: hasImage ? 6 : 0 }}>
+          <View style={{ paddingHorizontal: hasImage ? 10 : 0, paddingBottom: hasImage ? 6 : 0, maxWidth: "100%" }}>
             {isEmojiOnly ? (
               <OfflineAnimatedEmoji
                 emoji={message.content.trim()}
@@ -601,13 +622,19 @@ export function ChatBubble({
               />
             ) : (
               <Text
+                selectable
                 style={{
                   fontSize: 15,
                   lineHeight: 21,
                   color: isMine ? "#FFFFFF" : "#111827",
+                  flexShrink: 1,
+                  maxWidth: "100%",
                 }}
+                {...(Platform.OS === "android"
+                  ? { textBreakStrategy: "simple" as const }
+                  : {})}
               >
-                {message.content}
+                {formatWrapContent(message.content)}
               </Text>
             )}
           </View>
@@ -758,7 +785,7 @@ export function ChatBubble({
       <View
         style={{
           alignSelf: "flex-end",
-          maxWidth: "78%",
+          maxWidth: "80%",
           marginTop: margins.marginTop,
           marginBottom: margins.marginBottom + extraBottom,
           marginHorizontal: 16,
@@ -773,7 +800,8 @@ export function ChatBubble({
     <View
       style={{
         alignSelf: "flex-start",
-        maxWidth: "85%",
+        maxWidth: "88%",
+        minWidth: 0,
         marginTop: margins.marginTop,
         marginBottom: margins.marginBottom + extraBottom,
         marginHorizontal: 12,
@@ -789,6 +817,7 @@ export function ChatBubble({
           alignItems: "center",
           justifyContent: "center",
           marginBottom: extraBottom,
+          flexShrink: 0,
         }}
       >
         {groupPosition === "single" || groupPosition === "last" ? (
@@ -810,7 +839,7 @@ export function ChatBubble({
           )
         ) : null}
       </View>
-      <View style={{ flexShrink: 1, maxWidth: "100%" }}>
+      <View style={{ flexShrink: 1, minWidth: 0, maxWidth: "100%" }}>
         {bubbleBody}
       </View>
     </View>

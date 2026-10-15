@@ -92,6 +92,8 @@ export function SwipeableChatBubble({
     return (
       <ReanimatedSwipeable
         ref={swipeRef}
+        containerStyle={{ width: "100%" }}
+        childrenContainerStyle={{ width: "100%" }}
         friction={2}
         overshootRight={false}
         rightThreshold={40}
@@ -133,6 +135,8 @@ export function SwipeableChatBubble({
   return (
     <ReanimatedSwipeable
       ref={swipeRef}
+      containerStyle={{ width: "100%" }}
+      childrenContainerStyle={{ width: "100%" }}
       friction={2}
       overshootLeft={false}
       leftThreshold={40}

@@ -199,8 +199,8 @@ function ChatInputComponent({
               Replying
             </Text>
             <Text
-              style={{ fontSize: 12, color: "#6B7280" }}
-              numberOfLines={1}
+              style={{ fontSize: 12, color: "#6B7280", flexShrink: 1 }}
+              numberOfLines={3}
             >
               {replyTo.content || "📷 Photo"}
             </Text>
@@ -329,7 +329,7 @@ function ChatInputComponent({
       )}
 
       {/* Small popup menu vertically aligned above the plus button */}
-      {showMenu && (
+      {showMenu && canUploadImages && (
         <>
           {/* Dismiss backdrop */}
           <Pressable
@@ -447,48 +447,36 @@ function ChatInputComponent({
           gap: 8,
         }}
       >
-        {/* Plus button on the left */}
-        <TouchableOpacity
-          onPress={() => {
-            if (!canUploadImages) {
-              Alert.alert(
-                "Feature Locked",
-                "Photo and media sharing unlocks at Stage 3 of your roadmap."
-              );
-              return;
-            }
-            setShowMenu((prev) => !prev);
-          }}
-          hitSlop={6}
-          activeOpacity={0.75}
-          style={{
-            width: 38,
-            height: 38,
-            borderRadius: 19,
-            backgroundColor: !canUploadImages
-              ? "#F3F4F6"
-              : showMenu
-                ? "#E8F5EE"
-                : "#FFFFFF",
-            borderWidth: 1,
-            borderColor: showMenu && canUploadImages ? "#1A6B3C" : "#E2DED7",
-            alignItems: "center",
-            justifyContent: "center",
-            marginBottom: 2,
-            opacity: !canUploadImages ? 0.6 : 1,
-            shadowColor: "#000",
-            shadowOffset: { width: 0, height: 1 },
-            shadowOpacity: 0.06,
-            shadowRadius: 2,
-            elevation: 1,
-          }}
-        >
-          {showMenu ? (
-            <X size={18} color="#1A6B3C" />
-          ) : (
-            <Plus size={20} color={!canUploadImages ? "#9CA3AF" : "#1A6B3C"} />
-          )}
-        </TouchableOpacity>
+        {/* Plus button on the left - only rendered when media sharing is unlocked */}
+        {canUploadImages && (
+          <TouchableOpacity
+            onPress={() => setShowMenu((prev) => !prev)}
+            hitSlop={6}
+            activeOpacity={0.75}
+            style={{
+              width: 38,
+              height: 38,
+              borderRadius: 19,
+              backgroundColor: showMenu ? "#E8F5EE" : "#FFFFFF",
+              borderWidth: 1,
+              borderColor: showMenu ? "#1A6B3C" : "#E2DED7",
+              alignItems: "center",
+              justifyContent: "center",
+              marginBottom: 2,
+              shadowColor: "#000",
+              shadowOffset: { width: 0, height: 1 },
+              shadowOpacity: 0.06,
+              shadowRadius: 2,
+              elevation: 1,
+            }}
+          >
+            {showMenu ? (
+              <X size={18} color="#1A6B3C" />
+            ) : (
+              <Plus size={20} color="#1A6B3C" />
+            )}
+          </TouchableOpacity>
+        )}
 
         {/* Message input and send button in unified container */}
         <View
@@ -497,7 +485,7 @@ function ChatInputComponent({
             flexDirection: "row",
             alignItems: "flex-end",
             minHeight: 40,
-            maxHeight: 120,
+            maxHeight: 168,
             backgroundColor: "#FFFFFF",
             borderRadius: 22,
             borderWidth: 1,
@@ -505,6 +493,7 @@ function ChatInputComponent({
             paddingLeft: 14,
             paddingRight: 5,
             paddingVertical: Platform.OS === "ios" ? 3 : 2,
+            minWidth: 0,
             shadowColor: "#000",
             shadowOffset: { width: 0, height: 1 },
             shadowOpacity: 0.06,
@@ -519,17 +508,20 @@ function ChatInputComponent({
             placeholder={placeholder}
             placeholderTextColor="#9CA3AF"
             multiline
+            scrollEnabled
+            textAlignVertical="top"
             maxLength={maxLength}
             style={{
               flex: 1,
               minWidth: 0,
+              width: "100%",
               fontSize: 15,
               color: "#111827",
-              lineHeight: 20,
+              lineHeight: 21,
               paddingTop: Platform.OS === "ios" ? 7 : 5,
               paddingBottom: Platform.OS === "ios" ? 7 : 5,
               paddingRight: 6,
-              maxHeight: 110,
+              maxHeight: 152,
             }}
             onSubmitEditing={handleSend}
             blurOnSubmit={false}

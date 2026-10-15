@@ -531,7 +531,12 @@ export default function MediaPreviewScreen() {
             if (authorId) {
               router.push({
                 pathname: "/pages/user-profile",
-                params: { userId: authorId },
+                params: {
+                  userId: authorId,
+                  avatarUrl: authorAvatar || "",
+                  avatarKey: authorAvatar || "",
+                  authorName: authorUsername && authorUsername !== "anonymous" ? `@${authorUsername}` : authorName || "Anonymous Peer",
+                },
               } as any);
             }
           }}
@@ -715,7 +720,12 @@ export default function MediaPreviewScreen() {
                               if (item.author?.id && isCommentAlly) {
                                 router.push({
                                   pathname: "/pages/user-profile",
-                                  params: { userId: item.author.id },
+                                  params: {
+                                    userId: item.author.id,
+                                    avatarKey: item.author?.avatarKey || "",
+                                    avatarUrl: item.author?.avatar_url || "",
+                                    authorName: isCommentAlly ? `@${authorHandle}` : authorDisplayName,
+                                  },
                                 } as any);
                               }
                             }}
@@ -735,7 +745,12 @@ export default function MediaPreviewScreen() {
                                   if (item.author?.id && isCommentAlly) {
                                     router.push({
                                       pathname: "/pages/user-profile",
-                                      params: { userId: item.author.id },
+                                      params: {
+                                        userId: item.author.id,
+                                        avatarKey: item.author?.avatarKey || "",
+                                        avatarUrl: item.author?.avatar_url || "",
+                                        authorName: isCommentAlly ? `@${authorHandle}` : authorDisplayName,
+                                      },
                                     } as any);
                                   }
                                 }}

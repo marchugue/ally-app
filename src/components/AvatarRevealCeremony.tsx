@@ -12,7 +12,7 @@ import {
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { avatarColorFor, getAvatarEmoji } from "@/constants/matchOptions";
-import { getAnimalFluentAsset } from "@/constants/emojiAnimationAssets";
+import { CrittersAvatar } from "@/components/CrittersAvatar";
 import { revealSeenKey } from "@/lib/avatarReveal";
 
 export interface AvatarRevealCeremonyProps {
@@ -42,7 +42,6 @@ export function AvatarRevealCeremony({
   const [visible, setVisible] = useState(false);
   const accent = avatarColorFor(avatarKey);
   const emoji = getAvatarEmoji(avatarKey);
-  const fluentAsset = getAnimalFluentAsset(avatarKey);
 
   const cardScaleAnim = useRef(new Animated.Value(0.85)).current;
   const cardOpacityAnim = useRef(new Animated.Value(0)).current;
@@ -211,11 +210,7 @@ export function AvatarRevealCeremony({
               ]}
             >
               <View style={[styles.maskContent, { backgroundColor: accent }]}>
-                {fluentAsset ? (
-                  <Image source={fluentAsset} style={styles.maskImage} resizeMode="contain" />
-                ) : (
-                  <Text style={{ fontSize: 50 }}>{emoji}</Text>
-                )}
+                <CrittersAvatar avatarKey={avatarKey} size={110} customBg={accent} />
               </View>
             </Animated.View>
 
@@ -246,11 +241,7 @@ export function AvatarRevealCeremony({
               ]}
             >
               <View style={[styles.maskContent, { backgroundColor: accent }]}>
-                {fluentAsset ? (
-                  <Image source={fluentAsset} style={styles.maskImage} resizeMode="contain" />
-                ) : (
-                  <Text style={{ fontSize: 50 }}>{emoji}</Text>
-                )}
+                <CrittersAvatar avatarKey={avatarKey} size={110} customBg={accent} />
               </View>
             </Animated.View>
 
@@ -263,11 +254,7 @@ export function AvatarRevealCeremony({
                 },
               ]}
             >
-              {fluentAsset ? (
-                <Image source={fluentAsset} style={{ width: 28, height: 28 }} resizeMode="contain" />
-              ) : (
-                <Text style={{ fontSize: 20 }}>{emoji}</Text>
-              )}
+              <CrittersAvatar avatarKey={avatarKey} size={28} customBg={accent} />
             </Animated.View>
           </View>
 

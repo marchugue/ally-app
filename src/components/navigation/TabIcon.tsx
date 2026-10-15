@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useRef, useEffect } from "react";
 import { View, ColorValue } from "react-native";
 import Animated, {
   useAnimatedStyle,
@@ -6,9 +6,11 @@ import Animated, {
   withTiming,
   useDerivedValue,
 } from "react-native-reanimated";
+import LottieView from "lottie-react-native";
 
 type TabIconProps = {
   Icon: React.ComponentType<any>;
+  lottieSource?: any;
   label: string;
   color: ColorValue | string;
   size: number;
@@ -17,11 +19,20 @@ type TabIconProps = {
 
 export default function TabIcon({
   Icon,
+  lottieSource,
   label,
   color,
   size,
   focused,
 }: TabIconProps) {
+  const lottieRef = useRef<LottieView>(null);
+
+  useEffect(() => {
+    if (focused && lottieRef.current) {
+      lottieRef.current.reset();
+      lottieRef.current.play();
+    }
+  }, [focused]);
   // Icon position shift when focused (shifts up slightly -3px when focused, stays centered when inactive)
   const iconTranslateY = useDerivedValue(() =>
     withSpring(focused ? -3 : 0, {
@@ -88,7 +99,21 @@ export default function TabIcon({
           { alignItems: "center", justifyContent: "center" },
         ]}
       >
-        <Icon color={color} size={size} />
+        {focused && lottieSource ? (
+          <LottieView
+            ref={lottieRef}
+            source={lottieSource}
+            autoPlay={true}
+            loop={false}
+            renderMode="AUTOMATIC"
+            style={{ width: size + 6, height: size + 6 }}
+            colorFilters={[
+              { keypath: "**", color: typeof color === "string" ? color : "#1A6B3C" },
+            ]}
+          />
+        ) : (
+          <Icon color={color} size={size} strokeWidth={focused ? 2.5 : 2} />
+        )}
       </Animated.View>
 
       {/* Activated Label Text directly under icon */}

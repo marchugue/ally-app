@@ -27,8 +27,7 @@ import {
   unlikeComment,
 } from "@/lib/api/feed";
 import { PostCard } from "@/components/PostCard";
-import { UserAvatar } from "@/components/UserAvatar";
-import { AnonymousAvatar } from "@/components/AnonymousAvatar";
+import { ClickableAvatar } from "@/components/ClickableAvatar";
 import type { FeedPost, Comment } from "@/types/feed";
 
 function timeAgo(dateStr: string): string {
@@ -275,24 +274,13 @@ export default function PostDetailScreen() {
                 borderBottomColor: "#F0EDE8",
               }}
             >
-              <TouchableOpacity
-                disabled={!isCommentAlly}
-                activeOpacity={0.7}
-                onPress={() => {
-                  if (item.author?.id && isCommentAlly) {
-                    router.push({
-                      pathname: "/pages/user-profile",
-                      params: { userId: item.author.id },
-                    } as any);
-                  }
-                }}
-              >
-                {isCommentAlly ? (
-                  <UserAvatar avatar={item.author?.avatar_url} size="sm" />
-                ) : (
-                  <AnonymousAvatar avatarKey={item.author?.avatarKey || "fox"} size={32} />
-                )}
-              </TouchableOpacity>
+              <ClickableAvatar
+                userId={item.author?.id}
+                avatarUrl={item.author?.avatar_url}
+                avatarKey={item.author?.avatarKey}
+                revealed={isCommentAlly}
+                size={32}
+              />
               <View style={{ flex: 1 }}>
                 <View
                   style={{
@@ -303,13 +291,17 @@ export default function PostDetailScreen() {
                   }}
                 >
                   <TouchableOpacity
-                    disabled={!isCommentAlly}
                     activeOpacity={0.7}
                     onPress={() => {
-                      if (item.author?.id && isCommentAlly) {
+                      if (item.author?.id) {
                         router.push({
                           pathname: "/pages/user-profile",
-                          params: { userId: item.author.id },
+                          params: {
+                            userId: item.author.id,
+                            avatarKey: item.author?.avatarKey || "",
+                            avatarUrl: item.author?.avatar_url || "",
+                            authorName: isCommentAlly ? (item.author.full_name || `@${item.author.username}`) : "Anonymous Peer",
+                          },
                         } as any);
                       }
                     }}

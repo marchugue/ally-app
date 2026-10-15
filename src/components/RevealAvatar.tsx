@@ -10,7 +10,7 @@ import {
 } from "react-native";
 import Svg, { Circle, Line, Defs, LinearGradient, Stop } from "react-native-svg";
 import { avatarColorFor, getAvatarEmoji } from "@/constants/matchOptions";
-import { getAnimalFluentAsset } from "@/constants/emojiAnimationAssets";
+import { CrittersAvatar } from "@/components/CrittersAvatar";
 import { computeRevealVisual } from "@/lib/avatarReveal";
 import { synthesizeAvatarReveal } from "@/lib/avatarRevealCache";
 import type { AvatarRevealView } from "@/lib/api/matchmaking";
@@ -43,7 +43,6 @@ export function RevealAvatar({
 }: RevealAvatarProps) {
   const accent = avatarColorFor(avatarKey);
   const emoji = getAvatarEmoji(avatarKey);
-  const fluentAsset = getAnimalFluentAsset(avatarKey);
 
   // If propReveal is not provided, but propMatchPoints is, synthesize fallback reveal
   const reveal = useMemo(() => {
@@ -360,22 +359,17 @@ export function RevealAvatar({
             style={{
               width: petSize,
               height: petSize,
+              borderRadius: petSize / 2,
+              overflow: "hidden",
               alignItems: "center",
               justifyContent: "center",
             }}
           >
-            {fluentAsset ? (
-              <Image
-                source={fluentAsset}
-                style={{
-                  width: "100%",
-                  height: "100%",
-                }}
-                resizeMode="contain"
-              />
-            ) : (
-              <Text style={{ fontSize: petSize * 0.72 }}>{emoji}</Text>
-            )}
+            <CrittersAvatar
+              avatarKey={avatarKey}
+              size={petSize}
+              customBg={accent}
+            />
           </View>
         </Animated.View>
 

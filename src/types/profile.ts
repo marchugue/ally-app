@@ -4,6 +4,10 @@ export interface Profile {
   full_name: string;
   username: string;
   avatar_url: string | null;
+  avatarKey?: string | null;
+  avatar_preset_id?: string | null;
+  is_ally?: boolean;
+  is_unrevealed_match?: boolean;
   bio: string | null;
   department: string | null;
   course: string | null;
@@ -44,6 +48,8 @@ export interface UserPreferences {
   show_online_status: boolean;
   show_last_active: boolean;
   read_receipts_enabled: boolean;
+  /** public: posts visible to everyone (identity stays anonymous unless allied). private: only allies see posts. */
+  account_privacy?: 'public' | 'private';
   profile_visibility: 'campus' | 'matches_only' | 'hidden';
   feed_post_audience: 'campus' | 'matches_only' | 'anonymous_only';
 

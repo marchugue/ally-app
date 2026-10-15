@@ -1,5 +1,7 @@
 import { View, Text, Image, Platform } from "react-native";
 import { API_BASE_URL } from "@/constants";
+import { AnonymousAvatar } from "./AnonymousAvatar";
+import { AVATAR_EMOJI } from "@/constants/matchOptions";
 
 type AvatarSize = "xs" | "sm" | "md" | "lg" | "xl";
 
@@ -76,14 +78,21 @@ export function UserAvatar({
 
   const imageUri = resolveImageUri(avatar);
   const isImage = isUrl(imageUri);
+  const animalKey =
+    typeof avatar === "string" && !isImage && AVATAR_EMOJI[avatar.toLowerCase().trim()]
+      ? avatar.toLowerCase().trim()
+      : null;
+
   const emojiDisplay =
-    typeof avatar === "string" && !isImage && avatar.trim().length > 0
+    typeof avatar === "string" && !isImage && !animalKey && avatar.trim().length > 0
       ? avatar
       : fallback;
 
   return (
     <View style={{ width: container, height: container, position: "relative" }}>
-      {isImage && imageUri ? (
+      {animalKey ? (
+        <AnonymousAvatar avatarKey={animalKey} size={container} />
+      ) : isImage && imageUri ? (
         <Image
           source={{ uri: imageUri }}
           style={{

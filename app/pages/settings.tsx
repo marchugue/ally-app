@@ -54,6 +54,7 @@ const DEFAULT_PREFERENCES: UserPreferences = {
   show_online_status: true,
   show_last_active: true,
   read_receipts_enabled: true,
+  account_privacy: "public",
   profile_visibility: "campus",
   feed_post_audience: "campus",
   typing_indicators_enabled: true,
@@ -287,6 +288,16 @@ export default function SettingsScreen() {
         {/* SECTION 2: PRIVACY & SAFETY */}
         <SectionHeader label="Privacy & Safety" />
         <View style={{ backgroundColor: "#FFFFFF", borderTopWidth: 1, borderTopColor: "#EAE7E1", borderBottomWidth: 1, borderBottomColor: "#EAE7E1" }}>
+          <SettingsToggleRow
+            icon={Shield}
+            label="Private Account"
+            description="Only allies can see your posts. Your profile page stays reachable and anonymous to everyone else."
+            value={preferences.account_privacy === "private"}
+            onValueChange={(val) =>
+              handleUpdatePreference({ account_privacy: val ? "private" : "public" })
+            }
+          />
+
           <SettingsToggleRow
             icon={Smartphone}
             label="Show Online Status"

@@ -22,6 +22,8 @@ import { Search, X, MessageCircle, Trash2, Drama } from "lucide-react-native";
 import { ScreenHeader } from "@/components/ScreenHeader";
 import { UserAvatar } from "@/components/UserAvatar";
 import { AnonymousAvatar } from "@/components/AnonymousAvatar";
+import { RevealAvatar } from "@/components/RevealAvatar";
+import { getEffectiveAvatarReveal } from "@/lib/avatarRevealCache";
 import { ChatStreakBadge } from "@/components/ChatStreakBadge";
 import { FilterChip } from "@/components/FilterChip";
 import { EmptyState } from "@/components/EmptyState";
@@ -224,7 +226,19 @@ const SwipeableRow = React.memo(function SwipeableRow({
           {/* Avatar */}
           <View className="shrink-0" style={{ flexShrink: 0 }}>
             {info.isAnonymous ? (
-              <AnonymousAvatar avatarKey={info.participantAvatar} size={56} />
+              <RevealAvatar
+                reveal={getEffectiveAvatarReveal(
+                  item.matchInfo?.matchId || item.matchInfo?.id || item.id,
+                  item.matchInfo?.matchPoints ?? item.matchInfo?.stagePoints ?? 0,
+                  null,
+                  { partnerAvatar: info.participantAvatar || "fox" }
+                )}
+                avatarKey={info.participantAvatar || "fox"}
+                size={56}
+                showRing={false}
+                showGainChip={false}
+                fallbackInitials={info.participantName}
+              />
             ) : (
               <UserAvatar
                 avatar={info.participantAvatar}

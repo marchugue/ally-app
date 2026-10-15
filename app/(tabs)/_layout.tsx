@@ -12,11 +12,36 @@ import TabIcon from "@/components/navigation/TabIcon";
 import { TAB_THEME } from "@/constants/tabBarTheme";
 
 const tabs = [
-  { name: "index",         title: "Home",         icon: Home },
-  { name: "discover",      title: "Discover",     icon: Compass },
-  { name: "messages",      title: "Messages",     icon: MessageCircle },
-  { name: "notifications", title: "Alerts",        icon: Bell },
-  { name: "profile",       title: "Profile",       icon: User },
+  {
+    name: "index",
+    title: "Home",
+    icon: Home,
+    lottie: require("../../assets/icons/lottie/home.json"),
+  },
+  {
+    name: "discover",
+    title: "Discover",
+    icon: Compass,
+    lottie: require("../../assets/icons/lottie/compass.json"),
+  },
+  {
+    name: "messages",
+    title: "Messages",
+    icon: MessageCircle,
+    lottie: require("../../assets/icons/lottie/messages.json"),
+  },
+  {
+    name: "notifications",
+    title: "Alerts",
+    icon: Bell,
+    lottie: require("../../assets/icons/lottie/bell.json"),
+  },
+  {
+    name: "profile",
+    title: "Profile",
+    icon: User,
+    lottie: require("../../assets/icons/lottie/profile.json"),
+  },
 ];
 
 export default function TabsLayout() {
@@ -74,6 +99,7 @@ export default function TabsLayout() {
             tabBarIcon: ({ color, size, focused }) => (
               <TabIcon
                 Icon={tab.icon}
+                lottieSource={tab.lottie}
                 label={tab.title}
                 color={color}
                 size={size}
