@@ -226,7 +226,7 @@ function getMatchBadgeStyle(percentage: number, sharedCount: number) {
 export default function DiscoverScreen() {
   const insets = useSafeAreaInsets();
   const { user, accessToken } = useAuth();
-  const { isOnline } = usePresence();
+  const { isOnline, gameOnlineCount } = usePresence();
 
   const [currentUser, setCurrentUser] = useState<Student | null>(null);
   const [departments, setDepartments] = useState<string[]>(DEFAULT_DEPARTMENTS);
@@ -847,7 +847,7 @@ export default function DiscoverScreen() {
                         color: "#92400E",
                       }}
                     >
-                      4 players online
+                      {gameOnlineCount} {gameOnlineCount === 1 ? "player" : "players"} online
                     </Text>
                   </View>
                 </LinearGradient>
@@ -1400,59 +1400,24 @@ export default function DiscoverScreen() {
                   )}
                 </View>
 
-                {/* Right: Compatibility Badge & Dismiss X Button */}
-                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                  <View
-                    style={{
-                      flexDirection: "row",
-                      alignItems: "center",
-                      gap: 5,
-                      backgroundColor: badgeStyle.bg,
-                      borderWidth: 1,
-                      borderColor: badgeStyle.border,
-                      paddingHorizontal: 8,
-                      paddingVertical: 4,
-                      borderRadius: 12,
-                    }}
-                  >
-                    <View
-                      style={{
-                        width: 6,
-                        height: 6,
-                        borderRadius: 3,
-                        backgroundColor: badgeStyle.dot,
-                      }}
-                    />
-                    <Text
-                      style={{
-                        fontFamily: "PlusJakartaSans",
-                        fontSize: 11,
-                        fontWeight: "700",
-                        color: badgeStyle.text,
-                      }}
-                    >
-                      {item.matchPercentage}% Compatible
-                    </Text>
-                  </View>
-
-                  <Pressable
-                    onPress={() => {
-                      setDismissedStudentIds((prev) => new Set([...prev, student.id]));
-                      setToast({ message: `Dismissed ${anonName}`, type: "info" });
-                    }}
-                    hitSlop={8}
-                    style={{
-                      width: 28,
-                      height: 28,
-                      borderRadius: 14,
-                      alignItems: "center",
-                      justifyContent: "center",
-                      backgroundColor: "#F9FAFB",
-                    }}
-                  >
-                    <X size={15} color="#9CA3AF" />
-                  </Pressable>
-                </View>
+                {/* Right: Dismiss X Button */}
+                <Pressable
+                  onPress={() => {
+                    setDismissedStudentIds((prev) => new Set([...prev, student.id]));
+                    setToast({ message: `Dismissed ${anonName}`, type: "info" });
+                  }}
+                  hitSlop={8}
+                  style={{
+                    width: 28,
+                    height: 28,
+                    borderRadius: 14,
+                    alignItems: "center",
+                    justifyContent: "center",
+                    backgroundColor: "#F9FAFB",
+                  }}
+                >
+                  <X size={15} color="#9CA3AF" />
+                </Pressable>
               </View>
 
               {/* Middle: Anonymous Name & Academic Info */}
@@ -1657,7 +1622,7 @@ export default function DiscoverScreen() {
                       color: "#B45309",
                     }}
                   >
-                    ⏳ Request Sent
+                    Request Sent
                   </Text>
                 </View>
               ) : (

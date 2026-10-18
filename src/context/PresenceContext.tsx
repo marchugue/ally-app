@@ -13,12 +13,14 @@ import { getSocket } from "@/lib/socket";
 
 interface PresenceContextValue {
   onlineUserIds: Set<string>;
+  gameOnlineCount: number;
   isOnline: (userId?: string | null) => boolean;
   refreshOnlineUsers: () => Promise<void>;
 }
 
 const PresenceContext = createContext<PresenceContextValue>({
   onlineUserIds: new Set(),
+  gameOnlineCount: 0,
   isOnline: () => false,
   refreshOnlineUsers: async () => {},
 });
@@ -29,6 +31,7 @@ const POLL_INTERVAL_MS = 15000; // 15s
 export function PresenceProvider({ children }: { children: ReactNode }) {
   const { user, accessToken } = useAuth();
   const [onlineUserIds, setOnlineUserIds] = useState<Set<string>>(new Set());
+  const [gameOnlineCount, setGameOnlineCount] = useState<number>(0);
 
   const refreshOnlineUsers = useCallback(async () => {
     if (!accessToken) return;
@@ -55,6 +58,7 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
       }
 
       setOnlineUserIds(ids);
+      setGameOnlineCount(res.gameCount ?? res.gameUserIds?.length ?? 0);
     } catch {
       // Best-effort presence check
     }
@@ -151,7 +155,7 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
   );
 
   return (
-    <PresenceContext.Provider value={{ onlineUserIds, isOnline, refreshOnlineUsers }}>
+    <PresenceContext.Provider value={{ onlineUserIds, gameOnlineCount, isOnline, refreshOnlineUsers }}>
       {children}
     </PresenceContext.Provider>
   );
