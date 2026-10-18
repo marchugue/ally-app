@@ -8,32 +8,32 @@ import {
   ScrollView,
   Alert,
   Modal,
+  ActivityIndicator,
 } from "react-native";
 import { router, useFocusEffect } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { LinearGradient } from "expo-linear-gradient";
 import {
   Bell,
   CheckCheck,
   UserPlus,
   MessageCircle,
   Heart,
-  Rss,
   Drama,
-  ChevronRight,
   Sparkles,
   Trash2,
   Flame,
-  Reply,
   Check,
   X,
   Filter,
-  ChevronDown,
   ShieldAlert,
 } from "lucide-react-native";
 import { useAuth } from "@/lib/auth/AuthContext";
 import { UserAvatar } from "@/components/UserAvatar";
 import { AnonymousAvatar } from "@/components/AnonymousAvatar";
 import { acceptConnection, rejectConnection } from "@/lib/api/interaction";
+import { followUser, getFollowStatus } from "@/lib/api/follow";
+import { listConversations } from "@/lib/api/conversation";
 import { getSocket } from "@/lib/socket";
 import * as Notifications from "expo-notifications";
 import {
@@ -46,12 +46,12 @@ import {
   markNotificationRead,
   markAllNotificationsRead,
   clearAllNotifications,
+  deleteNotification,
 } from "@/lib/api/notification";
 import type { NotificationItem, NotificationCategory } from "@/types/notification";
+import type { Conversation } from "@/types/conversation";
 
 type FilterCategory = NotificationCategory;
-
-const POLL_INTERVAL_MS = 10000;
 
 function formatTimestamp(dateStr?: string): string {
   if (!dateStr) return "Just now";
@@ -74,9 +74,9 @@ function formatTimestamp(dateStr?: string): string {
 
 type DateGroupKey = "today" | "earlier" | "last_month" | "last_year";
 
-function getDateGroup(dateStr?: string): DateGroupKey {
-  if (!dateStr) return "earlier";
-  const d = new Date(dateStr);
+function getDateGroup(dateInput?: string): DateGroupKey {
+  if (!dateInput) return "earlier";
+  const d = new Date(dateInput);
   if (isNaN(d.getTime())) return "earlier";
   const now = new Date();
 
@@ -121,11 +121,12 @@ function deriveCategory(type?: string): NotificationCategory {
     t.includes("friend") ||
     t.includes("connection") ||
     t.includes("request") ||
-    t.includes("accepted")
+    t.includes("accepted") ||
+    t.includes("follower")
   ) {
     return "connections";
   }
-  if (t.includes("match") || t.includes("ally")) return "ally";
+  if (t.includes("match") || t.includes("ally") || t.includes("stage")) return "ally";
   if (
     t.includes("safety") ||
     t.includes("emergency") ||
@@ -177,7 +178,6 @@ export function getAnonymousInfo(item: NotificationItem) {
     return { isAnon: false, avatarKey: null, anonName: null };
   }
 
-  // Determine animal avatar key
   let avatarKey: string | null = null;
   if (avatarIsAnimal && rawAvatar) {
     avatarKey = String(rawAvatar).toLowerCase().trim();
@@ -199,7 +199,6 @@ export function getAnonymousInfo(item: NotificationItem) {
     }
   }
 
-  // Derive deterministically from from_user_id or id
   if (!avatarKey) {
     const seed = item.from_user_id || item.id || "default";
     let hash = 0;
@@ -209,7 +208,6 @@ export function getAnonymousInfo(item: NotificationItem) {
     avatarKey = ANIMAL_KEYS[hash % ANIMAL_KEYS.length];
   }
 
-  // Determine anonymous name
   let anonName = "Anonymous Ally";
   if (nameContainsAnon && (item.author_name || item.username)) {
     anonName = item.author_name || item.username || "Anonymous Ally";
@@ -229,34 +227,186 @@ export function getAnonymousInfo(item: NotificationItem) {
   };
 }
 
+function extractSubtext(item: NotificationItem): string {
+  const rawDesc = (item.description || item.message || "").trim();
+  if (!rawDesc) return "";
+  if (rawDesc.includes('commented: "')) {
+    return rawDesc.replace(/^commented:\s*"/i, "").replace(/"$/, "");
+  }
+  if (rawDesc.includes('replied: "')) {
+    return rawDesc.replace(/^replied:\s*"/i, "").replace(/"$/, "");
+  }
+  if (
+    rawDesc === "liked your post." ||
+    rawDesc === "liked your comment." ||
+    rawDesc === "Someone commented on your post." ||
+    rawDesc === "Someone liked your post." ||
+    rawDesc === "Someone replied to your comment." ||
+    rawDesc.startsWith("Someone ") ||
+    rawDesc === item.title
+  ) {
+    return "";
+  }
+  return rawDesc;
+}
+
+function getActionText(item: NotificationItem): string {
+  const unreadCount = item.unread_count ?? (item as any).unreadCount ?? 1;
+  switch (item.type) {
+    case "message":
+    case "anon_match":
+      if (unreadCount > 1) {
+        return `(${unreadCount} new messages)`;
+      }
+      return item.type === "anon_match" ? "messaged you" : "sent you a message";
+    case "post_comment":
+    case "comment":
+      return "commented on your post";
+    case "post_like":
+    case "like":
+      return "liked your post";
+    case "comment_reply":
+      return "replied to your comment";
+    case "comment_like":
+      return "liked your comment";
+    case "comment_mention":
+      return "mentioned you in a comment";
+    case "friend_request":
+    case "connection_request":
+      return "sent you a match request";
+    case "new_follower":
+      return "started following you";
+    case "accepted":
+    case "connection_accepted":
+      return "accepted your connection request";
+    case "match":
+      return "matched with you!";
+    case "streak_reminder":
+      return "🔥";
+    case "admin_warning":
+    case "safety":
+    case "emergency":
+    case "safety_alert":
+      return "⚠️ Account & Safety Alert";
+    default:
+      return item.title || "interacted with your post";
+  }
+}
+
+/** Check if a conversation exists on the user's chat list and whether it has ended */
+function checkConversationStatus(
+  convs: Conversation[],
+  targetConvId?: string | null,
+  targetUserId?: string | null
+): { exists: boolean; isEnded: boolean; conversation?: Conversation } {
+  if (!convs || convs.length === 0) {
+    return { exists: false, isEnded: false };
+  }
+
+  let matched: Conversation | undefined;
+
+  // 1. Match by conversation ID
+  if (targetConvId) {
+    matched = convs.find(
+      (c) => String(c.id).toLowerCase() === String(targetConvId).toLowerCase()
+    );
+  }
+
+  // 2. Match by anonymous matchInfo ID
+  if (!matched && (targetUserId || targetConvId)) {
+    const searchId = String(targetUserId || targetConvId).toLowerCase();
+    matched = convs.find((c) => {
+      const matchId = c.matchInfo?.id || c.matchInfo?.matchId;
+      return matchId && String(matchId).toLowerCase() === searchId;
+    });
+  }
+
+  // 3. Match by conversation member ID
+  if (!matched && targetUserId) {
+    const searchUserId = String(targetUserId).toLowerCase();
+    matched = convs.find((c) => {
+      const members = (c.conversation_members || []) as any[];
+      return members.some((m: any) => {
+        const p = Array.isArray(m.profiles) ? m.profiles[0] : (m.profiles || m);
+        const uid = m.user_id || p?.id || p?.user_id;
+        return uid && String(uid).toLowerCase() === searchUserId;
+      });
+    });
+  }
+
+  if (!matched) {
+    return { exists: false, isEnded: false };
+  }
+
+  const isEnded =
+    matched.variant === "anonymous_ended" || Boolean(matched.matchInfo?.ended);
+
+  return { exists: true, isEnded, conversation: matched };
+}
+
 export default function NotificationsScreen() {
   const insets = useSafeAreaInsets();
-  const { accessToken } = useAuth();
+  const { user, accessToken } = useAuth();
 
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
+  const [userConversations, setUserConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [activeFilter, setActiveFilter] = useState<FilterCategory>("all");
+  const [showFilterDropdown, setShowFilterDropdown] = useState(false);
+
   const [busyIds, setBusyIds] = useState<Record<string, boolean>>({});
   const [handledRequests, setHandledRequests] = useState<Record<string, "accepted" | "declined">>({});
-  const [showFilterDropdown, setShowFilterDropdown] = useState(false);
+  const [followStatusMap, setFollowStatusMap] = useState<Record<string, boolean>>({});
+  const [dismissedCtaMap, setDismissedCtaMap] = useState<Record<string, boolean>>({});
+  const [followBusyMap, setFollowBusyMap] = useState<Record<string, boolean>>({});
 
   const loadNotifications = useCallback(
     async (showSkeleton = false) => {
       if (!accessToken) {
         setNotifications([]);
+        setUserConversations([]);
         setLoading(false);
         return;
       }
       if (showSkeleton) setLoading(true);
       try {
-        const items = await listNotifications(accessToken);
+        const [items, convs] = await Promise.all([
+          listNotifications(accessToken).catch(() => []),
+          listConversations(accessToken).catch(() => []),
+        ]);
+
+        setUserConversations(convs);
+
         if (!items || items.length === 0) {
           setNotifications([]);
         } else {
-          const filtered = items.filter(
-            (n) => !EXCLUDED_NOTIFICATION_TYPES.includes(n.type)
-          );
+          const filtered = items.filter((n) => {
+            if (EXCLUDED_NOTIFICATION_TYPES.includes(n.type)) return false;
+
+            // If it's a message, anonymous match, or streak reminder:
+            // Check if it exists on the chat list and is not ended.
+            // If the person is not existing on the chatlistwindow or ended, remove it.
+            if (
+              n.type === "message" ||
+              n.type === "anon_match" ||
+              n.type === "streak_reminder"
+            ) {
+              const convStatus = checkConversationStatus(
+                convs,
+                n.target_id || (n as any).conversationId || n.post_id,
+                n.from_user_id || (n as any).fromUserId
+              );
+              if (!convStatus.exists || convStatus.isEnded) {
+                // Delete invalid notification from backend asynchronously
+                void deleteNotification(n.id, accessToken).catch(() => null);
+                return false;
+              }
+            }
+
+            return true;
+          });
+
           setNotifications(filtered);
         }
       } catch (err) {
@@ -268,14 +418,14 @@ export default function NotificationsScreen() {
     [accessToken]
   );
 
-  // Initial load when accessToken becomes available
+  // Initial load
   useEffect(() => {
     if (accessToken) {
       void loadNotifications(true);
     }
   }, [accessToken, loadNotifications]);
 
-  // Screen Focus + Real-time socket events (relaxed 60s fallback matching web)
+  // Screen focus + polling interval fallback
   useFocusEffect(
     useCallback(() => {
       void loadNotifications(notifications.length === 0);
@@ -287,7 +437,7 @@ export default function NotificationsScreen() {
     }, [loadNotifications, notifications.length])
   );
 
-  // Real-time socket events for notifications
+  // Socket realtime listeners
   useEffect(() => {
     if (!accessToken) return;
     const socket = getSocket(accessToken);
@@ -364,6 +514,30 @@ export default function NotificationsScreen() {
     };
   }, [accessToken, loadNotifications]);
 
+  // Check follow status for new_follower notifications
+  useEffect(() => {
+    if (!accessToken || notifications.length === 0) return;
+    const followerUserIds = new Set<string>();
+    for (const n of notifications) {
+      if (n.type === "new_follower") {
+        const uId = n.from_user_id || (n as any).fromUserId || n.target_id;
+        if (uId && followStatusMap[uId] === undefined) {
+          followerUserIds.add(uId);
+        }
+      }
+    }
+    if (followerUserIds.size === 0) return;
+
+    followerUserIds.forEach(async (uId) => {
+      try {
+        const res = await getFollowStatus(uId, accessToken);
+        setFollowStatusMap((prev) => ({ ...prev, [uId]: Boolean(res?.isFollowing) }));
+      } catch {
+        // ignore
+      }
+    });
+  }, [accessToken, notifications, followStatusMap]);
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await loadNotifications(false);
@@ -409,6 +583,7 @@ export default function NotificationsScreen() {
     );
   }, [accessToken]);
 
+  // Match request inline accept/decline
   const handleAcceptInline = useCallback(
     async (item: NotificationItem) => {
       const requesterId = item.from_user_id || item.fromUserId;
@@ -462,6 +637,37 @@ export default function NotificationsScreen() {
     [accessToken, busyIds]
   );
 
+  // Follow back inline CTA
+  const handleFollowBackInline = useCallback(
+    async (item: NotificationItem) => {
+      const followerTargetId = item.from_user_id || (item as any).fromUserId || item.target_id;
+      if (!accessToken || !followerTargetId || followBusyMap[followerTargetId]) return;
+
+      setFollowBusyMap((prev) => ({ ...prev, [followerTargetId]: true }));
+      try {
+        await followUser(followerTargetId, accessToken);
+        setFollowStatusMap((prev) => ({ ...prev, [followerTargetId]: true }));
+        await markNotificationRead(item.id, accessToken).catch(() => {});
+        setNotifications((prev) =>
+          prev.map((n) => (n.id === item.id ? { ...n, isRead: true, read: true } : n))
+        );
+      } catch (err) {
+        console.warn("Failed to follow back inline:", err);
+      } finally {
+        setFollowBusyMap((prev) => ({ ...prev, [followerTargetId]: false }));
+      }
+    },
+    [accessToken, followBusyMap]
+  );
+
+  const handleDismissFollowCta = useCallback((notifId: string) => {
+    setDismissedCtaMap((prev) => ({ ...prev, [notifId]: true }));
+    if (accessToken) {
+      void markNotificationRead(notifId, accessToken).catch(() => {});
+    }
+  }, [accessToken]);
+
+  // Tap notification: redirect to conversation/person or remove if ended/not found
   const handleTapNotification = useCallback(
     async (item: NotificationItem) => {
       // Mark as read locally and remote
@@ -477,8 +683,13 @@ export default function NotificationsScreen() {
         }).catch(() => null);
       }
 
-      // Automatically clear corresponding notification from device tray
-      if (item.type === "message" || item.type === "anon_match" || item.type === "streak_reminder" || item.type === "accepted") {
+      // Dismiss from device notification tray
+      if (
+        item.type === "message" ||
+        item.type === "anon_match" ||
+        item.type === "streak_reminder" ||
+        item.type === "accepted"
+      ) {
         const targetConvId = item.target_id || item.post_id;
         if (targetConvId) {
           dismissPresentedNotificationByConversationId(targetConvId).catch(() => null);
@@ -489,23 +700,61 @@ export default function NotificationsScreen() {
         dismissPresentedNotificationsByCategory(item.category).catch(() => null);
       }
 
-      // 1. Direct Redirection from Backend (if provided)
-      if (item.redirection?.route) {
+      // Check conversation status for message/chat notifications
+      if (
+        item.type === "message" ||
+        item.type === "anon_match" ||
+        item.type === "streak_reminder" ||
+        item.type === "accepted" ||
+        item.type === "connection_accepted"
+      ) {
+        let convs = userConversations;
+        if (accessToken && (!convs || convs.length === 0)) {
+          convs = await listConversations(accessToken).catch(() => []);
+          setUserConversations(convs);
+        }
+
+        const convStatus = checkConversationStatus(
+          convs,
+          item.target_id || (item as any).conversationId || item.post_id,
+          item.from_user_id || (item as any).fromUserId
+        );
+
+        // If the person is not existing on the chatlistwindow or they don't have conversation or ended, remove that notification
+        if (!convStatus.exists || convStatus.isEnded) {
+          setNotifications((prev) => prev.filter((n) => n.id !== item.id));
+          if (accessToken) {
+            void deleteNotification(item.id, accessToken).catch(() => null);
+          }
+          Alert.alert(
+            "Conversation Unavailable",
+            convStatus.isEnded
+              ? "This conversation has ended and has been removed."
+              : "No active conversation was found with this user."
+          );
+          return;
+        }
+
+        // Redirect to that person in conversation
         router.push({
-          pathname: item.redirection.route as any,
-          params: item.redirection.params || {},
+          pathname: "/pages/conversation" as any,
+          params: { conversationId: convStatus.conversation!.id },
         });
         return;
       }
 
-      // 2. Fallback navigate by type
+      // Match request notification routing
       if (item.type === "friend_request" || item.type === "connection_request") {
         if (handledRequests[item.id] === "accepted") {
-          const targetConvId = item.target_id || item.post_id;
-          if (targetConvId) {
+          const convStatus = checkConversationStatus(
+            userConversations,
+            item.target_id || item.post_id,
+            item.from_user_id || (item as any).fromUserId
+          );
+          if (convStatus.exists && !convStatus.isEnded) {
             router.push({
               pathname: "/pages/conversation" as any,
-              params: { conversationId: targetConvId },
+              params: { conversationId: convStatus.conversation!.id },
             });
           } else {
             router.push("/(tabs)/messages" as any);
@@ -513,44 +762,30 @@ export default function NotificationsScreen() {
         } else {
           router.push("/pages/requests" as any);
         }
-      } else if (item.type === "streak_reminder") {
-        const targetConvId = item.target_id || item.post_id;
-        if (targetConvId) {
+        return;
+      }
+
+      // New follower notification routing
+      if (item.type === "new_follower") {
+        const followerTargetId = item.from_user_id || (item as any).fromUserId || item.target_id;
+        if (followerTargetId) {
           router.push({
-            pathname: "/pages/conversation" as any,
-            params: { conversationId: targetConvId },
+            pathname: "/pages/user-profile" as any,
+            params: { userId: followerTargetId },
           });
-        } else {
-          router.push("/(tabs)/messages" as any);
         }
-      } else if (item.type === "message" || item.type === "accepted" || item.type === "anon_match") {
-        const targetConvId = item.target_id || item.post_id;
-        if (targetConvId) {
-          router.push({
-            pathname: "/pages/conversation" as any,
-            params: { conversationId: targetConvId },
-          });
-        } else {
-          router.push("/(tabs)/messages" as any);
-        }
-      } else if (item.type === "match") {
+        return;
+      }
+
+      // Match routing
+      if (item.type === "match") {
         router.push("/(tabs)/discover" as any);
-      } else if (item.type === "comment_reply") {
-        // Deep-link with commentId so media-preview can auto-enter reply mode
-        const targetPostId = item.post_id || item.target_id;
-        if (targetPostId) {
-          router.push({
-            pathname: "/pages/media-preview" as any,
-            params: {
-              postId: targetPostId,
-              openComments: "true",
-              ...(item.comment_id ? { commentId: item.comment_id } : {}),
-            },
-          });
-        } else {
-          router.push("/(tabs)" as any);
-        }
-      } else if (
+        return;
+      }
+
+      // Post / Comments routing
+      if (
+        item.type === "comment_reply" ||
         item.type === "like" ||
         item.type === "post_like" ||
         item.type === "comment" ||
@@ -571,18 +806,41 @@ export default function NotificationsScreen() {
         } else {
           router.push("/(tabs)" as any);
         }
+        return;
+      }
+
+      // Redirection from backend fallback
+      if (item.redirection?.route) {
+        router.push({
+          pathname: item.redirection.route as any,
+          params: item.redirection.params || {},
+        });
       }
     },
-    [accessToken]
+    [accessToken, handledRequests, userConversations]
   );
 
+  // If already followed back, hide new_follower notification matching web
+  const visibleNotifications = useMemo(() => {
+    return notifications.filter((n) => {
+      if (EXCLUDED_NOTIFICATION_TYPES.includes(n.type)) return false;
+      if (n.type === "new_follower") {
+        const followerTargetId = n.from_user_id || (n as any).fromUserId || n.target_id;
+        if (followerTargetId && followStatusMap[followerTargetId]) {
+          return false;
+        }
+      }
+      return true;
+    });
+  }, [notifications, followStatusMap]);
+
   const unreadCount = useMemo(() => {
-    return notifications.filter((n) => !(n.is_read ?? n.isRead ?? n.read ?? false)).length;
-  }, [notifications]);
+    return visibleNotifications.filter((n) => !(n.is_read ?? n.isRead ?? n.read ?? false)).length;
+  }, [visibleNotifications]);
 
   const categoryCounts = useMemo(() => {
     const counts = {
-      all: notifications.length,
+      all: visibleNotifications.length,
       unread: 0,
       messages: 0,
       connections: 0,
@@ -590,7 +848,7 @@ export default function NotificationsScreen() {
       safety: 0,
       activity: 0,
     };
-    for (const n of notifications) {
+    for (const n of visibleNotifications) {
       const isUnread = !(n.is_read ?? n.isRead ?? n.read ?? false);
       if (isUnread) counts.unread++;
       const cat = n.category || deriveCategory(n.type);
@@ -599,18 +857,17 @@ export default function NotificationsScreen() {
       }
     }
     return counts;
-  }, [notifications]);
+  }, [visibleNotifications]);
 
   const filteredNotifications = useMemo(() => {
-    return notifications.filter((n) => {
-      if (EXCLUDED_NOTIFICATION_TYPES.includes(n.type)) return false;
+    return visibleNotifications.filter((n) => {
       const isUnread = !(n.is_read ?? n.isRead ?? n.read ?? false);
       if (activeFilter === "unread") return isUnread;
       if (activeFilter === "all") return true;
       const cat = n.category || deriveCategory(n.type);
       return cat === activeFilter;
     });
-  }, [notifications, activeFilter]);
+  }, [visibleNotifications, activeFilter]);
 
   const { todayList, earlierList, lastMonthList, lastYearList } = useMemo(() => {
     const today: NotificationItem[] = [];
@@ -636,35 +893,35 @@ export default function NotificationsScreen() {
     const fromUser = Array.isArray(item.from_user) ? item.from_user[0] : item.from_user;
     const avatarUri = item.avatar_url || fromUser?.avatar_url || item.user_avatar;
     let badgeIcon: React.ReactNode = null;
-    let badgeBg = "#1A6B3C";
+    let badgeBg = "#4B5563";
 
     switch (item.type) {
+      case "message":
+        badgeIcon = <MessageCircle size={10} color="#FFFFFF" />;
+        badgeBg = "#2563EB";
+        break;
       case "comment":
       case "post_comment":
       case "comment_reply":
+      case "comment_mention":
         badgeIcon = <MessageCircle size={10} color="#FFFFFF" />;
         badgeBg = "#EC4899";
         break;
       case "like":
       case "post_like":
       case "comment_like":
-        badgeIcon = <Heart size={10} color="#FFFFFF" />;
+        badgeIcon = <Heart size={10} color="#FFFFFF" fill="#FFFFFF" />;
         badgeBg = "#EF4444";
-        break;
-      case "feed":
-      case "post":
-      case "post_created":
-        badgeIcon = <Rss size={10} color="#FFFFFF" />;
-        badgeBg = "#10B981";
         break;
       case "friend_request":
       case "connection_request":
-        badgeIcon = <Sparkles size={10} color="#FFFFFF" />;
+      case "new_follower":
+        badgeIcon = <UserPlus size={10} color="#FFFFFF" />;
         badgeBg = "#1A6B3C";
         break;
       case "accepted":
       case "connection_accepted":
-        badgeIcon = <Text style={{ fontSize: 8 }}>🤝</Text>;
+        badgeIcon = <Text style={{ fontSize: 9, lineHeight: 10 }}>🤝</Text>;
         badgeBg = "#16A34A";
         break;
       case "match":
@@ -679,12 +936,10 @@ export default function NotificationsScreen() {
         badgeIcon = <Flame size={10} color="#FFFFFF" />;
         badgeBg = "#EB5600";
         break;
-      case "message":
-        badgeIcon = <MessageCircle size={10} color="#FFFFFF" />;
-        badgeBg = "#1A6B3C";
-        break;
       case "safety":
       case "safety_alert":
+      case "emergency":
+      case "admin_warning":
         badgeIcon = <ShieldAlert size={10} color="#FFFFFF" />;
         badgeBg = "#DC2626";
         break;
@@ -699,21 +954,21 @@ export default function NotificationsScreen() {
         <View style={{ width: 44, height: 44, position: "relative" }}>
           <View
             style={{
-              width: 40,
-              height: 40,
-              borderRadius: 20,
+              width: 44,
+              height: 44,
+              borderRadius: 22,
               backgroundColor: "rgba(235, 86, 0, 0.12)",
               alignItems: "center",
               justifyContent: "center",
             }}
           >
-            <Flame size={22} color="#EB5600" />
+            <Text style={{ fontSize: 20 }}>🔥</Text>
           </View>
           <View
             style={{
               position: "absolute",
-              bottom: -2,
-              right: -2,
+              bottom: -1,
+              right: -1,
               width: 18,
               height: 18,
               borderRadius: 9,
@@ -737,7 +992,7 @@ export default function NotificationsScreen() {
         {anonInfo.isAnon ? (
           <AnonymousAvatar
             avatarKey={anonInfo.avatarKey || "fox"}
-            size={40}
+            size={44}
           />
         ) : (
           <UserAvatar
@@ -749,8 +1004,8 @@ export default function NotificationsScreen() {
         <View
           style={{
             position: "absolute",
-            bottom: -2,
-            right: -2,
+            bottom: -1,
+            right: -1,
             width: 18,
             height: 18,
             borderRadius: 9,
@@ -772,89 +1027,42 @@ export default function NotificationsScreen() {
     const fromUser = Array.isArray(item.from_user) ? item.from_user[0] : item.from_user;
     const anonInfo = getAnonymousInfo(item);
 
-    let name = anonInfo.isAnon
+    const name = anonInfo.isAnon
       ? anonInfo.anonName!
       : item.type === "streak_reminder"
       ? "Streak Reminder"
       : item.username || item.author_name || fromUser?.username || fromUser?.full_name || "Someone";
 
-    const unreadCountForNotif = item.unread_count ?? (item as any).unreadCount ?? 1;
-
-    // Facebook / Messenger style: Alex (3 new messages)
-    if (item.type === "message" && unreadCountForNotif > 1) {
-      name = `${name} (${unreadCountForNotif} new messages)`;
-    }
-
-    // 1. Build Action Headline (e.g., "charlotte commented on your post")
-    let actionText = "";
-    if (item.type === "message") {
-      actionText = unreadCountForNotif > 1 ? "" : "sent you a message";
-    } else if (item.type === "post_comment" || item.type === "comment") {
-      actionText = "commented on your post";
-    } else if (item.type === "post_like" || item.type === "like") {
-      actionText = "liked your post";
-    } else if (item.type === "comment_reply") {
-      actionText = "replied to your comment";
-    } else if (item.type === "comment_like") {
-      actionText = "liked your comment";
-    } else if (item.type === "friend_request" || item.type === "connection_request") {
-      actionText = "sent you a match request";
-    } else if (item.type === "accepted" || item.type === "connection_accepted") {
-      actionText = "accepted your connection request";
-    } else if (item.type === "match") {
-      actionText = "matched with you!";
-    } else if (item.type === "anon_match") {
-      actionText = "messaged you";
-    } else if (item.type === "streak_reminder") {
-      actionText = "🔥";
-    } else if (item.type === "safety" || item.type === "safety_alert") {
-      actionText = "Safety Alert";
-    } else {
-      actionText = item.title || "interacted with your post";
-    }
-
+    const actionText = getActionText(item);
     const isMatchReq = item.type === "friend_request" || item.type === "connection_request";
+    const isFollower = item.type === "new_follower";
+    const followerTargetId = item.from_user_id || (item as any).fromUserId || item.target_id;
+    const isFollowDismissed = Boolean(dismissedCtaMap[item.id]);
+    const isFollowBusy = Boolean(followerTargetId && followBusyMap[followerTargetId]);
+
     const reqStatus = handledRequests[item.id];
     const isBusy = busyIds[item.id];
 
-    // 2. Extract Subtitle / Description content
     let subtext = "";
     if (item.type === "streak_reminder") {
-      subtext = (item.description || item.message || "Your streak is not yet activated! Send a message to activate.").trim();
-    } else if (item.type === "message") {
-      subtext = (item.description || item.message || "").trim();
-    } else if (!isMatchReq) {
-      const rawDesc = (item.description || item.message || "").trim();
-      if (rawDesc) {
-        if (rawDesc.includes('commented: "')) {
-          subtext = rawDesc.replace(/^commented:\s*"/i, "").replace(/"$/, "");
-        } else if (rawDesc.includes('replied: "')) {
-          subtext = rawDesc.replace(/^replied:\s*"/i, "").replace(/"$/, "");
-        } else if (
-          rawDesc !== "liked your post." &&
-          rawDesc !== "liked your comment." &&
-          rawDesc !== "Someone commented on your post." &&
-          rawDesc !== "Someone liked your post." &&
-          rawDesc !== "Someone replied to your comment." &&
-          !rawDesc.startsWith("Someone ") &&
-          rawDesc !== item.title
-        ) {
-          subtext = rawDesc;
-        }
-      }
+      subtext = (item.description || item.message || "Your streak is not yet activated! Send a message to keep it going.").trim();
+    } else if (isFollower && isFollowDismissed) {
+      subtext = item.description || "Someone started following you.";
+    } else if (!isMatchReq && !isFollower) {
+      subtext = extractSubtext(item);
     }
 
     return (
       <TouchableOpacity
         key={key || item.id}
         onPress={() => handleTapNotification(item)}
-        activeOpacity={0.8}
+        activeOpacity={0.7}
         style={{
           flexDirection: "row",
           alignItems: "flex-start",
           paddingHorizontal: 16,
           paddingVertical: 14,
-          backgroundColor: isUnread ? "rgba(26,107,60,0.03)" : "#FFFFFF",
+          backgroundColor: isUnread ? "rgba(26,107,60,0.035)" : "#FFFFFF",
           borderBottomWidth: 1,
           borderBottomColor: "#F3F4F6",
           gap: 12,
@@ -862,41 +1070,47 @@ export default function NotificationsScreen() {
       >
         {renderNotificationAvatar(item)}
 
-        <View style={{ flex: 1 }}>
+        <View style={{ flex: 1, minWidth: 0, paddingRight: 4 }}>
+          {/* Author Name + Action Text */}
           <Text
             style={{
               fontSize: 13.5,
-              color: "#111827",
               lineHeight: 18,
             }}
             numberOfLines={2}
           >
-            <Text style={{ fontWeight: "700", color: "#111827" }}>
+            <Text style={{ fontFamily: "PlusJakartaSans-Bold", color: "#111827" }}>
               {name}
             </Text>
-            <Text style={{ fontWeight: isUnread ? "600" : "400", color: isUnread ? "#111827" : "#374151" }}>
+            <Text
+              style={{
+                fontFamily: "PlusJakartaSans",
+                fontWeight: isUnread ? "600" : "400",
+                color: isUnread ? "#1F2937" : "#4B5563",
+              }}
+            >
               {` ${actionText}`}
             </Text>
           </Text>
 
-          {/* Inline match request accept/decline action buttons */}
+          {/* Match Request Accept/Decline CTAs */}
           {isMatchReq ? (
             reqStatus === "accepted" ? (
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 6 }}>
-                <Check size={13} color="#1A6B3C" />
-                <Text style={{ fontSize: 12, fontWeight: "700", color: "#1A6B3C" }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 5, marginTop: 6 }}>
+                <Check size={13} color="#1A6B3C" strokeWidth={2.5} />
+                <Text style={{ fontSize: 12, fontFamily: "PlusJakartaSans-Bold", color: "#1A6B3C" }}>
                   Match Request Accepted
                 </Text>
               </View>
             ) : reqStatus === "declined" ? (
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 6 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 5, marginTop: 6 }}>
                 <X size={13} color="#6B7280" />
                 <Text style={{ fontSize: 12, fontWeight: "600", color: "#6B7280" }}>
                   Match Request Declined
                 </Text>
               </View>
             ) : (
-              <View style={{ flexDirection: "row", gap: 8, marginTop: 8 }}>
+              <View style={{ flexDirection: "row", gap: 8, marginTop: 8, maxWidth: 300 }}>
                 <TouchableOpacity
                   onPress={() => handleAcceptInline(item)}
                   disabled={isBusy}
@@ -904,18 +1118,18 @@ export default function NotificationsScreen() {
                   style={{
                     flex: 1,
                     backgroundColor: "#1A6B3C",
-                    paddingVertical: 7,
-                    paddingHorizontal: 10,
-                    borderRadius: 10,
+                    paddingVertical: 7.5,
+                    paddingHorizontal: 12,
+                    borderRadius: 12,
                     flexDirection: "row",
                     alignItems: "center",
                     justifyContent: "center",
-                    gap: 4,
+                    gap: 5,
                     opacity: isBusy ? 0.6 : 1,
                   }}
                 >
-                  <Check size={13} color="#FFFFFF" />
-                  <Text style={{ fontSize: 12, fontWeight: "700", color: "#FFFFFF" }}>
+                  <Check size={13} color="#FFFFFF" strokeWidth={2.5} />
+                  <Text style={{ fontSize: 12, fontFamily: "PlusJakartaSans-Bold", color: "#FFFFFF" }}>
                     {isBusy ? "Accepting..." : "Accept Request"}
                   </Text>
                 </TouchableOpacity>
@@ -927,13 +1141,13 @@ export default function NotificationsScreen() {
                   style={{
                     flex: 1,
                     backgroundColor: "#F3F4F6",
-                    paddingVertical: 7,
-                    paddingHorizontal: 10,
-                    borderRadius: 10,
+                    paddingVertical: 7.5,
+                    paddingHorizontal: 12,
+                    borderRadius: 12,
                     flexDirection: "row",
                     alignItems: "center",
                     justifyContent: "center",
-                    gap: 4,
+                    gap: 5,
                     borderWidth: 1,
                     borderColor: "#E5E7EB",
                     opacity: isBusy ? 0.6 : 1,
@@ -946,15 +1160,69 @@ export default function NotificationsScreen() {
                 </TouchableOpacity>
               </View>
             )
+          ) : isFollower && !isFollowDismissed ? (
+            /* New Follower Follow-back CTAs */
+            <View style={{ flexDirection: "row", gap: 8, marginTop: 8, maxWidth: 260 }}>
+              <TouchableOpacity
+                onPress={() => handleFollowBackInline(item)}
+                disabled={isFollowBusy}
+                activeOpacity={0.7}
+                style={{
+                  flex: 1,
+                  backgroundColor: "#1A6B3C",
+                  paddingVertical: 7.5,
+                  paddingHorizontal: 12,
+                  borderRadius: 12,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 5,
+                  opacity: isFollowBusy ? 0.6 : 1,
+                }}
+              >
+                {isFollowBusy ? (
+                  <ActivityIndicator size="small" color="#FFFFFF" />
+                ) : (
+                  <UserPlus size={13} color="#FFFFFF" strokeWidth={2.5} />
+                )}
+                <Text style={{ fontSize: 12, fontFamily: "PlusJakartaSans-Bold", color: "#FFFFFF" }}>
+                  {isFollowBusy ? "Checking..." : "Follow Back"}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => handleDismissFollowCta(item.id)}
+                disabled={isFollowBusy}
+                activeOpacity={0.7}
+                style={{
+                  backgroundColor: "#F3F4F6",
+                  paddingVertical: 7.5,
+                  paddingHorizontal: 12,
+                  borderRadius: 12,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 4,
+                  borderWidth: 1,
+                  borderColor: "#E5E7EB",
+                  opacity: isFollowBusy ? 0.6 : 1,
+                }}
+              >
+                <X size={13} color="#4B5563" />
+                <Text style={{ fontSize: 12, fontWeight: "600", color: "#4B5563" }}>
+                  Close
+                </Text>
+              </TouchableOpacity>
+            </View>
           ) : (
             Boolean(subtext) && (
               <Text
                 style={{
-                  fontSize: 13.5,
+                  fontFamily: "PlusJakartaSans",
+                  fontSize: 13,
                   color: isUnread ? "#4B5563" : "#6B7280",
                   marginTop: 3,
-                  lineHeight: 19,
-                  fontWeight: "400",
+                  lineHeight: 18,
                 }}
                 numberOfLines={2}
               >
@@ -964,12 +1232,12 @@ export default function NotificationsScreen() {
           )}
         </View>
 
-        {/* Right side: Top-right justified time & status badges, no arrow icon */}
+        {/* Right side: Timestamp & Unread Dot (No Reply button) */}
         <View
           style={{
             alignItems: "flex-end",
             alignSelf: "flex-start",
-            paddingTop: 2,
+            paddingTop: 1,
             gap: 6,
             flexShrink: 0,
           }}
@@ -979,259 +1247,281 @@ export default function NotificationsScreen() {
               fontSize: 11,
               fontWeight: "500",
               color: "#9CA3AF",
+              fontFamily: "PlusJakartaSans",
             }}
           >
             {formatTimestamp(item.created_at || item.timestamp)}
           </Text>
 
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-            {(item.type === "comment" ||
-              item.type === "post_comment" ||
-              item.type === "comment_reply" ||
-              item.type === "comment_mention") && (
-              <TouchableOpacity
-                onPress={() => handleTapNotification(item)}
-                hitSlop={8}
-                activeOpacity={0.7}
-                style={{
-                  backgroundColor: "rgba(26, 107, 60, 0.08)",
-                  paddingHorizontal: 8,
-                  paddingVertical: 3.5,
-                  borderRadius: 10,
-                  flexDirection: "row",
-                  alignItems: "center",
-                  gap: 3,
-                }}
-              >
-                <Reply size={11} color="#1A6B3C" />
-                <Text style={{ fontSize: 11, fontWeight: "700", color: "#1A6B3C" }}>
-                  Reply
-                </Text>
-              </TouchableOpacity>
-            )}
-
-            {isUnread && (
-              <View
-                style={{
-                  width: 7,
-                  height: 7,
-                  borderRadius: 4,
-                  backgroundColor: "#1A6B3C",
-                }}
-              />
-            )}
-          </View>
+          {isUnread && (
+            <View
+              style={{
+                width: 7,
+                height: 7,
+                borderRadius: 4,
+                backgroundColor: "#1A6B3C",
+              }}
+            />
+          )}
         </View>
       </TouchableOpacity>
     );
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: "#F9FAFB", paddingTop: insets.top }}>
-      {/* ═══ Header Bar ═══ */}
+    <View style={{ flex: 1, backgroundColor: "#FFFFFF" }}>
+      {/* ═══ Top Sticky Header with Seamless Transparent Blend (No Hard Divider) ═══ */}
       <View
         style={{
-          backgroundColor: "#FFFFFF",
-          borderBottomWidth: 1,
-          borderBottomColor: "#E5E7EB",
-          paddingHorizontal: 20,
-          paddingTop: 14,
-          paddingBottom: 12,
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          zIndex: 20,
         }}
+        pointerEvents="box-none"
       >
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-          <Text
+        {/* Solid Header Content Bar */}
+        <View
+          style={{
+            backgroundColor: "#FFFFFF",
+            paddingHorizontal: 16,
+            paddingTop: insets.top + 8,
+            paddingBottom: 8,
+            position: "relative",
+            minHeight: insets.top + 48,
+            justifyContent: "center",
+          }}
+        >
+          {/* Centered Notification Label + Badge + Filter */}
+          <View
             style={{
-              fontFamily: "Fraunces_700Bold",
-              fontSize: 24,
-              color: "#1A6B3C",
-              letterSpacing: -0.5,
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 8,
             }}
           >
-            Notifications
-          </Text>
-          {unreadCount > 0 && (
-            <View
+            <Text
               style={{
-                backgroundColor: "#1A6B3C",
-                paddingHorizontal: 8,
-                paddingVertical: 2,
-                borderRadius: 10,
+                fontFamily: "Fraunces_700Bold",
+                fontSize: 24,
+                color: "#1A6B3C",
+                letterSpacing: -0.5,
               }}
             >
-              <Text style={{ fontSize: 11, fontWeight: "800", color: "#FFFFFF" }}>
-                {unreadCount}
-              </Text>
-            </View>
-          )}
-        </View>
+              Notification
+            </Text>
 
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-          {unreadCount > 0 && (
-            <TouchableOpacity
-              onPress={handleMarkAllRead}
-              hitSlop={8}
-              activeOpacity={0.7}
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                gap: 4,
-                backgroundColor: "rgba(26,107,60,0.08)",
-                paddingHorizontal: 10,
-                paddingVertical: 6,
-                borderRadius: 12,
-              }}
-            >
-              <CheckCheck size={14} color="#1A6B3C" />
-              <Text style={{ fontSize: 11, fontWeight: "700", color: "#1A6B3C" }}>
-                Read All
-              </Text>
-            </TouchableOpacity>
-          )}
+            {unreadCount > 0 && (
+              <View
+                style={{
+                  backgroundColor: "#1A6B3C",
+                  paddingHorizontal: 8,
+                  paddingVertical: 2,
+                  borderRadius: 12,
+                }}
+              >
+                <Text style={{ fontSize: 11, fontWeight: "800", color: "#FFFFFF" }}>
+                  {unreadCount}
+                </Text>
+              </View>
+            )}
 
-          {notifications.length > 0 && (
+            {/* Borderless circular filter icon button */}
             <TouchableOpacity
-              onPress={handleClearAll}
+              onPress={() => setShowFilterDropdown(true)}
               hitSlop={8}
               activeOpacity={0.7}
               style={{
                 width: 32,
                 height: 32,
-                borderRadius: 10,
-                backgroundColor: "#F3F4F6",
+                borderRadius: 16,
                 alignItems: "center",
                 justifyContent: "center",
+                position: "relative",
               }}
             >
-              <Trash2 size={16} color="#6B7280" />
+              <Filter size={17} color="#1A6B3C" strokeWidth={2.2} />
+              {activeFilter !== "all" && (
+                <View
+                  style={{
+                    position: "absolute",
+                    top: 4,
+                    right: 4,
+                    width: 7,
+                    height: 7,
+                    borderRadius: 4,
+                    backgroundColor: "#1A6B3C",
+                    borderWidth: 1.5,
+                    borderColor: "#FFFFFF",
+                  }}
+                />
+              )}
             </TouchableOpacity>
-          )}
-        </View>
-      </View>
+          </View>
 
-      {/* ═══ Category Segment Filter Tabs & view all match request ═══ */}
-      <View
-        style={{
-          backgroundColor: "#FFFFFF",
-          borderBottomWidth: 1,
-          borderBottomColor: "#E5E7EB",
-          paddingVertical: 10,
-          paddingHorizontal: 16,
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
-          gap: 8,
-        }}
-      >
-        {/* Filter Dropdown Button */}
-        <TouchableOpacity
-          onPress={() => setShowFilterDropdown(true)}
-          hitSlop={6}
-          activeOpacity={0.7}
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 6,
-            backgroundColor: "#F3F4F6",
-            paddingHorizontal: 11,
-            paddingVertical: 6,
-            borderRadius: 12,
-            borderWidth: 1,
-            borderColor: "#E5E7EB",
-          }}
-        >
-          <Filter size={13} color="#1A6B3C" />
-          <Text style={{ fontSize: 12, fontWeight: "700", color: "#111827", textTransform: "capitalize" }}>
-            {activeFilter}
-          </Text>
+          {/* Right aligned action buttons */}
           <View
             style={{
-              backgroundColor: "rgba(26,107,60,0.1)",
-              paddingHorizontal: 6,
-              paddingVertical: 1,
-              borderRadius: 8,
+              position: "absolute",
+              right: 16,
+              top: insets.top + 8,
+              bottom: 8,
+              flexDirection: "row",
+              alignItems: "center",
+              gap: 6,
             }}
           >
-            <Text style={{ fontSize: 10, fontWeight: "700", color: "#1A6B3C" }}>
-              {categoryCounts[activeFilter] ?? 0}
-            </Text>
-          </View>
-          <ChevronDown size={13} color="#6B7280" />
-        </TouchableOpacity>
+            {unreadCount > 0 && (
+              <TouchableOpacity
+                onPress={handleMarkAllRead}
+                hitSlop={6}
+                activeOpacity={0.7}
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 4,
+                  backgroundColor: "rgba(26,107,60,0.08)",
+                  paddingHorizontal: 9,
+                  paddingVertical: 5,
+                  borderRadius: 10,
+                }}
+              >
+                <CheckCheck size={13} color="#1A6B3C" strokeWidth={2.5} />
+                <Text style={{ fontSize: 11, fontFamily: "PlusJakartaSans-Bold", color: "#1A6B3C" }}>
+                  Read All
+                </Text>
+              </TouchableOpacity>
+            )}
 
-        {/* "view all match request" Link */}
-        <TouchableOpacity
-          onPress={() => router.push("/pages/requests" as any)}
-          hitSlop={6}
-          activeOpacity={0.7}
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 2,
-          }}
-        >
-          <Text
-            style={{
-              fontSize: 12,
-              fontWeight: "700",
-              color: "#1A6B3C",
-            }}
-          >
-            view all match request
-          </Text>
-          <ChevronRight size={13} color="#1A6B3C" />
-        </TouchableOpacity>
+            {notifications.length > 0 && (
+              <TouchableOpacity
+                onPress={handleClearAll}
+                hitSlop={6}
+                activeOpacity={0.7}
+                style={{
+                  width: 30,
+                  height: 30,
+                  borderRadius: 10,
+                  backgroundColor: "#F3F4F6",
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Trash2 size={14} color="#6B7280" />
+              </TouchableOpacity>
+            )}
+          </View>
+        </View>
+
+        {/* Seamless Transparent Gradient Blend: Smoothly dissolves scrolling content */}
+        <LinearGradient
+          colors={["#FFFFFF", "rgba(255, 255, 255, 0.9)", "rgba(255, 255, 255, 0.4)", "rgba(255, 255, 255, 0)"]}
+          style={{ height: 28, width: "100%" }}
+          pointerEvents="none"
+        />
       </View>
 
       {/* ═══ Content List ═══ */}
       <ScrollView
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#1A6B3C" />
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={onRefresh}
+            tintColor="#1A6B3C"
+            progressViewOffset={insets.top + 48}
+          />
         }
-        contentContainerStyle={{ paddingBottom: 40 }}
+        contentContainerStyle={{
+          paddingTop: insets.top + 54,
+          paddingBottom: 40,
+        }}
+        style={{ flex: 1, backgroundColor: "#FFFFFF" }}
       >
-
         {loading ? (
-          <View style={{ padding: 20, gap: 16 }}>
-            {[1, 2, 3, 4].map((i) => (
+          <View style={{ padding: 16, gap: 14 }}>
+            {[1, 2, 3, 4, 5].map((i) => (
               <View
                 key={i}
                 style={{
-                  height: 64,
-                  borderRadius: 16,
-                  backgroundColor: "#E5E7EB",
-                  opacity: 0.5,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  gap: 12,
+                  paddingVertical: 10,
                 }}
-              />
+              >
+                <View
+                  style={{
+                    width: 44,
+                    height: 44,
+                    borderRadius: 22,
+                    backgroundColor: "#E5E7EB",
+                    opacity: 0.6,
+                  }}
+                />
+                <View style={{ flex: 1, gap: 8 }}>
+                  <View
+                    style={{
+                      height: 14,
+                      width: "45%",
+                      borderRadius: 7,
+                      backgroundColor: "#E5E7EB",
+                      opacity: 0.6,
+                    }}
+                  />
+                  <View
+                    style={{
+                      height: 12,
+                      width: "70%",
+                      borderRadius: 6,
+                      backgroundColor: "#F3F4F6",
+                      opacity: 0.8,
+                    }}
+                  />
+                </View>
+              </View>
             ))}
           </View>
         ) : filteredNotifications.length === 0 ? (
-          <View style={{ padding: 40, alignItems: "center", justifyContent: "center" }}>
+          <View style={{ padding: 48, alignItems: "center", justifyContent: "center" }}>
             <View
               style={{
-                width: 64,
-                height: 64,
+                width: 68,
+                height: 68,
                 borderRadius: 24,
-                backgroundColor: "rgba(26,107,60,0.1)",
+                backgroundColor: "rgba(26,107,60,0.08)",
                 alignItems: "center",
                 justifyContent: "center",
                 marginBottom: 16,
               }}
             >
-              <Bell size={28} color="#1A6B3C" />
+              <Bell size={30} color="#1A6B3C" />
             </View>
-            <Text style={{ fontFamily: "Fraunces_700Bold", fontSize: 18, color: "#111827", marginBottom: 6 }}>
+            <Text
+              style={{
+                fontFamily: "Fraunces_700Bold",
+                fontSize: 18,
+                color: "#111827",
+                marginBottom: 6,
+              }}
+            >
               You're all caught up! 🎉
             </Text>
-            <Text style={{ fontSize: 13, color: "#6B7280", textAlign: "center" }}>
+            <Text
+              style={{
+                fontFamily: "PlusJakartaSans",
+                fontSize: 13,
+                color: "#6B7280",
+                textAlign: "center",
+                lineHeight: 18,
+              }}
+            >
               New likes, comments, and connection requests will appear here.
             </Text>
           </View>
         ) : (
-          <View style={{ marginTop: 8 }}>
+          <View style={{ paddingBottom: 40 }}>
             {[
               { key: "today", label: "Today", items: todayList },
               { key: "earlier", label: "Earlier", items: earlierList },
@@ -1240,34 +1530,42 @@ export default function NotificationsScreen() {
             ]
               .filter((sec) => sec.items.length > 0)
               .map((sec, secIdx) => (
-                <View key={sec.key} style={{ marginTop: secIdx > 0 ? 12 : 0 }}>
+                <View key={sec.key}>
+                  {/* Web-style sleek centered horizontal divider */}
                   <View
                     style={{
-                      backgroundColor: "#F3F4F6",
-                      paddingHorizontal: 20,
-                      paddingVertical: 6,
-                      borderBottomWidth: 1,
-                      borderBottomColor: "#E5E7EB",
-                      flexDirection: "row",
+                      position: "relative",
                       alignItems: "center",
-                      justifyContent: "space-between",
+                      justifyContent: "center",
+                      marginTop: secIdx === 0 ? 12 : 20,
+                      marginBottom: 8,
+                      paddingHorizontal: 16,
                     }}
                   >
-                    <Text
+                    <View
                       style={{
-                        fontSize: 10,
-                        fontWeight: "800",
-                        color: "#6B7280",
-                        letterSpacing: 1.2,
-                        textTransform: "uppercase",
+                        position: "absolute",
+                        left: 16,
+                        right: 16,
+                        height: 1,
+                        backgroundColor: "#F3F4F6",
                       }}
-                    >
-                      {sec.label}
-                    </Text>
-                    <Text style={{ fontSize: 10, fontWeight: "700", color: "#9CA3AF" }}>
-                      {sec.items.length}
-                    </Text>
+                    />
+                    <View style={{ backgroundColor: "#FFFFFF", paddingHorizontal: 12 }}>
+                      <Text
+                        style={{
+                          fontFamily: "PlusJakartaSans-Bold",
+                          fontSize: 10.5,
+                          color: "#9CA3AF",
+                          letterSpacing: 1.5,
+                          textTransform: "uppercase",
+                        }}
+                      >
+                        {sec.label}
+                      </Text>
+                    </View>
                   </View>
+
                   <View style={{ backgroundColor: "#FFFFFF" }}>
                     {sec.items.map((item, idx) => renderRow(item, `${sec.key}-${item.id || idx}`))}
                   </View>
@@ -1286,7 +1584,8 @@ export default function NotificationsScreen() {
           </View>
         )}
       </ScrollView>
-      {/* ═══ Filter Dropdown Modal ═══ */}
+
+      {/* ═══ Filter Dropdown Modal (Matching Web Filter Popover) ═══ */}
       <Modal
         visible={showFilterDropdown}
         transparent
@@ -1298,26 +1597,47 @@ export default function NotificationsScreen() {
             flex: 1,
             backgroundColor: "rgba(0,0,0,0.3)",
             justifyContent: "flex-start",
-            paddingTop: insets.top + 105,
-            paddingHorizontal: 16,
+            alignItems: "center",
+            paddingTop: insets.top + 52,
           }}
           onPress={() => setShowFilterDropdown(false)}
         >
           <View
             style={{
               backgroundColor: "#FFFFFF",
-              borderRadius: 16,
-              padding: 8,
+              borderRadius: 18,
+              padding: 6,
               borderWidth: 1,
               borderColor: "#E5E7EB",
               shadowColor: "#000",
-              shadowOffset: { width: 0, height: 4 },
-              shadowOpacity: 0.1,
-              shadowRadius: 10,
-              elevation: 5,
-              width: 200,
+              shadowOffset: { width: 0, height: 6 },
+              shadowOpacity: 0.12,
+              shadowRadius: 14,
+              elevation: 8,
+              width: 220,
             }}
           >
+            <View
+              style={{
+                paddingHorizontal: 12,
+                paddingVertical: 6,
+                borderBottomWidth: 1,
+                borderBottomColor: "#F3F4F6",
+                marginBottom: 2,
+              }}
+            >
+              <Text
+                style={{
+                  fontSize: 10,
+                  fontFamily: "PlusJakartaSans-Bold",
+                  color: "#9CA3AF",
+                  textTransform: "uppercase",
+                  letterSpacing: 1.2,
+                }}
+              >
+                Filter by
+              </Text>
+            </View>
             {[
               { id: "all", label: "All", count: categoryCounts.all },
               { id: "unread", label: "Unread", count: categoryCounts.unread },
@@ -1340,22 +1660,22 @@ export default function NotificationsScreen() {
                     flexDirection: "row",
                     alignItems: "center",
                     justifyContent: "space-between",
-                    paddingVertical: 10,
-                    paddingHorizontal: 12,
-                    borderRadius: 10,
+                    paddingVertical: 9,
+                    paddingHorizontal: 10,
+                    borderRadius: 12,
                     backgroundColor: isSelected ? "rgba(26,107,60,0.08)" : "transparent",
                   }}
                 >
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                     {isSelected ? (
-                      <Check size={14} color="#1A6B3C" />
+                      <Check size={14} color="#1A6B3C" strokeWidth={2.5} />
                     ) : (
                       <View style={{ width: 14 }} />
                     )}
                     <Text
                       style={{
-                        fontSize: 13,
-                        fontWeight: isSelected ? "700" : "500",
+                        fontSize: 12.5,
+                        fontFamily: isSelected ? "PlusJakartaSans-Bold" : "PlusJakartaSans",
                         color: isSelected ? "#1A6B3C" : "#374151",
                       }}
                     >
@@ -1365,15 +1685,15 @@ export default function NotificationsScreen() {
                   <View
                     style={{
                       backgroundColor: isSelected ? "#1A6B3C" : "#F3F4F6",
-                      paddingHorizontal: 6,
-                      paddingVertical: 1,
+                      paddingHorizontal: 7,
+                      paddingVertical: 2,
                       borderRadius: 10,
                     }}
                   >
                     <Text
                       style={{
                         fontSize: 10,
-                        fontWeight: "700",
+                        fontFamily: "PlusJakartaSans-Bold",
                         color: isSelected ? "#FFFFFF" : "#6B7280",
                       }}
                     >

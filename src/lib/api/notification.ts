@@ -140,3 +140,7 @@ export function markTargetNotificationsRead(targetId: string, accessToken: strin
 export function clearAllNotifications(accessToken: string): Promise<void> {
   return apiRequest<void>("/notifications", { method: "DELETE", accessToken, noContent: true });
 }
+
+export function deleteNotification(id: string, accessToken: string): Promise<void> {
+  return apiRequest<void>(`/notifications/${id}`, { method: "DELETE", accessToken, noContent: true });
+}

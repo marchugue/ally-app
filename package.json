@@ -4,9 +4,9 @@
   "version": "1.0.0",
   "scripts": {
     "start": "expo start --dev-client",
-    "dev:fast": "adb reverse tcp:8081 tcp:8081 2>/dev/null || true; adb reverse tcp:3001 tcp:3001 2>/dev/null || true; EXPO_PUBLIC_API_URL=http://localhost:3001 expo start --go --localhost",
-    "dev:local": "adb reverse tcp:8081 tcp:8081 2>/dev/null || true; adb reverse tcp:3001 tcp:3001 2>/dev/null || true; EXPO_PUBLIC_API_URL=http://localhost:3001 expo start --dev-client --localhost",
-    "dev:usb": "adb reverse tcp:8081 tcp:8081 2>/dev/null || true; adb reverse tcp:3001 tcp:3001 2>/dev/null || true; EXPO_PUBLIC_API_URL=http://localhost:3001 expo start --dev-client --localhost",
+    "dev:fast": "adb reverse tcp:8081 tcp:8081 2>/dev/null || true; adb reverse tcp:3001 tcp:3001 2>/dev/null || true; adb reverse tcp:5174 tcp:5174 2>/dev/null || true; EXPO_PUBLIC_API_URL=http://localhost:3001 expo start --go --localhost",
+    "dev:local": "adb reverse tcp:8081 tcp:8081 2>/dev/null || true; adb reverse tcp:3001 tcp:3001 2>/dev/null || true; adb reverse tcp:5174 tcp:5174 2>/dev/null || true; EXPO_PUBLIC_API_URL=http://localhost:3001 expo start --dev-client --localhost",
+    "dev:usb": "adb reverse tcp:8081 tcp:8081 2>/dev/null || true; adb reverse tcp:3001 tcp:3001 2>/dev/null || true; adb reverse tcp:5174 tcp:5174 2>/dev/null || true; EXPO_PUBLIC_API_URL=http://localhost:3001 expo start --dev-client --localhost",
     "dev:lan": "expo start --dev-client",
     "dev:prod": "EXPO_PUBLIC_API_URL=https://ally-jisbackend-production.up.railway.app expo start --dev-client",
     "prod": "EXPO_PUBLIC_API_URL=https://ally-jisbackend-production.up.railway.app expo start --dev-client",
@@ -56,6 +56,7 @@
     "react-native-safe-area-context": "~5.7.0",
     "react-native-screens": "~4.26.0",
     "react-native-svg": "15.15.4",
+    "react-native-webview": "13.16.1",
     "react-native-worklets": "0.10.1",
     "socket.io-client": "^4.8.3",
     "tailwindcss": "^3.4.14"

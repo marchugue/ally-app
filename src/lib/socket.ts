@@ -1,5 +1,6 @@
 import { io, Socket } from "socket.io-client";
 import { API_BASE_URL } from "@/constants";
+import { notifySessionExpired } from "./api/client";
 
 // Socket.io attaches to the HTTP server root — strip a trailing /api if present.
 const SOCKET_URL = API_BASE_URL.replace(/\/api\/?$/, "").replace(/\/$/, "");
@@ -29,6 +30,11 @@ export function getSocket(accessToken?: string | null): Socket | null {
       autoConnect: true,
       reconnection: true,
       transports: ["websocket", "polling"],
+    });
+
+    socket.on("auth:revoked", (payload: any) => {
+      console.warn("[MobileSocket] Session revoked by server:", payload);
+      notifySessionExpired();
     });
   }
 

@@ -1,47 +1,59 @@
+// 1. React & React Native
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
-  View,
-  Text,
-  Pressable,
-  ScrollView,
-  Linking,
-  Alert,
-  Switch,
-  Modal,
-  TextInput,
   ActivityIndicator,
+  Alert,
+  Animated,
+  Linking,
+  Modal,
+  ScrollView,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
+
+// 2. Navigation & Safe Area
 import { router } from "expo-router";
-import {
-  ArrowLeft,
-  ChevronRight,
-  Pencil,
-  Lock,
-  Ban,
-  Trash2,
-  LogOut,
-  Shield,
-  Info,
-  RotateCw,
-  Flame,
-  MessageSquare,
-  Bell,
-  UserCheck,
-  Smartphone,
-  Clock,
-  Check,
-  Volume2,
-  Eye,
-  EyeOff,
-  ShieldCheck,
-  History,
-} from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useState, useEffect, useCallback } from "react";
+
+// 3. Storage & Context
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useAuth } from "@/lib/auth/AuthContext";
 import { useNetwork } from "@/context/NetworkContext";
-import { getMyPreferences, updateMyPreferences } from "@/lib/api/profiles";
+
+// 4. API & Types
 import { changePassword } from "@/lib/api/auth";
-import type { UserPreferences, UpdateUserPreferencesPayload } from "@/types/profile";
+import { getMyPreferences, updateMyPreferences } from "@/lib/api/profiles";
+import type { UpdateUserPreferencesPayload, UserPreferences } from "@/types/profile";
+
+// 5. Icons
+import {
+  ArrowLeft,
+  Ban,
+  Bell,
+  Check,
+  ChevronRight,
+  CircleHelp,
+  ExternalLink,
+  Eye,
+  EyeOff,
+  Flame,
+  History,
+  Key,
+  Lock,
+  Pencil,
+  RotateCw,
+  Shield,
+  ShieldCheck,
+  Smartphone,
+  Sun,
+  Trash2,
+  UserCheck,
+  Volume2,
+} from "lucide-react-native";
+
+// 6. Components
 import { ConfirmModal } from "@/components/ConfirmModal";
 
 const DEFAULT_PREFERENCES: UserPreferences = {
@@ -86,6 +98,15 @@ export default function SettingsScreen() {
   const [deleting, setDeleting] = useState(false);
   const [checkingUpdate, setCheckingUpdate] = useState(false);
 
+  // Help & FAQ modal
+  const [showHelpModal, setShowHelpModal] = useState(false);
+
+  // Privacy Controls Modal
+  const [showPrivacyModal, setShowPrivacyModal] = useState(false);
+
+  // Dark Mode state (preview feature)
+  const [darkMode, setDarkMode] = useState(false);
+
   // Change password modal state
   const [showPasswordModal, setShowPasswordModal] = useState(false);
   const [currentPass, setCurrentPass] = useState("");
@@ -106,8 +127,14 @@ export default function SettingsScreen() {
     onSelect: (val: any) => void;
   } | null>(null);
 
-  // Fetch preferences on mount
+  // Load dark mode state & preferences on mount
   useEffect(() => {
+    AsyncStorage.getItem("ally_dark_mode")
+      .then((val) => {
+        if (val === "true") setDarkMode(true);
+      })
+      .catch(() => {});
+
     if (!accessToken) return;
     getMyPreferences(accessToken)
       .then((data) => {
@@ -129,14 +156,36 @@ export default function SettingsScreen() {
       } catch (err: any) {
         console.warn("[Settings] Failed to save preference:", err);
         Alert.alert("Error", "Could not save settings. Please try again.");
-        // Rollback
-        getMyPreferences(accessToken).then((data) => {
-          if (data) setPreferences(data);
-        }).catch(() => {});
+        getMyPreferences(accessToken)
+          .then((data) => {
+            if (data) setPreferences(data);
+          })
+          .catch(() => {});
       }
     },
     [accessToken]
   );
+
+  const handleToggleDarkMode = async (val: boolean) => {
+    setDarkMode(val);
+    try {
+      await AsyncStorage.setItem("ally_dark_mode", val ? "true" : "false");
+    } catch {}
+    Alert.alert(
+      val ? "Dark Mode Enabled" : "Dark Mode Disabled",
+      val
+        ? "Dark mode theme preview has been toggled on."
+        : "Standard theme restored."
+    );
+  };
+
+  const handleOpenPermissions = async () => {
+    try {
+      await Linking.openSettings();
+    } catch {
+      Alert.alert("Permissions", "Please manage app permissions in your device settings.");
+    }
+  };
 
   const handleSignOut = async () => {
     setShowLogoutConfirm(false);
@@ -214,281 +263,492 @@ export default function SettingsScreen() {
     anonymous_only: "Always Post Anonymously",
   };
 
+  const currentVisibilityText = visibilityLabels[preferences.profile_visibility || "campus"] || "Campus Allies";
+  const currentFeedAudienceText = feedAudienceLabels[preferences.feed_post_audience || "campus"] || "Campus Public";
+
   return (
-    <View style={{ flex: 1, backgroundColor: "#F7F4EF" }}>
-      {/* Header */}
+    <View style={{ flex: 1, backgroundColor: "#F7F8FA" }}>
+      {/* Top Header with Back Navigation */}
       <View
         style={{
           paddingTop: insets.top + 8,
-          paddingBottom: 12,
-          paddingHorizontal: 16,
-          backgroundColor: "#FFFFFF",
-          borderBottomWidth: 1,
-          borderBottomColor: "#E2DED7",
+          paddingHorizontal: 20,
+          paddingBottom: 4,
           flexDirection: "row",
           alignItems: "center",
-          gap: 12,
+          justifyContent: "space-between",
         }}
       >
-        <Pressable onPress={() => router.back()} hitSlop={10}>
-          <ArrowLeft size={22} color="#111827" />
-        </Pressable>
-        <Text style={{ fontSize: 17, fontWeight: "700", color: "#111827" }}>
-          Settings
+        <TouchableOpacity
+          onPress={() => router.back()}
+          activeOpacity={0.7}
+          hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+          style={{
+            width: 38,
+            height: 38,
+            borderRadius: 19,
+            backgroundColor: "#FFFFFF",
+            alignItems: "center",
+            justifyContent: "center",
+            borderWidth: 1,
+            borderColor: "#E5E7EB",
+            shadowColor: "#000",
+            shadowOffset: { width: 0, height: 1 },
+            shadowOpacity: 0.05,
+            shadowRadius: 3,
+            elevation: 1,
+          }}
+        >
+          <ArrowLeft size={18} color="#111827" />
+        </TouchableOpacity>
+      </View>
+
+      {/* Large Page Title */}
+      <View style={{ paddingHorizontal: 20, paddingTop: 10, paddingBottom: 12 }}>
+        <Text
+          style={{
+            fontSize: 32,
+            fontFamily: "PlusJakartaSans-Bold",
+            color: "#111827",
+            letterSpacing: -0.6,
+          }}
+        >
+          Setting
         </Text>
       </View>
 
       <ScrollView
-        contentContainerStyle={{ paddingBottom: insets.bottom + 40 }}
+        contentContainerStyle={{
+          paddingHorizontal: 20,
+          paddingBottom: insets.bottom + 48,
+        }}
         showsVerticalScrollIndicator={false}
       >
-        {/* SECTION 1: ACCOUNT & PROFILE */}
-        <SectionHeader label="Account & Profile" />
-        <View style={{ backgroundColor: "#FFFFFF", borderTopWidth: 1, borderTopColor: "#EAE7E1", borderBottomWidth: 1, borderBottomColor: "#EAE7E1" }}>
-          {/* User Email & Verified Status */}
-          <View
+        {/* ── 1. ACCOUNT (ALWAYS ON TOP) ── */}
+        <SectionTitle title="Account" />
+
+        {/* User Account / Email */}
+        <SettingCard
+          icon={ShieldCheck}
+          title={user?.email ? user.email.split("@")[0] : "Verified Student"}
+          badgeText="Verified"
+          badgeColor="#1A6B3C"
+          badgeBgColor="rgba(26,107,60,0.1)"
+        />
+
+        {/* Edit Profile */}
+        <SettingCard
+          icon={Pencil}
+          title="Edit Profile"
+          onPress={() => router.push("/pages/edit-profile" as any)}
+        />
+
+        {/* Change Password */}
+        <SettingCard
+          icon={Key}
+          title="Change Password"
+          onPress={() => setShowPasswordModal(true)}
+        />
+
+        {/* ── 2. PRIVACY & SECURITY ── */}
+        <SectionTitle title="Privacy & Security" />
+
+        {/* Privacy Controls */}
+        <SettingCard
+          icon={Lock}
+          title="Privacy Controls"
+          onPress={() => setShowPrivacyModal(true)}
+        />
+
+        {/* Permissions */}
+        <SettingCard
+          icon={Shield}
+          title="Permissions"
+          onPress={handleOpenPermissions}
+        />
+
+        {/* Private Account */}
+        <SettingToggleCard
+          icon={EyeOff}
+          title="Private Account"
+          value={preferences.account_privacy === "private"}
+          onValueChange={(val) =>
+            handleUpdatePreference({ account_privacy: val ? "private" : "public" })
+          }
+        />
+
+        {/* Online Status */}
+        <SettingToggleCard
+          icon={Smartphone}
+          title="Online Status"
+          value={preferences.show_online_status}
+          onValueChange={(val) => handleUpdatePreference({ show_online_status: val })}
+        />
+
+        {/* Read Receipts */}
+        <SettingToggleCard
+          icon={UserCheck}
+          title="Read Receipts"
+          value={preferences.read_receipts_enabled}
+          onValueChange={(val) => handleUpdatePreference({ read_receipts_enabled: val })}
+        />
+
+        {/* Blocked Users */}
+        <SettingCard
+          icon={Ban}
+          title="Blocked Users"
+          onPress={() => router.push("/pages/blocked-users" as any)}
+        />
+
+        {/* Privacy Policy */}
+        <SettingCard
+          icon={ShieldCheck}
+          title="Privacy Policy"
+          onPress={() => Linking.openURL("https://ally-jis.com/privacy")}
+        />
+
+        {/* ── 3. APPEARANCE & ALERTS ── */}
+        <SectionTitle title="Appearance & Alerts" />
+
+        {/* Dark Mode */}
+        <SettingToggleCard
+          icon={Sun}
+          title="Dark Mode"
+          value={darkMode}
+          onValueChange={handleToggleDarkMode}
+        />
+
+        {/* Notifications */}
+        <SettingToggleCard
+          icon={Bell}
+          title="Notifications"
+          value={preferences.notify_chat_messages}
+          onValueChange={(val) => handleUpdatePreference({ notify_chat_messages: val })}
+        />
+
+        {/* Streak Reminders */}
+        <SettingToggleCard
+          icon={Flame}
+          title="Streak Reminders"
+          value={preferences.notify_streak_reminders}
+          onValueChange={(val) => handleUpdatePreference({ notify_streak_reminders: val })}
+        />
+
+        {/* In-App Sounds */}
+        <SettingToggleCard
+          icon={Volume2}
+          title="In-App Sounds"
+          value={preferences.notify_sound_enabled}
+          onValueChange={(val) => handleUpdatePreference({ notify_sound_enabled: val })}
+        />
+
+        {/* ── 4. SUPPORT ── */}
+        <SectionTitle title="Support" />
+
+        {/* Help & FAQ */}
+        <SettingCard
+          icon={CircleHelp}
+          title="Help & FAQ"
+          onPress={() => setShowHelpModal(true)}
+        />
+
+        {/* Activity Log */}
+        <SettingCard
+          icon={History}
+          title="Activity Log"
+          onPress={() => router.push("/pages/activity-log" as any)}
+        />
+
+        {/* Check for Updates */}
+        <SettingCard
+          icon={RotateCw}
+          title={checkingUpdate ? "Checking for updates…" : "Check for Updates"}
+          loading={checkingUpdate}
+          onPress={handleManualCheckForUpdates}
+        />
+
+        {/* ── 5. DANGER ZONE ── */}
+        <SectionTitle title="Danger Zone" />
+
+        {/* Delete Account */}
+        <SettingCard
+          icon={Trash2}
+          title="Delete Account Permanently"
+          destructive
+          onPress={() => setShowDeleteConfirm(true)}
+        />
+
+        {/* ── 6. SESSION / LOG OUT (CENTERED, NO BG PILL, RED LABEL ONLY) ── */}
+        <View style={{ marginTop: 22, alignItems: "center", justifyContent: "center" }}>
+          <TouchableOpacity
+            onPress={() => setShowLogoutConfirm(true)}
+            activeOpacity={0.7}
+            hitSlop={{ top: 12, bottom: 12, left: 24, right: 24 }}
             style={{
+              paddingVertical: 12,
               paddingHorizontal: 20,
-              paddingVertical: 14,
-              borderBottomWidth: 1,
-              borderBottomColor: "#F0EDE8",
-              flexDirection: "row",
               alignItems: "center",
-              justifyContent: "space-between",
+              justifyContent: "center",
             }}
           >
-            <View style={{ flex: 1, paddingRight: 12 }}>
-              <Text style={{ fontSize: 11, color: "#9CA3AF", fontWeight: "700", textTransform: "uppercase" }}>
-                Signed In Account
-              </Text>
-              <Text style={{ fontSize: 14, fontWeight: "600", color: "#111827", marginTop: 2 }}>
-                {user?.email || "Student Account"}
-              </Text>
-            </View>
-            <View style={{ flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: "rgba(26,107,60,0.1)", paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 }}>
-              <ShieldCheck size={14} color="#1A6B3C" />
-              <Text style={{ fontSize: 11, fontWeight: "700", color: "#1A6B3C" }}>
-                Verified
-              </Text>
-            </View>
-          </View>
-
-          <SettingsRow
-            icon={Pencil}
-            label="Edit Profile"
-            onPress={() => router.push("/pages/edit-profile" as any)}
-          />
-          <SettingsRow
-            icon={Lock}
-            label="Change Password"
-            onPress={() => setShowPasswordModal(true)}
-          />
+            <Text
+              style={{
+                fontSize: 16,
+                fontFamily: "PlusJakartaSans-Bold",
+                color: "#DC2626",
+                textAlign: "center",
+              }}
+            >
+              Log Out
+            </Text>
+          </TouchableOpacity>
         </View>
 
-        {/* SECTION 2: PRIVACY & SAFETY */}
-        <SectionHeader label="Privacy & Safety" />
-        <View style={{ backgroundColor: "#FFFFFF", borderTopWidth: 1, borderTopColor: "#EAE7E1", borderBottomWidth: 1, borderBottomColor: "#EAE7E1" }}>
-          <SettingsToggleRow
-            icon={Shield}
-            label="Private Account"
-            description="Only allies can see your posts. Your profile page stays reachable and anonymous to everyone else."
-            value={preferences.account_privacy === "private"}
-            onValueChange={(val) =>
-              handleUpdatePreference({ account_privacy: val ? "private" : "public" })
-            }
-          />
-
-          <SettingsToggleRow
-            icon={Smartphone}
-            label="Show Online Status"
-            description="Display the green active indicator when using the app."
-            value={preferences.show_online_status}
-            onValueChange={(val) => handleUpdatePreference({ show_online_status: val })}
-          />
-
-          <SettingsToggleRow
-            icon={Clock}
-            label="Show Last Active"
-            description="Show when you were last seen across chat headers."
-            value={preferences.show_last_active}
-            onValueChange={(val) => handleUpdatePreference({ show_last_active: val })}
-          />
-
-          <SettingsToggleRow
-            icon={UserCheck}
-            label="Read Receipts"
-            description="Allow chat partners to see when you've read messages."
-            value={preferences.read_receipts_enabled}
-            onValueChange={(val) => handleUpdatePreference({ read_receipts_enabled: val })}
-          />
-
-          <SettingsValueRow
-            label="Profile Visibility"
-            valueText={visibilityLabels[preferences.profile_visibility || "campus"] || "Campus Allies"}
-            onPress={() =>
-              setActivePicker({
-                title: "Profile Visibility",
-                description: "Control who can view your full bio and profile details.",
-                options: [
-                  { value: "campus", label: "Campus Allies", sublabel: "All verified students on campus" },
-                  { value: "matches_only", label: "Connected Friends Only", sublabel: "Only mutual connections" },
-                  { value: "hidden", label: "Hidden / Incognito", sublabel: "Hide profile from student listings" },
-                ],
-                selectedValue: preferences.profile_visibility || "campus",
-                onSelect: (val) => handleUpdatePreference({ profile_visibility: val }),
-              })
-            }
-          />
-
-          <SettingsValueRow
-            label="Default Feed Audience"
-            valueText={feedAudienceLabels[preferences.feed_post_audience || "campus"] || "Campus Public"}
-            onPress={() =>
-              setActivePicker({
-                title: "Default Feed Audience",
-                description: "Initial audience when drafting campus confessions.",
-                options: [
-                  { value: "campus", label: "Campus Public", sublabel: "Visible to all verified students" },
-                  { value: "matches_only", label: "Mutual Allies Only", sublabel: "Visible only to connected allies" },
-                  { value: "anonymous_only", label: "Always Anonymous", sublabel: "Mask your name and avatar" },
-                ],
-                selectedValue: preferences.feed_post_audience || "campus",
-                onSelect: (val) => handleUpdatePreference({ feed_post_audience: val }),
-              })
-            }
-          />
-
-          <SettingsRow
-            icon={Ban}
-            label="Blocked Users"
-            onPress={() => router.push("/pages/blocked-users" as any)}
-          />
-
-          <SettingsRow
-            icon={Shield}
-            label="Privacy Policy"
-            onPress={() => Linking.openURL("https://ally-jis.com/privacy")}
-          />
-        </View>
-
-        {/* SECTION 3: NOTIFICATIONS & ALERTS */}
-        <SectionHeader label="Notifications & Alerts" />
-        <View style={{ backgroundColor: "#FFFFFF", borderTopWidth: 1, borderTopColor: "#EAE7E1", borderBottomWidth: 1, borderBottomColor: "#EAE7E1" }}>
-          <SettingsToggleRow
-            icon={Flame}
-            label="Streak Reminders (10:00 PM)"
-            description="Daily notification reminder if your streak hasn't been activated."
-            value={preferences.notify_streak_reminders}
-            onValueChange={(val) => handleUpdatePreference({ notify_streak_reminders: val })}
-          />
-
-          <SettingsToggleRow
-            icon={MessageSquare}
-            label="Direct Chat Messages"
-            description="Push notifications for new chat messages."
-            value={preferences.notify_chat_messages}
-            onValueChange={(val) => handleUpdatePreference({ notify_chat_messages: val })}
-          />
-
-          <SettingsToggleRow
-            icon={Bell}
-            label="Match & Ally Requests"
-            description="Alerts when an Ally connection is requested."
-            value={preferences.notify_match_requests !== false}
-            onValueChange={(val) => handleUpdatePreference({ notify_match_requests: val })}
-          />
-
-          <SettingsToggleRow
-            icon={Bell}
-            label="Confessions & Feed Alerts"
-            description="Updates on reactions, replies, and trending campus posts."
-            value={preferences.notify_confessions !== false}
-            onValueChange={(val) => handleUpdatePreference({ notify_confessions: val })}
-          />
-
-          <SettingsToggleRow
-            icon={Volume2}
-            label="In-App Sound Effects"
-            description="Audio chimes for messages and interactions."
-            value={preferences.notify_sound_enabled}
-            onValueChange={(val) => handleUpdatePreference({ notify_sound_enabled: val })}
-          />
-
-          <SettingsToggleRow
-            icon={Clock}
-            label="Quiet Hours (Do Not Disturb)"
-            description="Mute push alerts between 10:00 PM and 7:00 AM."
-            value={preferences.quiet_hours_enabled}
-            onValueChange={(val) => handleUpdatePreference({ quiet_hours_enabled: val })}
-          />
-        </View>
-
-        {/* SECTION 4: ACTIVITY LOG */}
-        <SectionHeader label="Activity Log" />
-        <View style={{ backgroundColor: "#FFFFFF", borderTopWidth: 1, borderTopColor: "#EAE7E1", borderBottomWidth: 1, borderBottomColor: "#EAE7E1" }}>
-          <SettingsRow
-            icon={History}
-            label="Activity Log"
-            onPress={() => router.push("/pages/activity-log" as any)}
-          />
-        </View>
-
-        {/* SECTION 5: APP & DANGER ZONE */}
-        <SectionHeader label="App & Danger Zone" />
-        <View style={{ backgroundColor: "#FFFFFF", borderTopWidth: 1, borderTopColor: "#EAE7E1", borderBottomWidth: 1, borderBottomColor: "#EAE7E1" }}>
-          <SettingsRow
-            icon={RotateCw}
-            label={checkingUpdate ? "Checking for updates…" : "Check for Updates"}
-            onPress={handleManualCheckForUpdates}
-          />
-          <SettingsRow
-            icon={LogOut}
-            label="Log Out"
-            onPress={() => setShowLogoutConfirm(true)}
-          />
-          <SettingsRow
-            icon={Trash2}
-            label="Delete Account Permanently"
-            onPress={() => setShowDeleteConfirm(true)}
-            destructive
-          />
-        </View>
-
-        {/* About App Footer */}
-        <SectionHeader label="About" />
-        <View
-          style={{
-            backgroundColor: "#FFFFFF",
-            paddingHorizontal: 20,
-            paddingVertical: 14,
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 12,
-            borderTopWidth: 1,
-            borderTopColor: "#EAE7E1",
-            borderBottomWidth: 1,
-            borderBottomColor: "#EAE7E1",
-          }}
-        >
-          <Info size={18} color="#9CA3AF" />
-          <Text style={{ fontSize: 14, color: "#6B7280" }}>
-            Ally-jis v{currentVersion}
+        {/* App Footer Info */}
+        <View style={{ marginTop: 20, alignItems: "center" }}>
+          <Text
+            style={{
+              fontSize: 12,
+              fontFamily: "PlusJakartaSans",
+              color: "#9CA3AF",
+              textAlign: "center",
+              lineHeight: 18,
+            }}
+          >
+            Ally-jis v{currentVersion} • CHMSU Alijis Campus{"\n"}© 2026 Ally-jis. All rights reserved.
           </Text>
         </View>
-
-        <Text
-          style={{
-            fontSize: 11,
-            color: "#9CA3AF",
-            textAlign: "center",
-            marginTop: 24,
-            paddingHorizontal: 32,
-            lineHeight: 16,
-          }}
-        >
-          Made for CHMSU Alijis Campus students.{"\n"}© 2026 Ally-jis
-        </Text>
       </ScrollView>
+
+      {/* Privacy Controls Modal */}
+      <Modal
+        visible={showPrivacyModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowPrivacyModal(false)}
+      >
+        <TouchableOpacity
+          style={{
+            flex: 1,
+            backgroundColor: "rgba(0,0,0,0.5)",
+            justifyContent: "flex-end",
+          }}
+          activeOpacity={1}
+          onPress={() => setShowPrivacyModal(false)}
+        >
+          <View
+            style={{
+              backgroundColor: "#FFFFFF",
+              borderTopLeftRadius: 28,
+              borderTopRightRadius: 28,
+              paddingHorizontal: 22,
+              paddingTop: 24,
+              paddingBottom: insets.bottom + 24,
+            }}
+            onStartShouldSetResponder={() => true}
+          >
+            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
+              <Text style={{ fontSize: 19, fontFamily: "PlusJakartaSans-Bold", color: "#111827" }}>
+                Privacy Controls
+              </Text>
+              <TouchableOpacity
+                onPress={() => setShowPrivacyModal(false)}
+                activeOpacity={0.7}
+                hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                style={{ padding: 4 }}
+              >
+                <Text style={{ fontSize: 14, fontFamily: "PlusJakartaSans-Bold", color: "#6B7280" }}>
+                  Done
+                </Text>
+              </TouchableOpacity>
+            </View>
+            <Text style={{ fontSize: 13, fontFamily: "PlusJakartaSans", color: "#6B7280", marginBottom: 20 }}>
+              Manage how your profile and campus posts are visible to other students.
+            </Text>
+
+            {/* Profile Visibility Row */}
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => {
+                setShowPrivacyModal(false);
+                setTimeout(() => {
+                  setActivePicker({
+                    title: "Profile Visibility",
+                    description: "Control who can view your full bio and profile details.",
+                    options: [
+                      { value: "campus", label: "Campus Allies", sublabel: "All verified students on campus" },
+                      { value: "matches_only", label: "Connected Friends Only", sublabel: "Only mutual connections" },
+                      { value: "hidden", label: "Hidden / Incognito", sublabel: "Hide profile from student listings" },
+                    ],
+                    selectedValue: preferences.profile_visibility || "campus",
+                    onSelect: (val) => handleUpdatePreference({ profile_visibility: val }),
+                  });
+                }, 300);
+              }}
+              style={{
+                backgroundColor: "#F9F8F6",
+                borderRadius: 18,
+                padding: 16,
+                marginBottom: 12,
+                borderWidth: 1,
+                borderColor: "#EAE7E1",
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "space-between",
+              }}
+            >
+              <View style={{ flex: 1, paddingRight: 12 }}>
+                <Text style={{ fontSize: 14.5, fontFamily: "PlusJakartaSans-Bold", color: "#111827" }}>
+                  Profile Visibility
+                </Text>
+                <Text style={{ fontSize: 12.5, fontFamily: "PlusJakartaSans", color: "#1A6B3C", marginTop: 2 }}>
+                  {currentVisibilityText}
+                </Text>
+              </View>
+              <ChevronRight size={18} color="#9CA3AF" />
+            </TouchableOpacity>
+
+            {/* Default Feed Audience Row */}
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => {
+                setShowPrivacyModal(false);
+                setTimeout(() => {
+                  setActivePicker({
+                    title: "Default Feed Audience",
+                    description: "Initial audience when drafting campus confessions.",
+                    options: [
+                      { value: "campus", label: "Campus Public", sublabel: "Visible to all verified students" },
+                      { value: "matches_only", label: "Mutual Allies Only", sublabel: "Visible only to connected allies" },
+                      { value: "anonymous_only", label: "Always Anonymous", sublabel: "Mask your name and avatar" },
+                    ],
+                    selectedValue: preferences.feed_post_audience || "campus",
+                    onSelect: (val) => handleUpdatePreference({ feed_post_audience: val }),
+                  });
+                }, 300);
+              }}
+              style={{
+                backgroundColor: "#F9F8F6",
+                borderRadius: 18,
+                padding: 16,
+                borderWidth: 1,
+                borderColor: "#EAE7E1",
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "space-between",
+              }}
+            >
+              <View style={{ flex: 1, paddingRight: 12 }}>
+                <Text style={{ fontSize: 14.5, fontFamily: "PlusJakartaSans-Bold", color: "#111827" }}>
+                  Default Feed Audience
+                </Text>
+                <Text style={{ fontSize: 12.5, fontFamily: "PlusJakartaSans", color: "#1A6B3C", marginTop: 2 }}>
+                  {currentFeedAudienceText}
+                </Text>
+              </View>
+              <ChevronRight size={18} color="#9CA3AF" />
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      {/* Help & FAQ Modal */}
+      <Modal
+        visible={showHelpModal}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setShowHelpModal(false)}
+      >
+        <TouchableOpacity
+          style={{
+            flex: 1,
+            backgroundColor: "rgba(0,0,0,0.5)",
+            justifyContent: "center",
+            paddingHorizontal: 20,
+          }}
+          activeOpacity={1}
+          onPress={() => setShowHelpModal(false)}
+        >
+          <View
+            style={{
+              backgroundColor: "#FFFFFF",
+              borderRadius: 24,
+              padding: 22,
+              maxHeight: "80%",
+              shadowColor: "#000",
+              shadowOffset: { width: 0, height: 8 },
+              shadowOpacity: 0.15,
+              shadowRadius: 24,
+              elevation: 10,
+            }}
+            onStartShouldSetResponder={() => true}
+          >
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 12 }}>
+              <CircleHelp size={22} color="#1A6B3C" />
+              <Text style={{ fontSize: 18, fontFamily: "PlusJakartaSans-Bold", color: "#111827" }}>
+                Help & FAQ
+              </Text>
+            </View>
+
+            <ScrollView showsVerticalScrollIndicator={false} style={{ marginBottom: 16 }}>
+              <HelpItem
+                question="How does student matching work?"
+                answer="Ally-jis matches students using campus interests and study preferences. Chats begin anonymously and reveal progressively as you converse."
+              />
+              <HelpItem
+                question="How do streaks work?"
+                answer="Chat with your allies daily before midnight to maintain your streak flame! If inactive, your streak resets."
+              />
+              <HelpItem
+                question="Is my identity protected?"
+                answer="Yes! All confessions and initial chats keep your avatar and real name hidden until you choose to reveal yourself."
+              />
+              <HelpItem
+                question="How do I report inappropriate behavior?"
+                answer="Tap the three dots on any confession or chat header to block or report users immediately to campus moderation."
+              />
+            </ScrollView>
+
+            <View style={{ gap: 10 }}>
+              <TouchableOpacity
+                onPress={() => {
+                  setShowHelpModal(false);
+                  Linking.openURL("mailto:support@ally-jis.com?subject=Ally-jis%20Support%20Request");
+                }}
+                activeOpacity={0.7}
+                style={{
+                  backgroundColor: "#1A6B3C",
+                  borderRadius: 14,
+                  paddingVertical: 12,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: 8,
+                }}
+              >
+                <ExternalLink size={16} color="#FFFFFF" />
+                <Text style={{ fontSize: 14, fontFamily: "PlusJakartaSans-Bold", color: "#FFFFFF" }}>
+                  Contact Campus Support
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                onPress={() => setShowHelpModal(false)}
+                activeOpacity={0.7}
+                style={{
+                  paddingVertical: 10,
+                  alignItems: "center",
+                  justifyContent: "center",
+                }}
+              >
+                <Text style={{ fontSize: 13, fontFamily: "PlusJakartaSans-Bold", color: "#6B7280" }}>
+                  Close
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </TouchableOpacity>
+      </Modal>
 
       {/* Change Password Modal */}
       <Modal
@@ -497,19 +757,20 @@ export default function SettingsScreen() {
         animationType="fade"
         onRequestClose={() => setShowPasswordModal(false)}
       >
-        <Pressable
+        <TouchableOpacity
           style={{
             flex: 1,
             backgroundColor: "rgba(0,0,0,0.5)",
             justifyContent: "center",
-            paddingHorizontal: 24,
+            paddingHorizontal: 22,
           }}
+          activeOpacity={1}
           onPress={() => setShowPasswordModal(false)}
         >
-          <Pressable
+          <View
             style={{
               backgroundColor: "#FFFFFF",
-              borderRadius: 20,
+              borderRadius: 24,
               padding: 24,
               shadowColor: "#000",
               shadowOffset: { width: 0, height: 8 },
@@ -517,21 +778,21 @@ export default function SettingsScreen() {
               shadowRadius: 24,
               elevation: 12,
             }}
-            onPress={(e) => e.stopPropagation()}
+            onStartShouldSetResponder={() => true}
           >
             <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 4 }}>
               <Lock size={20} color="#1A6B3C" />
-              <Text style={{ fontSize: 18, fontWeight: "700", color: "#111827" }}>
+              <Text style={{ fontSize: 18, fontFamily: "PlusJakartaSans-Bold", color: "#111827" }}>
                 Change Password
               </Text>
             </View>
-            <Text style={{ fontSize: 12, color: "#6B7280", marginBottom: 18 }}>
+            <Text style={{ fontSize: 12.5, fontFamily: "PlusJakartaSans", color: "#6B7280", marginBottom: 18 }}>
               Ensure your account uses a strong password with at least 8 characters.
             </Text>
 
             <View style={{ gap: 14 }}>
               <View>
-                <Text style={{ fontSize: 11, fontWeight: "700", color: "#4B5563", marginBottom: 6, textTransform: "uppercase" }}>
+                <Text style={{ fontSize: 11, fontFamily: "PlusJakartaSans-Bold", color: "#4B5563", marginBottom: 6, textTransform: "uppercase" }}>
                   Current Password
                 </Text>
                 <View style={{ position: "relative" }}>
@@ -544,25 +805,27 @@ export default function SettingsScreen() {
                     style={{
                       borderWidth: 1,
                       borderColor: "#D1D5DB",
-                      borderRadius: 12,
+                      borderRadius: 14,
                       paddingHorizontal: 14,
-                      paddingVertical: 10,
+                      paddingVertical: 11,
                       paddingRight: 40,
                       fontSize: 14,
+                      fontFamily: "PlusJakartaSans",
                       color: "#111827",
                     }}
                   />
-                  <Pressable
+                  <TouchableOpacity
                     onPress={() => setShowPassText(!showPassText)}
+                    activeOpacity={0.7}
                     style={{ position: "absolute", right: 12, top: 12 }}
                   >
                     {showPassText ? <EyeOff size={18} color="#9CA3AF" /> : <Eye size={18} color="#9CA3AF" />}
-                  </Pressable>
+                  </TouchableOpacity>
                 </View>
               </View>
 
               <View>
-                <Text style={{ fontSize: 11, fontWeight: "700", color: "#4B5563", marginBottom: 6, textTransform: "uppercase" }}>
+                <Text style={{ fontSize: 11, fontFamily: "PlusJakartaSans-Bold", color: "#4B5563", marginBottom: 6, textTransform: "uppercase" }}>
                   New Password (min 8 chars)
                 </Text>
                 <TextInput
@@ -574,17 +837,18 @@ export default function SettingsScreen() {
                   style={{
                     borderWidth: 1,
                     borderColor: "#D1D5DB",
-                    borderRadius: 12,
+                    borderRadius: 14,
                     paddingHorizontal: 14,
-                    paddingVertical: 10,
+                    paddingVertical: 11,
                     fontSize: 14,
+                    fontFamily: "PlusJakartaSans",
                     color: "#111827",
                   }}
                 />
               </View>
 
               <View>
-                <Text style={{ fontSize: 11, fontWeight: "700", color: "#4B5563", marginBottom: 6, textTransform: "uppercase" }}>
+                <Text style={{ fontSize: 11, fontFamily: "PlusJakartaSans-Bold", color: "#4B5563", marginBottom: 6, textTransform: "uppercase" }}>
                   Confirm New Password
                 </Text>
                 <TextInput
@@ -596,10 +860,11 @@ export default function SettingsScreen() {
                   style={{
                     borderWidth: 1,
                     borderColor: "#D1D5DB",
-                    borderRadius: 12,
+                    borderRadius: 14,
                     paddingHorizontal: 14,
-                    paddingVertical: 10,
+                    paddingVertical: 11,
                     fontSize: 14,
+                    fontFamily: "PlusJakartaSans",
                     color: "#111827",
                   }}
                 />
@@ -607,8 +872,9 @@ export default function SettingsScreen() {
             </View>
 
             <View style={{ flexDirection: "row", justifyContent: "flex-end", gap: 10, marginTop: 24 }}>
-              <Pressable
+              <TouchableOpacity
                 onPress={() => setShowPasswordModal(false)}
+                activeOpacity={0.7}
                 style={{
                   paddingHorizontal: 16,
                   paddingVertical: 10,
@@ -617,14 +883,15 @@ export default function SettingsScreen() {
                   borderColor: "#E5E7EB",
                 }}
               >
-                <Text style={{ fontSize: 13, fontWeight: "600", color: "#4B5563" }}>
+                <Text style={{ fontSize: 13, fontFamily: "PlusJakartaSans-Bold", color: "#4B5563" }}>
                   Cancel
                 </Text>
-              </Pressable>
+              </TouchableOpacity>
 
-              <Pressable
+              <TouchableOpacity
                 onPress={handleChangePasswordSubmit}
                 disabled={savingPassword}
+                activeOpacity={0.7}
                 style={{
                   paddingHorizontal: 20,
                   paddingVertical: 10,
@@ -637,13 +904,13 @@ export default function SettingsScreen() {
                 }}
               >
                 {savingPassword && <ActivityIndicator size="small" color="#FFFFFF" />}
-                <Text style={{ fontSize: 13, fontWeight: "700", color: "#FFFFFF" }}>
+                <Text style={{ fontSize: 13, fontFamily: "PlusJakartaSans-Bold", color: "#FFFFFF" }}>
                   {savingPassword ? "Updating…" : "Update Password"}
                 </Text>
-              </Pressable>
+              </TouchableOpacity>
             </View>
-          </Pressable>
-        </Pressable>
+          </View>
+        </TouchableOpacity>
       </Modal>
 
       {/* Generic Selection Picker Modal */}
@@ -654,31 +921,32 @@ export default function SettingsScreen() {
           animationType="fade"
           onRequestClose={() => setActivePicker(null)}
         >
-          <Pressable
+          <TouchableOpacity
             style={{
               flex: 1,
               backgroundColor: "rgba(0,0,0,0.5)",
               justifyContent: "flex-end",
             }}
+            activeOpacity={1}
             onPress={() => setActivePicker(null)}
           >
-            <Pressable
+            <View
               style={{
                 backgroundColor: "#FFFFFF",
-                borderTopLeftRadius: 24,
-                borderTopRightRadius: 24,
-                paddingHorizontal: 20,
+                borderTopLeftRadius: 28,
+                borderTopRightRadius: 28,
+                paddingHorizontal: 22,
                 paddingTop: 24,
                 paddingBottom: insets.bottom + 24,
                 maxHeight: "80%",
               }}
-              onPress={(e) => e.stopPropagation()}
+              onStartShouldSetResponder={() => true}
             >
-              <Text style={{ fontSize: 18, fontWeight: "700", color: "#111827" }}>
+              <Text style={{ fontSize: 18, fontFamily: "PlusJakartaSans-Bold", color: "#111827" }}>
                 {activePicker.title}
               </Text>
               {activePicker.description ? (
-                <Text style={{ fontSize: 13, color: "#6B7280", marginTop: 4, marginBottom: 16 }}>
+                <Text style={{ fontSize: 13, fontFamily: "PlusJakartaSans", color: "#6B7280", marginTop: 4, marginBottom: 16 }}>
                   {activePicker.description}
                 </Text>
               ) : (
@@ -689,8 +957,9 @@ export default function SettingsScreen() {
                 {activePicker.options.map((opt) => {
                   const isSelected = activePicker.selectedValue === opt.value;
                   return (
-                    <Pressable
+                    <TouchableOpacity
                       key={String(opt.value)}
+                      activeOpacity={0.7}
                       onPress={() => {
                         activePicker.onSelect(opt.value);
                         setActivePicker(null);
@@ -701,7 +970,7 @@ export default function SettingsScreen() {
                         justifyContent: "space-between",
                         paddingVertical: 14,
                         paddingHorizontal: 16,
-                        borderRadius: 14,
+                        borderRadius: 16,
                         backgroundColor: isSelected ? "rgba(26,107,60,0.08)" : "#F9F8F6",
                         borderWidth: 1,
                         borderColor: isSelected ? "#1A6B3C" : "#EAE7E1",
@@ -712,25 +981,25 @@ export default function SettingsScreen() {
                         <Text
                           style={{
                             fontSize: 14,
-                            fontWeight: "700",
+                            fontFamily: "PlusJakartaSans-Bold",
                             color: isSelected ? "#1A6B3C" : "#111827",
                           }}
                         >
                           {opt.label}
                         </Text>
                         {opt.sublabel && (
-                          <Text style={{ fontSize: 12, color: "#6B7280", marginTop: 2 }}>
+                          <Text style={{ fontSize: 12, fontFamily: "PlusJakartaSans", color: "#6B7280", marginTop: 2 }}>
                             {opt.sublabel}
                           </Text>
                         )}
                       </View>
                       {isSelected && <Check size={18} color="#1A6B3C" />}
-                    </Pressable>
+                    </TouchableOpacity>
                   );
                 })}
               </ScrollView>
-            </Pressable>
-          </Pressable>
+            </View>
+          </TouchableOpacity>
         </Modal>
       )}
 
@@ -757,156 +1026,278 @@ export default function SettingsScreen() {
   );
 }
 
-function SectionHeader({ label }: { label: string }) {
+/**
+ * Section title (e.g. "Account", "Privacy & Security", "Appearance & Alerts")
+ */
+function SectionTitle({ title }: { title: string }) {
   return (
-    <View style={{ paddingHorizontal: 20, paddingTop: 20, paddingBottom: 8 }}>
-      <Text
-        style={{
-          fontSize: 11,
-          fontWeight: "700",
-          color: "#9CA3AF",
-          letterSpacing: 0.8,
-          textTransform: "uppercase",
-        }}
-      >
-        {label}
-      </Text>
-    </View>
+    <Text
+      style={{
+        fontSize: 14.5,
+        fontFamily: "PlusJakartaSans-Bold",
+        color: "#1F2937",
+        marginTop: 22,
+        marginBottom: 10,
+        marginLeft: 4,
+      }}
+    >
+      {title}
+    </Text>
   );
 }
 
-function SettingsRow({
+/**
+ * Custom Slim Animated Switch
+ * Slimmer pill shape with smooth sliding animation
+ */
+function SlimSwitch({
+  value,
+  onValueChange,
+  disabled = false,
+}: {
+  value: boolean;
+  onValueChange: (val: boolean) => void;
+  disabled?: boolean;
+}) {
+  const animValue = useRef(new Animated.Value(value ? 1 : 0)).current;
+
+  useEffect(() => {
+    Animated.timing(animValue, {
+      toValue: value ? 1 : 0,
+      duration: 220,
+      useNativeDriver: false,
+    }).start();
+  }, [value, animValue]);
+
+  // Track is 44px wide, thumb is 20px wide
+  // Range is from 2px (left) to 22px (right)
+  const translateX = animValue.interpolate({
+    inputRange: [0, 1],
+    outputRange: [2, 22],
+  });
+
+  const backgroundColor = animValue.interpolate({
+    inputRange: [0, 1],
+    outputRange: ["#E2E4E8", "#1A6B3C"],
+  });
+
+  return (
+    <TouchableOpacity
+      activeOpacity={0.8}
+      disabled={disabled}
+      onPress={() => onValueChange(!value)}
+      hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+    >
+      <Animated.View
+        style={{
+          width: 44,
+          height: 24,
+          borderRadius: 12,
+          backgroundColor,
+          justifyContent: "center",
+          opacity: disabled ? 0.5 : 1,
+        }}
+      >
+        <Animated.View
+          style={{
+            width: 20,
+            height: 20,
+            borderRadius: 10,
+            backgroundColor: "#FFFFFF",
+            transform: [{ translateX }],
+            shadowColor: "#000",
+            shadowOffset: { width: 0, height: 1.5 },
+            shadowOpacity: 0.18,
+            shadowRadius: 2,
+            elevation: 2,
+          }}
+        />
+      </Animated.View>
+    </TouchableOpacity>
+  );
+}
+
+/**
+ * Action card without icon background pill and without description subtitle
+ */
+function SettingCard({
   icon: Icon,
-  label,
+  title,
   onPress,
-  destructive,
+  destructive = false,
+  badgeText,
+  badgeColor = "#1A6B3C",
+  badgeBgColor = "rgba(26,107,60,0.1)",
+  rightElement,
+  loading = false,
 }: {
   icon: any;
-  label: string;
-  onPress: () => void;
+  title: string;
+  onPress?: () => void;
   destructive?: boolean;
+  badgeText?: string;
+  badgeColor?: string;
+  badgeBgColor?: string;
+  rightElement?: React.ReactNode;
+  loading?: boolean;
 }) {
   return (
-    <Pressable
+    <TouchableOpacity
       onPress={onPress}
-      android_ripple={{ color: "rgba(0,0,0,0.04)" }}
+      disabled={!onPress && !rightElement}
+      activeOpacity={onPress ? 0.7 : 1}
       style={{
         backgroundColor: "#FFFFFF",
+        borderRadius: 20,
+        paddingVertical: 15,
+        paddingHorizontal: 18,
         flexDirection: "row",
         alignItems: "center",
-        paddingHorizontal: 20,
-        paddingVertical: 14,
-        gap: 12,
-        borderBottomWidth: 1,
-        borderBottomColor: "#F0EDE8",
+        marginBottom: 10,
+        borderWidth: 1,
+        borderColor: "#F0F2F5",
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.03,
+        shadowRadius: 5,
+        elevation: 1,
       }}
     >
-      <Icon size={18} color={destructive ? "#EF4444" : "#374151"} />
+      <View style={{ width: 24, alignItems: "center", justifyContent: "center" }}>
+        <Icon size={21} color={destructive ? "#DC2626" : "#374151"} strokeWidth={1.8} />
+      </View>
       <Text
         style={{
           flex: 1,
-          fontSize: 14,
-          fontWeight: "500",
-          color: destructive ? "#EF4444" : "#111827",
+          marginLeft: 14,
+          fontSize: 15.5,
+          fontFamily: "PlusJakartaSans-Bold",
+          color: destructive ? "#DC2626" : "#111827",
         }}
+        numberOfLines={1}
       >
-        {label}
+        {title}
       </Text>
-      <ChevronRight size={16} color="#D1D5DB" />
-    </Pressable>
+      {loading ? (
+        <ActivityIndicator size="small" color="#1A6B3C" />
+      ) : rightElement ? (
+        rightElement
+      ) : badgeText ? (
+        <View
+          style={{
+            backgroundColor: badgeBgColor,
+            paddingHorizontal: 10,
+            paddingVertical: 4,
+            borderRadius: 12,
+          }}
+        >
+          <Text style={{ fontSize: 11.5, fontFamily: "PlusJakartaSans-Bold", color: badgeColor }}>
+            {badgeText}
+          </Text>
+        </View>
+      ) : onPress ? (
+        <ChevronRight size={19} color="#C4C8D0" strokeWidth={2.2} />
+      ) : null}
+    </TouchableOpacity>
   );
 }
 
-function SettingsValueRow({
-  label,
-  valueText,
-  onPress,
-}: {
-  label: string;
-  valueText: string;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      android_ripple={{ color: "rgba(0,0,0,0.04)" }}
-      style={{
-        backgroundColor: "#FFFFFF",
-        flexDirection: "row",
-        alignItems: "center",
-        justifyContent: "space-between",
-        paddingHorizontal: 20,
-        paddingVertical: 14,
-        borderBottomWidth: 1,
-        borderBottomColor: "#F0EDE8",
-      }}
-    >
-      <View style={{ flex: 1, paddingRight: 10 }}>
-        <Text style={{ fontSize: 14, fontWeight: "500", color: "#111827" }}>
-          {label}
-        </Text>
-        <Text style={{ fontSize: 12, color: "#1A6B3C", fontWeight: "600", marginTop: 2 }}>
-          {valueText}
-        </Text>
-      </View>
-      <ChevronRight size={16} color="#D1D5DB" />
-    </Pressable>
-  );
-}
-
-function SettingsToggleRow({
+/**
+ * Toggle card with custom SlimSwitch, no icon background pill, and no description subtitle
+ */
+function SettingToggleCard({
   icon: Icon,
-  label,
-  description,
+  title,
   value,
   onValueChange,
-  disabled,
+  disabled = false,
 }: {
-  icon?: any;
-  label: string;
-  description?: string;
+  icon: any;
+  title: string;
   value: boolean;
   onValueChange: (val: boolean) => void;
   disabled?: boolean;
 }) {
   return (
-    <View
+    <TouchableOpacity
+      onPress={() => onValueChange(!value)}
+      disabled={disabled}
+      activeOpacity={0.7}
       style={{
         backgroundColor: "#FFFFFF",
+        borderRadius: 20,
+        paddingVertical: 15,
+        paddingHorizontal: 18,
         flexDirection: "row",
         alignItems: "center",
-        justifyContent: "space-between",
-        paddingHorizontal: 20,
-        paddingVertical: 14,
-        borderBottomWidth: 1,
-        borderBottomColor: "#F0EDE8",
-        opacity: disabled ? 0.5 : 1,
+        marginBottom: 10,
+        borderWidth: 1,
+        borderColor: "#F0F2F5",
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 1 },
+        shadowOpacity: 0.03,
+        shadowRadius: 5,
+        elevation: 1,
+        opacity: disabled ? 0.6 : 1,
       }}
     >
-      <View style={{ flexDirection: "row", alignItems: "flex-start", flex: 1, paddingRight: 16, gap: 12 }}>
-        {Icon && (
-          <View style={{ marginTop: 2 }}>
-            <Icon size={18} color="#4B5563" />
-          </View>
-        )}
-        <View style={{ flex: 1 }}>
-          <Text style={{ fontSize: 14, fontWeight: "600", color: "#111827" }}>
-            {label}
-          </Text>
-          {description && (
-            <Text style={{ fontSize: 12, color: "#6B7280", marginTop: 2, lineHeight: 16 }}>
-              {description}
-            </Text>
-          )}
-        </View>
+      <View style={{ width: 24, alignItems: "center", justifyContent: "center" }}>
+        <Icon size={21} color="#374151" strokeWidth={1.8} />
       </View>
-      <Switch
+      <Text
+        style={{
+          flex: 1,
+          marginLeft: 14,
+          fontSize: 15.5,
+          fontFamily: "PlusJakartaSans-Bold",
+          color: "#111827",
+        }}
+        numberOfLines={1}
+      >
+        {title}
+      </Text>
+      <SlimSwitch
         value={value}
         onValueChange={onValueChange}
         disabled={disabled}
-        trackColor={{ false: "#E5E7EB", true: "#1A6B3C" }}
-        thumbColor="#FFFFFF"
       />
-    </View>
+    </TouchableOpacity>
+  );
+}
+
+/**
+ * FAQ Collapsible Item
+ */
+function HelpItem({ question, answer }: { question: string; answer: string }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <TouchableOpacity
+      onPress={() => setOpen(!open)}
+      activeOpacity={0.7}
+      style={{
+        backgroundColor: "#F9F8F6",
+        borderRadius: 14,
+        padding: 14,
+        marginBottom: 8,
+        borderWidth: 1,
+        borderColor: "#EAE7E1",
+      }}
+    >
+      <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+        <Text style={{ fontSize: 13.5, fontFamily: "PlusJakartaSans-Bold", color: "#111827", flex: 1, paddingRight: 8 }}>
+          {question}
+        </Text>
+        <ChevronRight
+          size={16}
+          color="#9CA3AF"
+          style={{ transform: [{ rotate: open ? "90deg" : "0deg" }] }}
+        />
+      </View>
+      {open && (
+        <Text style={{ fontSize: 12.5, fontFamily: "PlusJakartaSans", color: "#4B5563", marginTop: 8, lineHeight: 17 }}>
+          {answer}
+        </Text>
+      )}
+    </TouchableOpacity>
   );
 }

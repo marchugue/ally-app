@@ -34,7 +34,7 @@ function notifyTokenRefreshed(newToken: string) {
   authListeners.forEach((l) => l.onTokenRefreshed?.(newToken));
 }
 
-function notifySessionExpired() {
+export function notifySessionExpired() {
   authListeners.forEach((l) => l.onSessionExpired?.());
 }
 

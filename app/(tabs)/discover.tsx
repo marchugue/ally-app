@@ -10,143 +10,217 @@ import {
   Modal,
   ScrollView,
   Alert,
-  Animated,
-  Easing,
+  Linking,
+  Dimensions,
 } from "react-native";
 import {
   Search,
-  X,
+  SlidersHorizontal,
+  MessageCircle,
   UserPlus,
   Check,
-  Clock,
   Compass,
-  UserCheck,
-  SlidersHorizontal,
-  Drama,
+  X,
   Sparkles,
-  MessageCircle,
-  Building2,
-  GraduationCap,
+  RotateCcw,
+  ShieldCheck,
+  ArrowRight,
+  ChevronDown,
 } from "lucide-react-native";
+import Svg, { Defs, LinearGradient as LinearGradientSvg, Stop, Path, Circle } from "react-native-svg";
+import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
-import { UserAvatar } from "@/components/UserAvatar";
+
 import { AnonymousAvatar } from "@/components/AnonymousAvatar";
-import { ClickableAvatar } from "@/components/ClickableAvatar";
 import { usePresence } from "@/context/PresenceContext";
-import { EmptyState } from "@/components/EmptyState";
 import { MatchmakingOverlayModal } from "@/components/MatchmakingOverlayModal";
+import AlertMessage from "@/components/AlertMessage";
 import { useAuth } from "@/lib/auth/AuthContext";
 import { listProfiles, getMyProfile } from "@/lib/api/profiles";
-import {
-  listInteractions,
-  requestConnection,
-  rejectConnection,
-} from "@/lib/api/interaction";
+import { listInteractions, requestConnection } from "@/lib/api/interaction";
+import { getOrCreateConversationWithUser } from "@/lib/api/conversation";
+import { getLookups } from "@/lib/api/lookups";
 import {
   getMatchmakingStatus,
-  joinMatchmakingQueue,
-  leaveMatchmakingQueue,
+  MatchmakingPreferences,
 } from "@/lib/api/matchmaking";
 import { useMatchmaking } from "@/hooks/useMatchmaking";
-import type { Profile, ProfileSummary } from "@/types/profile";
+import {
+  getDeterministicAnonymousAvatar,
+} from "@/constants/matchOptions";
+import type { Profile } from "@/types/profile";
 
-type ConnectionStatus = "none" | "pending" | "accepted";
-type FilterTab = "all" | "suggested" | "allies";
-type SortOption = "match" | "popular" | "newest" | "name";
-
-interface StudentMatchCard {
-  profile: ProfileSummary & {
-    bio?: string | null;
-    department?: string | null;
-    year_level?: string | null;
-    interests?: string[];
-    organizations?: string[];
-  };
-  matchPercentage: number;
-  sharedInterests: string[];
+// ── Types ────────────────────────────────────────────────────────────────────
+interface Student {
+  id: string;
+  name: string;
+  username: string | null;
+  email: string;
+  course: string;
+  yearLevel: string;
+  department: string;
+  bio: string;
+  avatar: string;
+  avatarKey?: string | null;
+  avatarPresetId?: string | null;
+  interests: string[];
+  organizations: string[];
+  isVerified: boolean;
+  isAlly?: boolean;
 }
 
-const DEPARTMENTS = [
+interface MatchCard {
+  student: Student;
+  sharedInterests: string[];
+  sharedOrgs: string[];
+  matchPercentage: number;
+  connectionStatus: "none" | "pending" | "accepted";
+}
+
+// ── Default Academic Fallbacks ───────────────────────────────────────────────
+const DEFAULT_DEPARTMENTS = [
   "College of Computer Studies",
-  "College of Engineering",
-  "College of Industrial Technology",
-  "College of Business & Management",
   "College of Education",
+  "College of Industrial Technology",
+  "College of Engineering",
 ];
+
+const DEFAULT_COURSES_BY_DEPT: Record<string, string[]> = {
+  "College of Computer Studies": ["Information Technology", "Information System"],
+  "College of Education": ["Technical Vocational Teacher Education"],
+  "College of Industrial Technology": [
+    "Automotive",
+    "Architectural Drafting",
+    "Computer Technology",
+    "Culinary",
+    "Electrical",
+    "Electronics",
+    "Mechanical Technology",
+  ],
+  "College of Engineering": ["Computer Engineering", "Electronics Engineering"],
+};
 
 const YEAR_LEVELS = ["1st Year", "2nd Year", "3rd Year", "4th Year"];
 
-function ShinyFindMatchButton({
-  onPress,
-  remainingCount,
-}: {
-  onPress: () => void;
-  remainingCount: number;
-}) {
-  const shineAnim = React.useRef(new Animated.Value(0)).current;
+// ── Tag Color Map ────────────────────────────────────────────────────────────
+const INTEREST_COLOR_MAP: Record<string, string> = {
+  Coding: "blue",
+  "Web Design": "blue",
+  "AI & ML": "blue",
+  Cybersecurity: "blue",
+  "Game Dev": "blue",
+  Robotics: "blue",
+  Photography: "pink",
+  Drawing: "pink",
+  Music: "pink",
+  Dancing: "pink",
+  Filmmaking: "pink",
+  "Creative Writing": "pink",
+  Hiking: "green",
+  Environment: "green",
+  Gardening: "green",
+  Camping: "green",
+  "Bird Watching": "green",
+  Basketball: "orange",
+  Volleyball: "orange",
+  Swimming: "orange",
+  Badminton: "orange",
+  Football: "orange",
+  Fitness: "orange",
+  "Community Service": "purple",
+  "Student Gov": "purple",
+  Volunteering: "purple",
+  Debate: "purple",
+  "Public Speaking": "purple",
+  Cooking: "amber",
+  Reading: "amber",
+  Travel: "amber",
+  Anime: "amber",
+  Gaming: "amber",
+  Fashion: "amber",
+};
 
-  useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(shineAnim, {
-          toValue: 1,
-          duration: 1600,
-          easing: Easing.bezier(0.4, 0, 0.2, 1),
-          useNativeDriver: true,
-        }),
-        Animated.delay(1000),
-      ])
-    ).start();
-  }, []);
+const TAG_STYLES: Record<string, { bg: string; text: string; border: string }> = {
+  blue: { bg: "#EFF6FF", text: "#1D4ED8", border: "#BFDBFE" },
+  pink: { bg: "#FDF2F8", text: "#BE185D", border: "#FBCFE8" },
+  green: { bg: "#ECFDF5", text: "#047857", border: "#A7F3D0" },
+  orange: { bg: "#FFF7ED", text: "#C2410C", border: "#FED7AA" },
+  purple: { bg: "#FAF5FF", text: "#7E22CE", border: "#E9D5FF" },
+  amber: { bg: "#FFFBEB", text: "#B45309", border: "#FDE68A" },
+  shared: { bg: "#ECFDF5", text: "#15803D", border: "#86EFAC" },
+};
 
-  const translateX = shineAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [-80, 160],
-  });
+// ── Helpers ──────────────────────────────────────────────────────────────────
+function getAnonymousName(student: Student, avatarKey: string): string {
+  if (student.name && student.name.toLowerCase().startsWith("anonymous")) {
+    return student.name;
+  }
+  const key = avatarKey || "peer";
+  const capitalized = key.charAt(0).toUpperCase() + key.slice(1).toLowerCase();
+  return `Anonymous ${capitalized}`;
+}
 
-  return (
-    <Pressable
-      onPress={onPress}
-      style={{
-        backgroundColor: "#FFC107",
-        paddingHorizontal: 18,
-        height: 50,
-        borderRadius: 25,
-        borderWidth: 1.5,
-        borderColor: "#F59E0B",
-        alignItems: "center",
-        justifyContent: "center",
-        overflow: "hidden",
-        shadowColor: "#FFC107",
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.35,
-        shadowRadius: 8,
-        elevation: 6,
-        position: "relative",
-      }}
-    >
-      {/* Slanted 45 Deg Low-Opacity White Rectangle Shine (Strictly Clipped Inside Button) */}
-      <Animated.View
-        pointerEvents="none"
-        style={{
-          position: "absolute",
-          top: -25,
-          bottom: -25,
-          width: 36,
-          backgroundColor: "rgba(255, 255, 255, 0.45)",
-          transform: [{ translateX }, { rotate: "45deg" }],
-        }}
-      />
+function calculateMatchPercentage(userA: Student, userB: Student): number {
+  if (!userA || !userB) return 20;
 
-      <Text style={{ fontSize: 13, fontWeight: "900", color: "#451A03", letterSpacing: -0.2 }}>
-        Find Match
-      </Text>
-      <Text style={{ fontSize: 9, color: "#78350F", marginTop: 0, fontWeight: "800" }}>
-        {remainingCount} left today
-      </Text>
-    </Pressable>
+  const aInterests = Array.isArray(userA.interests) ? userA.interests : [];
+  const bInterests = Array.isArray(userB.interests) ? userB.interests : [];
+  const aOrgs = Array.isArray(userA.organizations) ? userA.organizations : [];
+  const bOrgs = Array.isArray(userB.organizations) ? userB.organizations : [];
+
+  const sharedInterests = aInterests.filter((i) => bInterests.includes(i));
+  const sharedOrgs = aOrgs.filter((o) => bOrgs.includes(o));
+
+  const sameDept = Boolean(
+    userA.department &&
+      userB.department &&
+      userA.department.toLowerCase() === userB.department.toLowerCase()
   );
+  const sameCourse = Boolean(
+    userA.course &&
+      userB.course &&
+      userA.course.toLowerCase() === userB.course.toLowerCase()
+  );
+  const sameYear = Boolean(
+    userA.yearLevel &&
+      userB.yearLevel &&
+      userA.yearLevel.toLowerCase() === userB.yearLevel.toLowerCase()
+  );
+
+  const totalUnique = new Set([...aInterests, ...bInterests]).size;
+  let interestScore = 0;
+  if (totalUnique > 0 && sharedInterests.length > 0) {
+    interestScore =
+      (sharedInterests.length / totalUnique) * 45 +
+      Math.min(sharedInterests.length * 3, 10);
+  }
+
+  let academicScore = 0;
+  if (sameCourse) academicScore += 15;
+  else if (sameDept) academicScore += 8;
+  if (sameYear) academicScore += 5;
+
+  const orgScore = Math.min(sharedOrgs.length * 5, 15);
+  const baseScore = 15;
+
+  const total = Math.round(baseScore + interestScore + academicScore + orgScore);
+  return Math.min(Math.max(total, 15), 99);
+}
+
+function getMatchBadgeStyle(percentage: number, sharedCount: number) {
+  let color = "gray";
+  if (sharedCount >= 4 || percentage >= 80) color = "green";
+  else if (sharedCount >= 2 || percentage >= 60) color = "orange";
+  else if (sharedCount >= 1 || percentage >= 40) color = "yellow";
+
+  const map: Record<string, { bg: string; text: string; border: string; dot: string }> = {
+    green: { bg: "#ECFDF5", text: "#166534", border: "#86EFAC", dot: "#22C55E" },
+    orange: { bg: "#FFF7ED", text: "#9A3412", border: "#FED7AA", dot: "#F97316" },
+    yellow: { bg: "#FEFCE8", text: "#854D0E", border: "#FEF08A", dot: "#EAB308" },
+    gray: { bg: "#F3F4F6", text: "#4B5563", border: "#E5E7EB", dot: "#9CA3AF" },
+  };
+  return map[color] || map.gray;
 }
 
 export default function DiscoverScreen() {
@@ -154,479 +228,1350 @@ export default function DiscoverScreen() {
   const { user, accessToken } = useAuth();
   const { isOnline } = usePresence();
 
-  const [currentUserProfile, setCurrentUserProfile] = useState<Profile | null>(null);
-  const [people, setPeople] = useState<any[]>([]);
-  const [connections, setConnections] = useState<Record<string, ConnectionStatus>>({});
-  const [passedUsers, setPassedUsers] = useState<Set<string>>(new Set());
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+  const [currentUser, setCurrentUser] = useState<Student | null>(null);
+  const [departments, setDepartments] = useState<string[]>(DEFAULT_DEPARTMENTS);
+  const [coursesByDept, setCoursesByDept] = useState<Record<string, string[]>>(DEFAULT_COURSES_BY_DEPT);
 
-  // Matchmaking State (Powered by real backend Socket.IO & REST)
+  // Discover Directory & Filters state
+  const [search, setSearch] = useState("");
+  const [showFilters, setShowFilters] = useState(false);
+  const [filters, setFilters] = useState({
+    department: "",
+    course: "",
+    yearLevel: "",
+    sortBy: "all",
+  });
+  const [connections, setConnections] = useState<Record<string, "none" | "pending" | "accepted">>({});
+  const [dismissedStudentIds, setDismissedStudentIds] = useState<Set<string>>(new Set());
+  const [selectedCard, setSelectedCard] = useState<MatchCard | null>(null);
+  const [banner, setBanner] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ message: string; type: "error" | "success" | "warning" | "info" } | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [matches, setMatches] = useState<MatchCard[]>([]);
+
+  // Selection Picker Modals for Filter Drawer
+  const [pickerModal, setPickerModal] = useState<"department" | "course" | "year" | null>(null);
+
+  // Matchmaking hook (Socket.IO + REST backend)
   const matchmaking = useMatchmaking();
   const [showMatchOverlay, setShowMatchOverlay] = useState(false);
 
-  // Search & Filter State
-  const [searchQuery, setSearchQuery] = useState("");
-  const [activeTab, setActiveTab] = useState<FilterTab>("all");
-  const [showFilterModal, setShowFilterModal] = useState(false);
-  const [selectedDept, setSelectedDept] = useState("");
-  const [selectedYear, setSelectedYear] = useState("");
-  const [sortBy, setSortBy] = useState<SortOption>("match");
+  // Auto-navigate to conversation room ONLY when a match is freshly connected
+  useEffect(() => {
+    if (matchmaking.roomReady?.conversationId) {
+      const conversationId = matchmaking.roomReady.conversationId;
+      matchmaking.clearRoomReady();
+      setShowMatchOverlay(false);
+      setToast({ message: "✨ Match Connected! Chatting with your anonymous ally.", type: "success" });
+      router.push({
+        pathname: "/pages/conversation" as any,
+        params: { conversationId, id: conversationId },
+      });
+    }
+  }, [matchmaking.roomReady]);
 
-  // Selected Student Detail Modal
-  const [selectedMatch, setSelectedMatch] = useState<StudentMatchCard | null>(null);
+  // Load Lookup Options
+  useEffect(() => {
+    getLookups()
+      .then((data) => {
+        if (data.departments && data.departments.length > 0) {
+          const deptNames = data.departments.map((d) => d.name).filter(Boolean);
+          setDepartments(deptNames);
 
-  const loadData = useCallback(async () => {
-    if (!accessToken || !user) return;
+          const deptById = new Map(data.departments.map((d) => [d.id, d.name]));
+          const nextCourses: Record<string, string[]> = {};
+          (data.courses || []).forEach((c) => {
+            const dName = deptById.get(c.department_id);
+            if (!dName) return;
+            if (!nextCourses[dName]) nextCourses[dName] = [];
+            nextCourses[dName].push(c.name);
+          });
+          if (Object.keys(nextCourses).length > 0) {
+            setCoursesByDept(nextCourses);
+          }
+        }
+      })
+      .catch(() => {
+        // Fallback already pre-populated
+      });
+  }, []);
+
+  // Main data loader
+  const loadMatches = useCallback(async () => {
+    if (!accessToken || !user) {
+      setMatches([]);
+      setIsLoading(false);
+      return;
+    }
+
     try {
-      const [myProfile, profiles, interactions] = await Promise.all([
+      const [rawMyProfile, rawOthers, rawInteractions, matchStatus] = await Promise.all([
         getMyProfile(accessToken).catch(() => null),
-        listProfiles(accessToken, user.id),
+        listProfiles(accessToken, user.id).catch(() => []),
         listInteractions(accessToken).catch(() => []),
+        getMatchmakingStatus(accessToken).catch(() => null),
       ]);
 
-      setCurrentUserProfile(myProfile);
+      const myEmail = rawMyProfile?.email || user.email || "";
+      const currentStudent: Student = {
+        id: rawMyProfile?.id || user.id,
+        name: rawMyProfile?.full_name || rawMyProfile?.username || "You",
+        username: rawMyProfile?.username || null,
+        email: myEmail,
+        course: rawMyProfile?.course || "Unknown Course",
+        yearLevel: rawMyProfile?.year_level || "Unknown Year",
+        department: rawMyProfile?.department || "Unknown Department",
+        bio: rawMyProfile?.bio || "",
+        avatar: rawMyProfile?.avatar_url || "",
+        avatarKey: rawMyProfile?.avatarKey || rawMyProfile?.avatar_preset_id || null,
+        avatarPresetId: rawMyProfile?.avatar_preset_id || null,
+        interests: rawMyProfile?.interests || [],
+        organizations: rawMyProfile?.organizations || [],
+        isVerified: myEmail.toLowerCase().endsWith("@chmsu.edu.ph"),
+      };
+      setCurrentUser(currentStudent);
 
-      const connMap: Record<string, ConnectionStatus> = {};
-      (interactions ?? []).forEach((r: any) => {
-        if (r.target_user_id) connMap[r.target_user_id] = r.status;
-        if (r.user_id && r.user_id !== user.id) connMap[r.user_id] = r.status;
+      const connectionMap: Record<string, "none" | "pending" | "accepted"> = {};
+      (rawInteractions ?? []).forEach((r: any) => {
+        if (r.target_user_id) connectionMap[r.target_user_id] = r.status;
+        if (r.user_id && r.user_id !== user.id) connectionMap[r.user_id] = r.status;
+      });
+      setConnections(connectionMap);
+
+      const activePartnerIds = new Set<string>();
+      (matchStatus?.activeMatches ?? []).forEach((m: any) => {
+        const partnerId = m.user_a_id === user.id ? m.user_b_id : m.user_a_id;
+        if (partnerId) activePartnerIds.add(partnerId);
       });
 
-      setConnections(connMap);
-      setPeople((profiles || []).filter((p: any) => p.id !== user.id));
-    } catch (err) {
-      console.warn("Failed to load discover data", err);
+      const nonAllyNonMatchStudents: Student[] = (rawOthers as any[])
+        .filter((p) => {
+          if (p.id === user.id) return false;
+          if (p.is_ally || p.isAlly) return false;
+          if (connectionMap[p.id] === "accepted") return false;
+          if (activePartnerIds.has(p.id)) return false;
+          return true;
+        })
+        .map((p) => {
+          const email = p.email || "";
+          const avatarKey =
+            p.avatarKey ||
+            p.avatar_preset_id ||
+            getDeterministicAnonymousAvatar(p.id);
+          return {
+            id: p.id,
+            name: p.full_name || (p.username ? `@${p.username}` : "Student"),
+            username: p.username || null,
+            email,
+            course: p.course || "Unknown Course",
+            yearLevel: p.year_level || p.yearLevel || "Student",
+            department: p.department || "Unknown Department",
+            bio: p.bio || "",
+            avatar: p.avatar_url || "",
+            avatarKey,
+            avatarPresetId: p.avatar_preset_id || avatarKey,
+            interests: p.interests || [],
+            organizations: p.organizations || [],
+            isVerified: email.toLowerCase().endsWith("@chmsu.edu.ph"),
+            isAlly: Boolean(p.is_ally || p.isAlly),
+          };
+        });
+
+      const allMatches: MatchCard[] = nonAllyNonMatchStudents
+        .map((student) => {
+          const myInterests = currentStudent.interests || [];
+          const studentInterests = student.interests || [];
+          const sharedInterests = studentInterests.filter((i) => myInterests.includes(i));
+          const sharedOrgs = (student.organizations || []).filter((o) =>
+            (currentStudent.organizations || []).includes(o)
+          );
+          const matchPercentage = calculateMatchPercentage(currentStudent, student);
+          return {
+            student,
+            sharedInterests,
+            sharedOrgs,
+            matchPercentage,
+            connectionStatus: connectionMap[student.id] || "none",
+          };
+        })
+        .sort((a, b) => b.matchPercentage - a.matchPercentage);
+
+      setMatches(allMatches);
+    } catch (err: any) {
+      setBanner(err.message || "Failed to load discovery students.");
+    } finally {
+      setIsLoading(false);
     }
   }, [accessToken, user]);
 
   useEffect(() => {
-    async function init() {
-      setLoading(true);
-      await loadData();
-      setLoading(false);
-    }
-    init();
-  }, [loadData]);
+    loadMatches();
+  }, [loadMatches]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
-    await Promise.all([loadData(), matchmaking.refreshStatus()]);
+    await Promise.all([loadMatches(), matchmaking.refreshStatus()]);
     setRefreshing(false);
-  }, [loadData, matchmaking]);
+  }, [loadMatches, matchmaking]);
 
-  // Matchmaking Queue Handler
-  const handleToggleMatchQueue = async () => {
-    if (matchmaking.dailyMatchCount >= matchmaking.dailyLimit) {
-      Alert.alert(
-        "Daily Limit Reached",
-        `You have reached your ${matchmaking.dailyLimit} daily anonymous matches.`
-      );
-      return;
+  // Available degree courses given active department filter
+  const availableCourses = useMemo(() => {
+    if (filters.department && coursesByDept?.[filters.department]) {
+      return coursesByDept[filters.department];
     }
-    setShowMatchOverlay(true);
-    if (matchmaking.phase === "idle" || matchmaking.phase === "ended") {
-      matchmaking.joinQueue();
-    }
-  };
+    return Array.from(new Set(Object.values(coursesByDept || {}).flat()));
+  }, [filters.department, coursesByDept]);
 
-  // Connection Request Handler
-  const handleConnect = useCallback(
-    async (targetId: string) => {
-      if (
-        !accessToken ||
-        connections[targetId] === "pending" ||
-        connections[targetId] === "accepted"
-      )
-        return;
-
-      setConnections((prev) => ({ ...prev, [targetId]: "pending" }));
-      try {
-        await requestConnection(targetId, accessToken);
-      } catch {
-        setConnections((prev) => ({ ...prev, [targetId]: "none" }));
-      }
-    },
-    [accessToken, connections]
-  );
-
-  // Pass User Handler
-  const handlePassUser = useCallback((targetId: string) => {
-    setPassedUsers((prev) => new Set(prev).add(targetId));
-  }, []);
-
-  // Navigate to Message Chat
-  const handleMessageUser = useCallback((targetUserId: string) => {
-    router.push({
-      pathname: "/(tabs)/messages",
-      params: { targetUserId },
-    } as any);
-  }, []);
-
-  const handleNavigateProfile = (targetUserId: string) => {
-    router.push({
-      pathname: "/pages/user-profile",
-      params: { userId: targetUserId },
-    } as any);
-  };
-
-  // Calculate Match Score & Filtered People List
-  const computedMatches = useMemo(() => {
-    const myInterests = new Set(currentUserProfile?.interests || []);
-
-    return people
-      .filter((p) => !passedUsers.has(p.id))
-      .map((p) => {
-        const theirInterests = p.interests || [];
-        const shared = theirInterests.filter((i: string) => myInterests.has(i));
-
-        let score = 50; // base score
-        if (myInterests.size > 0) {
-          score += Math.round((shared.length / Math.max(myInterests.size, 1)) * 40);
-        }
-        if (p.course && currentUserProfile?.course && p.course === currentUserProfile.course) {
-          score += 10;
-        }
-        const matchPercentage = Math.min(99, Math.max(60, score));
-
-        return {
-          profile: p,
-          matchPercentage,
-          sharedInterests: shared,
-        } as StudentMatchCard;
-      })
+  // Filter & Sort
+  const filtered = useMemo(() => {
+    return matches
       .filter((m) => {
-        const p = m.profile;
-        const status = connections[p.id] || "none";
+        if (user && m.student.id === user.id) return false;
+        if (m.student.isAlly) return false;
+        if (connections[m.student.id] === "accepted") return false;
+        if (dismissedStudentIds.has(m.student.id)) return false;
 
-        if (activeTab === "suggested" && status !== "none") return false;
-        if (activeTab === "allies" && status !== "accepted") return false;
-
-        if (selectedDept && p.department !== selectedDept) return false;
-        if (selectedYear && p.year_level !== selectedYear) return false;
-
-        if (searchQuery.trim().length > 0) {
-          const q = searchQuery.toLowerCase().trim();
-          return (
-            p.full_name?.toLowerCase().includes(q) ||
-            p.username?.toLowerCase().includes(q) ||
-            p.course?.toLowerCase().includes(q)
+        const q = search.toLowerCase().trim();
+        if (q) {
+          const nameMatch = (m.student.name || "").toLowerCase().includes(q);
+          const courseMatch = (m.student.course || "").toLowerCase().includes(q);
+          const deptMatch = (m.student.department || "").toLowerCase().includes(q);
+          const interestMatch = (m.student.interests || []).some((i) =>
+            i.toLowerCase().includes(q)
           );
+          if (!nameMatch && !courseMatch && !deptMatch && !interestMatch) return false;
         }
+
+        if (filters.department && m.student.department !== filters.department) {
+          return false;
+        }
+
+        if (filters.course && m.student.course !== filters.course) {
+          return false;
+        }
+
+        if (filters.yearLevel && m.student.yearLevel !== filters.yearLevel) {
+          return false;
+        }
+
         return true;
       })
       .sort((a, b) => {
-        if (sortBy === "match") return b.matchPercentage - a.matchPercentage;
-        if (sortBy === "popular") {
-          const popA = (a.profile as any).followers_count ?? (a.profile as any).followersCount ?? 0;
-          const popB = (b.profile as any).followers_count ?? (b.profile as any).followersCount ?? 0;
+        if (filters.sortBy === "popular") {
+          const popA = (a.student as any).followersCount ?? (a.student as any).followers_count ?? 0;
+          const popB = (b.student as any).followersCount ?? (b.student as any).followers_count ?? 0;
           return popB - popA;
         }
-        if (sortBy === "newest") return (b.profile.id || "").localeCompare(a.profile.id || "");
-        return (a.profile.full_name || "").localeCompare(b.profile.full_name || "");
+        if (filters.sortBy === "newest") return b.student.id.localeCompare(a.student.id);
+        if (filters.sortBy === "name") return (a.student.name || "").localeCompare(b.student.name || "");
+        // Default: prioritize highest compatibility match percentage
+        return b.matchPercentage - a.matchPercentage;
       });
-  }, [people, passedUsers, currentUserProfile, connections, activeTab, selectedDept, selectedYear, searchQuery, sortBy]);
+  }, [matches, connections, search, filters, user, dismissedStudentIds]);
 
-  if (loading) {
-    return (
-      <View style={{ flex: 1, backgroundColor: "#F9FAFB", justifyContent: "center", alignItems: "center" }}>
-        <ActivityIndicator color="#1A6B3C" size="large" />
-      </View>
-    );
-  }
+  // Connection Handler
+  const handleConnect = async (studentId: string) => {
+    if (connections[studentId] && connections[studentId] !== "none") return;
+    setConnections((prev) => ({ ...prev, [studentId]: "pending" }));
+
+    try {
+      if (accessToken) {
+        await requestConnection(studentId, accessToken);
+        setToast({ message: "Connection request sent!", type: "success" });
+      }
+    } catch (err: any) {
+      setConnections((prev) => ({ ...prev, [studentId]: "none" }));
+      setToast({ message: err.message || "Failed to send request", type: "error" });
+    }
+  };
+
+  // Message Handler
+  const handleMessage = async (studentId: string) => {
+    if (!accessToken) {
+      router.push("/(tabs)/messages" as any);
+      return;
+    }
+
+    try {
+      const res = await getOrCreateConversationWithUser(studentId, accessToken);
+      if (res?.conversationId) {
+        router.push({
+          pathname: "/pages/conversation" as any,
+          params: { conversationId: res.conversationId, id: res.conversationId },
+        });
+      } else {
+        router.push("/(tabs)/messages" as any);
+      }
+    } catch (err: any) {
+      setToast({ message: err.message || "Could not start conversation", type: "error" });
+    }
+  };
+
+  // Anonymous Matchmaking Queue Trigger
+  const DAILY_LIMIT = matchmaking.dailyLimit || 5;
+  const isInQueue = matchmaking.phase === "searching" || matchmaking.phase === "pending";
+  const canMatch = matchmaking.dailyMatchCount < DAILY_LIMIT && !isInQueue;
+
+  const handleFindMatch = async () => {
+    if (!user || !accessToken) {
+      Alert.alert("Sign In Required", "Please sign in to find a campus match.");
+      return;
+    }
+
+    if (matchmaking.dailyMatchCount >= DAILY_LIMIT) {
+      setToast({
+        message: `Daily match quota reached (${DAILY_LIMIT}/${DAILY_LIMIT}). Please try again tomorrow!`,
+        type: "warning",
+      });
+      return;
+    }
+
+    if (!canMatch) return;
+
+    setShowMatchOverlay(true);
+
+    const preferences: MatchmakingPreferences = {
+      department: filters.department || undefined,
+      course: filters.course || undefined,
+      strictCourse: Boolean(filters.course),
+      matchType: "anonymous",
+    };
+
+    try {
+      await matchmaking.joinQueue(preferences);
+    } catch (err: any) {
+      console.warn("Could not join matchmaking queue:", err);
+    }
+  };
+
+  // Games Portal Trigger (Opens In-App WebView)
+  const handleOpenGames = () => {
+    router.push("/pages/game-portal" as any);
+  };
+
+  const activeFiltersCount =
+    (filters.department ? 1 : 0) +
+    (filters.course ? 1 : 0) +
+    (filters.yearLevel ? 1 : 0) +
+    (filters.sortBy !== "all" ? 1 : 0);
+  const hasActiveFilter = activeFiltersCount > 0 || Boolean(search);
+
+  const handleResetFilters = () => {
+    setFilters({ department: "", course: "", yearLevel: "", sortBy: "all" });
+    setSearch("");
+  };
 
   return (
-    <View style={{ flex: 1, backgroundColor: "#F9FAFB", paddingTop: insets.top }}>
-      {/* ═══ Anonymous Match Full-Bleed Top Card ═══ */}
-      <Pressable
-        onPress={handleToggleMatchQueue}
+    <View style={{ flex: 1, backgroundColor: "#F7F4EF", paddingTop: insets.top }}>
+      {/* Toast Alert */}
+      {toast && (
+        <AlertMessage
+          message={toast.message}
+          type={toast.type}
+          onHide={() => setToast(null)}
+        />
+      )}
+
+      {/* ═══ Header Title Bar ═══ */}
+      <View
         style={{
-          backgroundColor: "#1A6B3C",
-          borderBottomLeftRadius: 28,
-          borderBottomRightRadius: 28,
           paddingHorizontal: 20,
-          paddingVertical: 24,
-          minHeight: 104,
+          paddingTop: 12,
+          paddingBottom: 8,
           flexDirection: "row",
           alignItems: "center",
           justifyContent: "space-between",
-          shadowColor: "#1A6B3C",
-          shadowOffset: { width: 0, height: 6 },
-          shadowOpacity: 0.25,
-          shadowRadius: 10,
-          elevation: 6,
         }}
       >
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 14, flex: 1 }}>
-          <View
+        <View>
+          <Text
             style={{
-              width: 48,
-              height: 48,
-              borderRadius: 18,
-              backgroundColor: "rgba(255,255,255,0.18)",
-              alignItems: "center",
-              justifyContent: "center",
+              fontFamily: "Fraunces-Bold",
+              fontSize: 26,
+              fontWeight: "700",
+              color: "#111827",
+              letterSpacing: -0.5,
             }}
           >
-            <Drama size={26} color="#FFFFFF" />
-          </View>
-          <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 16, fontWeight: "800", color: "#FFFFFF" }}>
-              Anonymous Match
-            </Text>
-            <Text style={{ fontSize: 12, color: "rgba(255,255,255,0.85)", marginTop: 2 }}>
-              Connect with compatible CHMSU students
-            </Text>
-          </View>
+            Discover
+          </Text>
+          <Text
+            style={{
+              fontFamily: "PlusJakartaSans",
+              fontSize: 12,
+              color: "#6B7280",
+              marginTop: 1,
+            }}
+          >
+            Connect with verified CHMSU peers
+          </Text>
         </View>
 
-        <ShinyFindMatchButton
-          onPress={handleToggleMatchQueue}
-          remainingCount={Math.max(0, matchmaking.dailyLimit - matchmaking.dailyMatchCount)}
-        />
-      </Pressable>
-
-      {/* ═══ Search & Filters Header ═══ */}
-      <View style={{ paddingHorizontal: 16, paddingTop: 12, paddingBottom: 6 }}>
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 10 }}>
-          {/* Search Box */}
-          <View
-            style={{
-              flex: 1,
-              flexDirection: "row",
-              alignItems: "center",
-              backgroundColor: "#FFFFFF",
-              borderRadius: 14,
-              paddingHorizontal: 12,
-              height: 44,
-              borderWidth: 1,
-              borderColor: "#E5E7EB",
-            }}
-          >
-            <Search size={18} color="#9CA3AF" style={{ marginRight: 8 }} />
-            <TextInput
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              placeholder="Search by name, username, course..."
-              placeholderTextColor="#9CA3AF"
-              style={{
-                flex: 1,
-                fontSize: 14,
-                color: "#111827",
-                height: "100%",
-              }}
-            />
-            {searchQuery.length > 0 && (
-              <Pressable onPress={() => setSearchQuery("")} hitSlop={8}>
-                <X size={16} color="#9CA3AF" />
-              </Pressable>
-            )}
-          </View>
-
-          {/* Filter Modal Toggle Button */}
-          <Pressable
-            onPress={() => setShowFilterModal(true)}
-            style={{
-              width: 44,
-              height: 44,
-              borderRadius: 14,
-              backgroundColor: selectedDept || selectedYear ? "#1A6B3C" : "#FFFFFF",
-              borderWidth: 1,
-              borderColor: selectedDept || selectedYear ? "#1A6B3C" : "#E5E7EB",
-              alignItems: "center",
-              justifyContent: "center",
-            }}
-          >
-            <SlidersHorizontal size={18} color={selectedDept || selectedYear ? "#FFFFFF" : "#4B5563"} />
-          </Pressable>
-        </View>
-
-        {/* Tab Pills */}
-        <View style={{ flexDirection: "row", gap: 8, paddingVertical: 4 }}>
-          <Pressable
-            onPress={() => setActiveTab("all")}
-            style={{
-              paddingHorizontal: 14,
-              paddingVertical: 6,
-              borderRadius: 16,
-              backgroundColor: activeTab === "all" ? "#1A6B3C" : "#FFFFFF",
-              borderWidth: 1,
-              borderColor: activeTab === "all" ? "#1A6B3C" : "#E5E7EB",
-            }}
-          >
-            <Text
-              style={{
-                fontSize: 12,
-                fontWeight: "600",
-                color: activeTab === "all" ? "#FFFFFF" : "#4B5563",
-              }}
-            >
-              All Matches ({computedMatches.length})
-            </Text>
-          </Pressable>
-
-          <Pressable
-            onPress={() => setActiveTab("suggested")}
-            style={{
-              paddingHorizontal: 14,
-              paddingVertical: 6,
-              borderRadius: 16,
-              backgroundColor: activeTab === "suggested" ? "#1A6B3C" : "#FFFFFF",
-              borderWidth: 1,
-              borderColor: activeTab === "suggested" ? "#1A6B3C" : "#E5E7EB",
-            }}
-          >
-            <Text
-              style={{
-                fontSize: 12,
-                fontWeight: "600",
-                color: activeTab === "suggested" ? "#FFFFFF" : "#4B5563",
-              }}
-            >
-              Suggested
-            </Text>
-          </Pressable>
-
-          <Pressable
-            onPress={() => setActiveTab("allies")}
-            style={{
-              paddingHorizontal: 14,
-              paddingVertical: 6,
-              borderRadius: 16,
-              backgroundColor: activeTab === "allies" ? "#1A6B3C" : "#FFFFFF",
-              borderWidth: 1,
-              borderColor: activeTab === "allies" ? "#1A6B3C" : "#E5E7EB",
-            }}
-          >
-            <Text
-              style={{
-                fontSize: 12,
-                fontWeight: "600",
-                color: activeTab === "allies" ? "#FFFFFF" : "#4B5563",
-              }}
-            >
-              My Allies
-            </Text>
-          </Pressable>
-        </View>
+        <Pressable
+          onPress={onRefresh}
+          hitSlop={8}
+          style={{
+            width: 38,
+            height: 38,
+            borderRadius: 12,
+            backgroundColor: "#FFFFFF",
+            borderWidth: 1,
+            borderColor: "#E5E7EB",
+            alignItems: "center",
+            justifyContent: "center",
+          }}
+        >
+          <RotateCcw size={16} color="#6B7280" />
+        </Pressable>
       </View>
 
-      {/* ═══ Discover Cards List ═══ */}
+      {/* ═══ Main Scrollable Feed List ═══ */}
       <FlatList
-        data={computedMatches}
-        keyExtractor={(item) => item.profile.id}
+        data={filtered}
+        keyExtractor={(item) => item.student.id}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
             tintColor="#1A6B3C"
+            colors={["#1A6B3C"]}
           />
         }
-        contentContainerStyle={
-          computedMatches.length === 0
-            ? { flex: 1, paddingHorizontal: 16 }
-            : { paddingHorizontal: 16, paddingBottom: 24, paddingTop: 6 }
-        }
-        renderItem={({ item, index }) => {
-          const p = item.profile;
-          const status = connections[p.id] || "none";
+        contentContainerStyle={{
+          paddingHorizontal: 16,
+          paddingBottom: 32,
+          paddingTop: 8,
+        }}
+        ListHeaderComponent={
+          <View style={{ marginBottom: 14 }}>
+            {/* Banner Notice */}
+            {banner && (
+              <View
+                style={{
+                  marginBottom: 14,
+                  borderRadius: 16,
+                  borderWidth: 1,
+                  borderColor: "#FDE68A",
+                  backgroundColor: "#FFFBEB",
+                  paddingHorizontal: 14,
+                  paddingVertical: 10,
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                }}
+              >
+                <Text
+                  style={{
+                    fontFamily: "PlusJakartaSans",
+                    fontSize: 12,
+                    color: "#92400E",
+                    flex: 1,
+                    marginRight: 8,
+                  }}
+                >
+                  {banner}
+                </Text>
+                <Pressable onPress={() => setBanner(null)} hitSlop={8}>
+                  <X size={15} color="#B45309" />
+                </Pressable>
+              </View>
+            )}
 
-          return (
-            <Pressable
-              onPress={() => setSelectedMatch(item)}
+            {/* ═══ Top Quick Action Cards: Anonymous & Games ═══ */}
+            <View style={{ flexDirection: "row", gap: 12, marginBottom: 16 }}>
+              {/* Card 1: Anonymous */}
+              <Pressable
+                onPress={isInQueue ? () => void matchmaking.leaveQueue() : handleFindMatch}
+                disabled={!canMatch && !isInQueue}
+                style={{
+                  flex: 1,
+                  borderRadius: 24,
+                  overflow: "hidden",
+                  borderWidth: 1.5,
+                  borderColor: isInQueue ? "rgba(245, 158, 11, 0.5)" : "rgba(16, 185, 129, 0.35)",
+                  backgroundColor: "#FFFFFF",
+                  elevation: 2,
+                  shadowColor: "#000",
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.05,
+                  shadowRadius: 6,
+                }}
+              >
+                <LinearGradient
+                  colors={
+                    isInQueue
+                      ? ["rgba(245, 158, 11, 0.25)", "rgba(217, 119, 6, 0.25)", "rgba(234, 179, 8, 0.25)"]
+                      : ["rgba(26, 107, 60, 0.25)", "rgba(16, 185, 129, 0.25)", "rgba(56, 193, 133, 0.20)"]
+                  }
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={{
+                    paddingVertical: 22,
+                    paddingHorizontal: 12,
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  {/* Icon */}
+                  {isInQueue ? (
+                    <ActivityIndicator color="#D97706" size="large" style={{ marginBottom: 10, height: 40 }} />
+                  ) : (
+                    <View style={{ marginBottom: 10 }}>
+                      <Svg width={40} height={40} viewBox="0 0 24 24">
+                        <Defs>
+                          <LinearGradientSvg id="anon-grad" x1="0" y1="0" x2="1" y2="1">
+                            <Stop offset="0" stopColor="#38C185" />
+                            <Stop offset="1" stopColor="#1A6B3C" />
+                          </LinearGradientSvg>
+                        </Defs>
+                        <Path
+                          d="M20 2H4C2.9 2 2 2.9 2 4V22L6 18H20C21.1 18 22 17.1 22 16V4C22 2.9 21.1 2 20 2Z"
+                          fill="url(#anon-grad)"
+                        />
+                        <Circle cx="8" cy="10" r="1.25" fill="#FFFFFF" fillOpacity="0.9" />
+                        <Circle cx="12" cy="10" r="1.25" fill="#FFFFFF" fillOpacity="0.9" />
+                        <Circle cx="16" cy="10" r="1.25" fill="#FFFFFF" fillOpacity="0.9" />
+                      </Svg>
+                    </View>
+                  )}
+
+                  {/* Title */}
+                  <Text
+                    style={{
+                      fontFamily: "Fraunces-Bold",
+                      fontSize: 18,
+                      fontWeight: "700",
+                      color: "#111827",
+                      textAlign: "center",
+                    }}
+                  >
+                    {isInQueue ? "Searching..." : "Anonymous"}
+                  </Text>
+
+                  {/* Attempts */}
+                  <Text
+                    style={{
+                      fontFamily: "PlusJakartaSans",
+                      fontSize: 11,
+                      fontWeight: "600",
+                      color: isInQueue ? "#92400E" : "#065F46",
+                      marginTop: 4,
+                      textAlign: "center",
+                    }}
+                  >
+                    {isInQueue
+                      ? "Peer search · Cancel"
+                      : `${Math.max(0, DAILY_LIMIT - matchmaking.dailyMatchCount)} attempts left`}
+                  </Text>
+                </LinearGradient>
+              </Pressable>
+
+              {/* Card 2: Games */}
+              <Pressable
+                onPress={handleOpenGames}
+                style={{
+                  flex: 1,
+                  borderRadius: 24,
+                  overflow: "hidden",
+                  borderWidth: 1.5,
+                  borderColor: "rgba(245, 158, 11, 0.35)",
+                  backgroundColor: "#FFFFFF",
+                  elevation: 2,
+                  shadowColor: "#000",
+                  shadowOffset: { width: 0, height: 2 },
+                  shadowOpacity: 0.05,
+                  shadowRadius: 6,
+                }}
+              >
+                <LinearGradient
+                  colors={["rgba(232, 168, 56, 0.25)", "rgba(245, 158, 11, 0.25)", "rgba(240, 178, 71, 0.20)"]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 1 }}
+                  style={{
+                    paddingVertical: 22,
+                    paddingHorizontal: 12,
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  {/* Gamepad Icon */}
+                  <View style={{ marginBottom: 10 }}>
+                    <Svg width={40} height={40} viewBox="0 0 24 24">
+                      <Defs>
+                        <LinearGradientSvg id="game-grad" x1="0" y1="0" x2="1" y2="1">
+                          <Stop offset="0" stopColor="#FBBF24" />
+                          <Stop offset="0.5" stopColor="#F59E0B" />
+                          <Stop offset="1" stopColor="#EA580C" />
+                        </LinearGradientSvg>
+                      </Defs>
+                      <Path
+                        d="M7 6H17C19.2 6 21 7.8 21 10V14C21 17.3 18.3 20 15 20C13.8 20 12.7 19.5 12 18.7C11.3 19.5 10.2 20 9 20C5.7 20 3 17.3 3 14V10C3 7.8 4.8 6 7 6Z"
+                        fill="url(#game-grad)"
+                      />
+                      <Path
+                        d="M7 11V15M5 13H9"
+                        stroke="#FFFFFF"
+                        strokeWidth="1.8"
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                      />
+                      <Circle cx="15.5" cy="11.5" r="1.1" fill="#FFFFFF" />
+                      <Circle cx="18" cy="13.5" r="1.1" fill="#FFFFFF" />
+                      <Circle cx="15.5" cy="15.5" r="1.1" fill="#FFFFFF" />
+                      <Circle cx="13" cy="13.5" r="1.1" fill="#FFFFFF" />
+                    </Svg>
+                  </View>
+
+                  {/* Title */}
+                  <Text
+                    style={{
+                      fontFamily: "Fraunces-Bold",
+                      fontSize: 18,
+                      fontWeight: "700",
+                      color: "#111827",
+                      textAlign: "center",
+                    }}
+                  >
+                    Games
+                  </Text>
+
+                  {/* Players Online */}
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 5, marginTop: 4 }}>
+                    <View style={{ width: 6, height: 6, borderRadius: 3, backgroundColor: "#10B981" }} />
+                    <Text
+                      style={{
+                        fontFamily: "PlusJakartaSans",
+                        fontSize: 11,
+                        fontWeight: "600",
+                        color: "#92400E",
+                      }}
+                    >
+                      4 players online
+                    </Text>
+                  </View>
+                </LinearGradient>
+              </Pressable>
+            </View>
+
+            {/* ═══ Setup Profile Prompt (if user hasn't set interests) ═══ */}
+            {!isLoading &&
+              (!currentUser?.username || !currentUser?.interests || currentUser.interests.length === 0) && (
+                <View
+                  style={{
+                    backgroundColor: "#FFFFFF",
+                    borderRadius: 20,
+                    padding: 16,
+                    marginBottom: 16,
+                    borderWidth: 1,
+                    borderColor: "rgba(16, 185, 129, 0.25)",
+                    shadowColor: "#000",
+                    shadowOffset: { width: 0, height: 2 },
+                    shadowOpacity: 0.04,
+                    shadowRadius: 4,
+                    elevation: 1,
+                  }}
+                >
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+                    <View
+                      style={{
+                        width: 44,
+                        height: 44,
+                        borderRadius: 14,
+                        backgroundColor: "rgba(26, 107, 60, 0.1)",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <Compass size={22} color="#1A6B3C" />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Text
+                        style={{
+                          fontFamily: "Fraunces-Bold",
+                          fontSize: 15,
+                          fontWeight: "700",
+                          color: "#111827",
+                        }}
+                      >
+                        Maximize your Match Accuracy 🎯
+                      </Text>
+                      <Text
+                        style={{
+                          fontFamily: "PlusJakartaSans",
+                          fontSize: 12,
+                          color: "#6B7280",
+                          marginTop: 2,
+                        }}
+                      >
+                        Pick your passions and academic courses to find the highest-scoring peers!
+                      </Text>
+                    </View>
+                  </View>
+
+                  <Pressable
+                    onPress={() => router.push("/pages/edit-profile")}
+                    style={{
+                      marginTop: 12,
+                      backgroundColor: "#1A6B3C",
+                      borderRadius: 12,
+                      paddingVertical: 10,
+                      paddingHorizontal: 16,
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 6,
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontFamily: "PlusJakartaSans",
+                        fontSize: 12,
+                        fontWeight: "700",
+                        color: "#FFFFFF",
+                      }}
+                    >
+                      Setup Interests
+                    </Text>
+                    <ArrowRight size={14} color="#FFFFFF" />
+                  </Pressable>
+                </View>
+              )}
+
+            {/* ═══ Search & Controls Bar ═══ */}
+            <View
               style={{
                 backgroundColor: "#FFFFFF",
-                borderRadius: 16,
-                marginBottom: 12,
+                borderRadius: 20,
+                padding: 14,
                 borderWidth: 1,
-                borderColor: "#F3F4F6",
-                overflow: "hidden",
+                borderColor: "#E5E7EB",
                 shadowColor: "#000",
                 shadowOffset: { width: 0, height: 1 },
-                shadowOpacity: 0.03,
+                shadowOpacity: 0.04,
                 shadowRadius: 3,
                 elevation: 1,
               }}
             >
-              {/* Card Header Region with Match Badge */}
-              <View
-                style={{
-                  backgroundColor: "rgba(26,107,60,0.04)",
-                  padding: 14,
-                  borderBottomWidth: 1,
-                  borderBottomColor: "#F9FAFB",
-                }}
-              >
-                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 12, flex: 1 }}>
-                    <ClickableAvatar
-                      userId={(p as any).id}
-                      avatarKey={index % 4 === 0 ? "fox" : index % 4 === 1 ? "panda" : index % 4 === 2 ? "owl" : "wolf"}
-                      size={48}
-                      onPress={handleNavigateProfile}
-                    />
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 16, fontWeight: "700", color: "#111827" }} numberOfLines={1}>
-                        Anonymous Peer
+              {/* Search Row */}
+              <View style={{ flexDirection: "row", gap: 10 }}>
+                {/* Search Input */}
+                <View
+                  style={{
+                    flex: 1,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    backgroundColor: "#F9FAFB",
+                    borderRadius: 14,
+                    paddingHorizontal: 12,
+                    height: 44,
+                    borderWidth: 1,
+                    borderColor: "#E5E7EB",
+                  }}
+                >
+                  <Search size={16} color="#9CA3AF" style={{ marginRight: 8 }} />
+                  <TextInput
+                    value={search}
+                    onChangeText={setSearch}
+                    placeholder="Search students by name, course, interests..."
+                    placeholderTextColor="#9CA3AF"
+                    style={{
+                      flex: 1,
+                      fontFamily: "PlusJakartaSans",
+                      fontSize: 13,
+                      color: "#111827",
+                      height: "100%",
+                    }}
+                  />
+                  {search.length > 0 && (
+                    <Pressable onPress={() => setSearch("")} hitSlop={8}>
+                      <X size={15} color="#9CA3AF" />
+                    </Pressable>
+                  )}
+                </View>
+
+                {/* Filters Toggle Button */}
+                <Pressable
+                  onPress={() => setShowFilters(!showFilters)}
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 6,
+                    paddingHorizontal: 14,
+                    height: 44,
+                    borderRadius: 14,
+                    backgroundColor: showFilters || activeFiltersCount > 0 ? "rgba(26, 107, 60, 0.1)" : "#F9FAFB",
+                    borderWidth: 1,
+                    borderColor: showFilters || activeFiltersCount > 0 ? "rgba(26, 107, 60, 0.4)" : "#E5E7EB",
+                  }}
+                >
+                  <SlidersHorizontal
+                    size={16}
+                    color={showFilters || activeFiltersCount > 0 ? "#1A6B3C" : "#4B5563"}
+                  />
+                  <Text
+                    style={{
+                      fontFamily: "PlusJakartaSans",
+                      fontSize: 12,
+                      fontWeight: "700",
+                      color: showFilters || activeFiltersCount > 0 ? "#1A6B3C" : "#4B5563",
+                    }}
+                  >
+                    Filters
+                  </Text>
+                  {activeFiltersCount > 0 && (
+                    <View
+                      style={{
+                        width: 18,
+                        height: 18,
+                        borderRadius: 9,
+                        backgroundColor: "#1A6B3C",
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <Text style={{ fontSize: 10, fontWeight: "800", color: "#FFFFFF" }}>
+                        {activeFiltersCount}
                       </Text>
-                      {Boolean(p.course) && (
-                        <Text style={{ fontSize: 12, color: "#6B7280", marginTop: 1 }} numberOfLines={1}>
-                          {p.course}
+                    </View>
+                  )}
+                </Pressable>
+              </View>
+
+              {/* Quick College Pills Bar */}
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={{ gap: 8, paddingTop: 12 }}
+              >
+                {["All", ...departments].map((dept) => {
+                  const val = dept === "All" ? "" : dept;
+                  const isSel = filters.department === val;
+                  const short = dept === "All" ? "All Colleges" : dept.replace("College of ", "");
+                  const count =
+                    dept === "All"
+                      ? matches.length
+                      : matches.filter((m) => m.student.department === dept).length;
+
+                  return (
+                    <Pressable
+                      key={dept}
+                      onPress={() => {
+                        setFilters((prev) => ({
+                          ...prev,
+                          department: val,
+                          course: val && coursesByDept?.[val]?.includes(prev.course) ? prev.course : "",
+                        }));
+                      }}
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 6,
+                        paddingHorizontal: 12,
+                        paddingVertical: 7,
+                        borderRadius: 20,
+                        backgroundColor: isSel ? "#1A6B3C" : "#F3F4F6",
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontFamily: "PlusJakartaSans",
+                          fontSize: 12,
+                          fontWeight: "600",
+                          color: isSel ? "#FFFFFF" : "#4B5563",
+                        }}
+                      >
+                        {short}
+                      </Text>
+                      <View
+                        style={{
+                          backgroundColor: isSel ? "rgba(255, 255, 255, 0.25)" : "rgba(0, 0, 0, 0.06)",
+                          paddingHorizontal: 6,
+                          paddingVertical: 1,
+                          borderRadius: 8,
+                        }}
+                      >
+                        <Text
+                          style={{
+                            fontFamily: "PlusJakartaSans",
+                            fontSize: 10,
+                            fontWeight: "800",
+                            color: isSel ? "#FFFFFF" : "#6B7280",
+                          }}
+                        >
+                          {count}
                         </Text>
-                      )}
+                      </View>
+                    </Pressable>
+                  );
+                })}
+              </ScrollView>
+
+              {/* Expanded Filters Section (College, Degree Course, Year Level) */}
+              {showFilters && (
+                <View
+                  style={{
+                    marginTop: 12,
+                    paddingTop: 12,
+                    borderTopWidth: 1,
+                    borderTopColor: "#F3F4F6",
+                    gap: 10,
+                  }}
+                >
+                  {/* Department Field */}
+                  <View>
+                    <Text
+                      style={{
+                        fontFamily: "PlusJakartaSans",
+                        fontSize: 11,
+                        fontWeight: "700",
+                        color: "#6B7280",
+                        textTransform: "uppercase",
+                        marginBottom: 4,
+                      }}
+                    >
+                      College / Department
+                    </Text>
+                    <Pressable
+                      onPress={() => setPickerModal("department")}
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        backgroundColor: "#F9FAFB",
+                        paddingHorizontal: 12,
+                        paddingVertical: 10,
+                        borderRadius: 12,
+                        borderWidth: 1,
+                        borderColor: "#E5E7EB",
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontFamily: "PlusJakartaSans",
+                          fontSize: 13,
+                          color: filters.department ? "#111827" : "#6B7280",
+                        }}
+                        numberOfLines={1}
+                      >
+                        {filters.department
+                          ? filters.department.replace("College of ", "")
+                          : "All Colleges"}
+                      </Text>
+                      <ChevronDown size={16} color="#6B7280" />
+                    </Pressable>
+                  </View>
+
+                  {/* Course Field */}
+                  <View>
+                    <Text
+                      style={{
+                        fontFamily: "PlusJakartaSans",
+                        fontSize: 11,
+                        fontWeight: "700",
+                        color: "#6B7280",
+                        textTransform: "uppercase",
+                        marginBottom: 4,
+                      }}
+                    >
+                      Degree Course
+                    </Text>
+                    <Pressable
+                      onPress={() => setPickerModal("course")}
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        backgroundColor: "#F9FAFB",
+                        paddingHorizontal: 12,
+                        paddingVertical: 10,
+                        borderRadius: 12,
+                        borderWidth: 1,
+                        borderColor: "#E5E7EB",
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontFamily: "PlusJakartaSans",
+                          fontSize: 13,
+                          color: filters.course ? "#111827" : "#6B7280",
+                        }}
+                        numberOfLines={1}
+                      >
+                        {filters.course || "All Degree Courses"}
+                      </Text>
+                      <ChevronDown size={16} color="#6B7280" />
+                    </Pressable>
+                  </View>
+
+                  {/* Year Level Field */}
+                  <View>
+                    <Text
+                      style={{
+                        fontFamily: "PlusJakartaSans",
+                        fontSize: 11,
+                        fontWeight: "700",
+                        color: "#6B7280",
+                        textTransform: "uppercase",
+                        marginBottom: 4,
+                      }}
+                    >
+                      Year Level
+                    </Text>
+                    <Pressable
+                      onPress={() => setPickerModal("year")}
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        backgroundColor: "#F9FAFB",
+                        paddingHorizontal: 12,
+                        paddingVertical: 10,
+                        borderRadius: 12,
+                        borderWidth: 1,
+                        borderColor: "#E5E7EB",
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontFamily: "PlusJakartaSans",
+                          fontSize: 13,
+                          color: filters.yearLevel ? "#111827" : "#6B7280",
+                        }}
+                        numberOfLines={1}
+                      >
+                        {filters.yearLevel || "All Year Levels"}
+                      </Text>
+                      <ChevronDown size={16} color="#6B7280" />
+                    </Pressable>
+                  </View>
+
+                  {/* Sort By Filter */}
+                  <View>
+                    <Text
+                      style={{
+                        fontFamily: "PlusJakartaSans",
+                        fontSize: 11,
+                        fontWeight: "700",
+                        color: "#6B7280",
+                        textTransform: "uppercase",
+                        marginBottom: 6,
+                      }}
+                    >
+                      Sort By
+                    </Text>
+                    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+                      {[
+                        { id: "all", label: "Highest Match %" },
+                        { id: "popular", label: "🔥 Popular" },
+                        { id: "newest", label: "Newest" },
+                        { id: "name", label: "Name A-Z" },
+                      ].map((opt) => (
+                        <Pressable
+                          key={opt.id}
+                          onPress={() => setFilters((prev) => ({ ...prev, sortBy: opt.id }))}
+                          style={{
+                            paddingVertical: 6,
+                            paddingHorizontal: 10,
+                            borderRadius: 10,
+                            backgroundColor: filters.sortBy === opt.id ? "#1A6B3C" : "#F3F4F6",
+                          }}
+                        >
+                          <Text
+                            style={{
+                              fontFamily: "PlusJakartaSans",
+                              fontSize: 11,
+                              fontWeight: "700",
+                              color: filters.sortBy === opt.id ? "#FFFFFF" : "#374151",
+                            }}
+                          >
+                            {opt.label}
+                          </Text>
+                        </Pressable>
+                      ))}
                     </View>
                   </View>
 
-                  {/* Match Percentage Badge */}
+                  {/* Reset Filters Option */}
+                  {hasActiveFilter && (
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        justifyContent: "space-between",
+                        paddingTop: 6,
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontFamily: "PlusJakartaSans",
+                          fontSize: 11,
+                          color: "#9CA3AF",
+                        }}
+                      >
+                        Active criteria applied.
+                      </Text>
+                      <Pressable
+                        onPress={handleResetFilters}
+                        style={{ flexDirection: "row", alignItems: "center", gap: 4 }}
+                      >
+                        <RotateCcw size={12} color="#1A6B3C" />
+                        <Text
+                          style={{
+                            fontFamily: "PlusJakartaSans",
+                            fontSize: 12,
+                            fontWeight: "700",
+                            color: "#1A6B3C",
+                          }}
+                        >
+                          Reset filters
+                        </Text>
+                      </Pressable>
+                    </View>
+                  )}
+                </View>
+              )}
+            </View>
+          </View>
+        }
+        renderItem={({ item }) => {
+          const student = item.student;
+          const status = connections[student.id] || "none";
+          const effectiveAvatarKey =
+            student.avatarKey ||
+            student.avatarPresetId ||
+            getDeterministicAnonymousAvatar(student.id);
+          const anonName = getAnonymousName(student, effectiveAvatarKey);
+
+          const interests = student.interests || [];
+          const sortedInterests = [
+            ...item.sharedInterests,
+            ...interests.filter((i) => !item.sharedInterests.includes(i)),
+          ];
+
+          const firstInterest = sortedInterests[0];
+          const isFirstLong = Boolean(firstInterest && firstInterest.length > 9);
+          const canShowTwo =
+            !isFirstLong &&
+            sortedInterests.length >= 2 &&
+            firstInterest.length + sortedInterests[1].length <= 16;
+          const maxToShow = canShowTwo ? 2 : 1;
+          const displayedInterests = sortedInterests.slice(0, maxToShow);
+          const remainingCount = sortedInterests.length - maxToShow;
+
+          const badgeStyle = getMatchBadgeStyle(item.matchPercentage, item.sharedInterests.length);
+
+          return (
+            <Pressable
+              onPress={() => setSelectedCard(item)}
+              style={{
+                backgroundColor: "#FFFFFF",
+                borderRadius: 20,
+                padding: 16,
+                marginBottom: 12,
+                borderWidth: 1,
+                borderColor: "#E5E7EB",
+                shadowColor: "#000",
+                shadowOffset: { width: 0, height: 1 },
+                shadowOpacity: 0.04,
+                shadowRadius: 3,
+                elevation: 1,
+              }}
+            >
+              {/* Top Row: Anonymous Avatar on Left, Match Badge & Dismiss X on Right */}
+              <View style={{ flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between" }}>
+                {/* Left: Avatar with Online indicator */}
+                <View style={{ position: "relative" }}>
+                  <AnonymousAvatar avatarKey={effectiveAvatarKey} size={52} />
+                  {isOnline(student.id) && (
+                    <View
+                      style={{
+                        position: "absolute",
+                        bottom: 0,
+                        right: 0,
+                        width: 14,
+                        height: 14,
+                        borderRadius: 7,
+                        backgroundColor: "#22C55E",
+                        borderWidth: 2,
+                        borderColor: "#FFFFFF",
+                      }}
+                    />
+                  )}
+                </View>
+
+                {/* Right: Compatibility Badge & Dismiss X Button */}
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                   <View
                     style={{
-                      backgroundColor: "#F0FDF4",
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 5,
+                      backgroundColor: badgeStyle.bg,
                       borderWidth: 1,
-                      borderColor: "#86EFAC",
-                      paddingHorizontal: 10,
+                      borderColor: badgeStyle.border,
+                      paddingHorizontal: 8,
                       paddingVertical: 4,
                       borderRadius: 12,
                     }}
                   >
-                    <Text style={{ fontSize: 12, fontWeight: "800", color: "#16A34A" }}>
-                      {item.matchPercentage}% Match
-                    </Text>
-                  </View>
-                </View>
-
-                {/* Course & Year Tag */}
-                {Boolean(p.course) && (
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 10 }}>
+                    <View
+                      style={{
+                        width: 6,
+                        height: 6,
+                        borderRadius: 3,
+                        backgroundColor: badgeStyle.dot,
+                      }}
+                    />
                     <Text
                       style={{
+                        fontFamily: "PlusJakartaSans",
                         fontSize: 11,
+                        fontWeight: "700",
+                        color: badgeStyle.text,
+                      }}
+                    >
+                      {item.matchPercentage}% Compatible
+                    </Text>
+                  </View>
+
+                  <Pressable
+                    onPress={() => {
+                      setDismissedStudentIds((prev) => new Set([...prev, student.id]));
+                      setToast({ message: `Dismissed ${anonName}`, type: "info" });
+                    }}
+                    hitSlop={8}
+                    style={{
+                      width: 28,
+                      height: 28,
+                      borderRadius: 14,
+                      alignItems: "center",
+                      justifyContent: "center",
+                      backgroundColor: "#F9FAFB",
+                    }}
+                  >
+                    <X size={15} color="#9CA3AF" />
+                  </Pressable>
+                </View>
+              </View>
+
+              {/* Middle: Anonymous Name & Academic Info */}
+              <View style={{ marginTop: 10 }}>
+                <Text
+                  style={{
+                    fontFamily: "Fraunces-Bold",
+                    fontSize: 16,
+                    fontWeight: "700",
+                    color: "#111827",
+                  }}
+                  numberOfLines={1}
+                >
+                  {anonName}
+                </Text>
+                <Text
+                  style={{
+                    fontFamily: "PlusJakartaSans",
+                    fontSize: 12,
+                    color: "#6B7280",
+                    marginTop: 2,
+                  }}
+                  numberOfLines={1}
+                >
+                  {student.course || student.department?.replace("College of ", "") || "CHMSU Student"}
+                </Text>
+
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 6 }}>
+                  <View
+                    style={{
+                      backgroundColor: "#F3F4F6",
+                      paddingHorizontal: 8,
+                      paddingVertical: 2,
+                      borderRadius: 6,
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontFamily: "PlusJakartaSans",
+                        fontSize: 10,
                         fontWeight: "600",
-                        color: "#1A6B3C",
-                        backgroundColor: "#FFFFFF",
-                        paddingHorizontal: 8,
-                        paddingVertical: 3,
-                        borderRadius: 6,
-                        borderWidth: 1,
-                        borderColor: "#E5E7EB",
+                        color: "#374151",
+                      }}
+                    >
+                      {student.yearLevel || "Student"}
+                    </Text>
+                  </View>
+                  {Boolean(student.department) && (
+                    <Text
+                      style={{
+                        fontFamily: "PlusJakartaSans",
+                        fontSize: 11,
+                        color: "#9CA3AF",
+                        flex: 1,
                       }}
                       numberOfLines={1}
                     >
-                      {p.course}
+                      {student.department.replace("College of ", "")}
                     </Text>
-                  </View>
-                )}
+                  )}
+                </View>
               </View>
 
-              {/* Shared Interests Pills */}
-              {item.sharedInterests.length > 0 && (
-                <View style={{ paddingHorizontal: 14, paddingTop: 10, paddingBottom: 6 }}>
-                  <Text style={{ fontSize: 11, fontWeight: "600", color: "#9CA3AF", textTransform: "uppercase", marginBottom: 6 }}>
-                    {item.sharedInterests.length} shared interest{item.sharedInterests.length > 1 ? "s" : ""}
+              {/* Interests Row (Single-line responsive) */}
+              <View style={{ marginTop: 10, marginBottom: 12 }}>
+                {interests.length === 0 ? (
+                  <Text
+                    style={{
+                      fontFamily: "PlusJakartaSans",
+                      fontSize: 11,
+                      color: "#9CA3AF",
+                      fontStyle: "italic",
+                    }}
+                  >
+                    No interests listed
                   </Text>
-                  <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
-                    {item.sharedInterests.slice(0, 3).map((interest) => (
+                ) : (
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "nowrap" }}>
+                    {displayedInterests.map((interest) => {
+                      const isShared = item.sharedInterests.includes(interest);
+                      const catColor = INTEREST_COLOR_MAP[interest] || "blue";
+                      const tStyle = isShared ? TAG_STYLES.shared : (TAG_STYLES[catColor] || TAG_STYLES.blue);
+
+                      return (
+                        <View
+                          key={interest}
+                          style={{
+                            backgroundColor: tStyle.bg,
+                            borderWidth: 1,
+                            borderColor: tStyle.border,
+                            paddingHorizontal: 8,
+                            paddingVertical: 3,
+                            borderRadius: 8,
+                            flexDirection: "row",
+                            alignItems: "center",
+                            gap: 3,
+                            maxWidth: 130,
+                          }}
+                        >
+                          {isShared && (
+                            <Text style={{ fontSize: 10, color: "#15803D" }}>✦</Text>
+                          )}
+                          <Text
+                            style={{
+                              fontFamily: "PlusJakartaSans",
+                              fontSize: 11,
+                              fontWeight: "600",
+                              color: tStyle.text,
+                            }}
+                            numberOfLines={1}
+                          >
+                            {interest}
+                          </Text>
+                        </View>
+                      );
+                    })}
+
+                    {remainingCount > 0 && (
                       <View
-                        key={interest}
                         style={{
                           backgroundColor: "#F3F4F6",
                           paddingHorizontal: 8,
@@ -634,322 +1579,981 @@ export default function DiscoverScreen() {
                           borderRadius: 8,
                         }}
                       >
-                        <Text style={{ fontSize: 11, color: "#374151", fontWeight: "500" }}>
-                          {interest}
+                        <Text
+                          style={{
+                            fontFamily: "PlusJakartaSans",
+                            fontSize: 10,
+                            fontWeight: "700",
+                            color: "#6B7280",
+                          }}
+                        >
+                          +{remainingCount} more
                         </Text>
                       </View>
-                    ))}
-                    {item.sharedInterests.length > 3 && (
-                      <Text style={{ fontSize: 11, color: "#9CA3AF", alignSelf: "center" }}>
-                        +{item.sharedInterests.length - 3} more
-                      </Text>
                     )}
                   </View>
-                </View>
-              )}
-
-              {/* Card Action Buttons (Pass, Connect, Message) */}
-              <View
-                style={{
-                  flexDirection: "row",
-                  alignItems: "center",
-                  padding: 12,
-                  gap: 8,
-                  borderTopWidth: 1,
-                  borderTopColor: "#F3F4F6",
-                }}
-              >
-                {status === "none" && (
-                  <Pressable
-                    onPress={() => handlePassUser(p.id)}
-                    style={{
-                      flex: 1,
-                      backgroundColor: "#F3F4F6",
-                      paddingVertical: 9,
-                      borderRadius: 10,
-                      alignItems: "center",
-                      justifyContent: "center",
-                      flexDirection: "row",
-                      gap: 4,
-                    }}
-                  >
-                    <X size={14} color="#6B7280" />
-                    <Text style={{ fontSize: 12, fontWeight: "600", color: "#6B7280" }}>Pass</Text>
-                  </Pressable>
-                )}
-
-                <Pressable
-                  onPress={() => handleConnect(p.id)}
-                  disabled={status === "accepted" || status === "pending"}
-                  style={{
-                    flex: 2,
-                    backgroundColor:
-                      status === "accepted"
-                        ? "#F0FDF4"
-                        : status === "pending"
-                          ? "#FEF3C7"
-                          : "#1A6B3C",
-                    paddingVertical: 9,
-                    borderRadius: 10,
-                    alignItems: "center",
-                    justifyContent: "center",
-                    flexDirection: "row",
-                    gap: 6,
-                    borderWidth: status === "none" ? 0 : 1,
-                    borderColor:
-                      status === "accepted"
-                        ? "#86EFAC"
-                        : status === "pending"
-                          ? "#FDE68A"
-                          : "transparent",
-                  }}
-                >
-                  {status === "accepted" ? (
-                    <UserCheck size={14} color="#16A34A" />
-                  ) : status === "pending" ? (
-                    <Clock size={14} color="#D97706" />
-                  ) : (
-                    <UserPlus size={14} color="#FFFFFF" />
-                  )}
-                  <Text
-                    style={{
-                      fontSize: 12,
-                      fontWeight: "700",
-                      color:
-                        status === "accepted"
-                          ? "#16A34A"
-                          : status === "pending"
-                            ? "#D97706"
-                            : "#FFFFFF",
-                    }}
-                  >
-                    {status === "none"
-                      ? "Request Match"
-                      : status === "pending"
-                        ? "Match Requested"
-                        : "Matched"}
-                  </Text>
-                </Pressable>
-
-                {status === "accepted" && (
-                  <Pressable
-                    onPress={() => handleMessageUser(p.id)}
-                    style={{
-                      width: 36,
-                      height: 36,
-                      borderRadius: 10,
-                      backgroundColor: "#F0FDF4",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      borderWidth: 1,
-                      borderColor: "#86EFAC",
-                    }}
-                  >
-                    <MessageCircle size={16} color="#16A34A" />
-                  </Pressable>
                 )}
               </View>
+
+              {/* Bottom: Action Button */}
+              {status === "accepted" ? (
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                  <View
+                    style={{
+                      flex: 1,
+                      backgroundColor: "rgba(26, 107, 60, 0.1)",
+                      borderRadius: 12,
+                      paddingVertical: 10,
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      gap: 6,
+                    }}
+                  >
+                    <Check size={14} color="#1A6B3C" strokeWidth={2.5} />
+                    <Text
+                      style={{
+                        fontFamily: "PlusJakartaSans",
+                        fontSize: 13,
+                        fontWeight: "700",
+                        color: "#1A6B3C",
+                      }}
+                    >
+                      Connected
+                    </Text>
+                  </View>
+
+                  <Pressable
+                    onPress={() => handleMessage(student.id)}
+                    style={{
+                      width: 44,
+                      height: 44,
+                      borderRadius: 12,
+                      backgroundColor: "#1A6B3C",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <MessageCircle size={18} color="#FFFFFF" />
+                  </Pressable>
+                </View>
+              ) : status === "pending" ? (
+                <View
+                  style={{
+                    backgroundColor: "#FEF3C7",
+                    borderWidth: 1,
+                    borderColor: "#FDE68A",
+                    borderRadius: 12,
+                    paddingVertical: 10,
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontFamily: "PlusJakartaSans",
+                      fontSize: 13,
+                      fontWeight: "700",
+                      color: "#B45309",
+                    }}
+                  >
+                    ⏳ Request Sent
+                  </Text>
+                </View>
+              ) : (
+                <Pressable
+                  onPress={() => handleConnect(student.id)}
+                  style={{
+                    backgroundColor: "#1A6B3C",
+                    borderRadius: 12,
+                    paddingVertical: 10,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 6,
+                    shadowColor: "#1A6B3C",
+                    shadowOffset: { width: 0, height: 2 },
+                    shadowOpacity: 0.15,
+                    shadowRadius: 4,
+                    elevation: 1,
+                  }}
+                >
+                  <UserPlus size={15} color="#FFFFFF" strokeWidth={2.2} />
+                  <Text
+                    style={{
+                      fontFamily: "PlusJakartaSans",
+                      fontSize: 13,
+                      fontWeight: "700",
+                      color: "#FFFFFF",
+                    }}
+                  >
+                    Connect
+                  </Text>
+                </Pressable>
+              )}
             </Pressable>
           );
         }}
         ListEmptyComponent={
-          <EmptyState
-            icon={<Compass size={32} color="#1A6B3C" />}
-            title={
-              searchQuery
-                ? "No matching students"
-                : activeTab === "allies"
-                  ? "No Allies yet"
-                  : "No students found"
-            }
-            description={
-              searchQuery
-                ? `No student matching "${searchQuery}" was found.`
-                : activeTab === "allies"
-                  ? "Connect with fellow students to build your campus network."
-                  : "Try expanding your filter parameters or check back later."
-            }
-          />
+          isLoading ? (
+            <View style={{ paddingVertical: 40, alignItems: "center" }}>
+              <ActivityIndicator size="large" color="#1A6B3C" />
+            </View>
+          ) : (
+            <View
+              style={{
+                backgroundColor: "#FFFFFF",
+                borderRadius: 24,
+                padding: 24,
+                alignItems: "center",
+                borderWidth: 1,
+                borderColor: "#E5E7EB",
+                marginTop: 8,
+              }}
+            >
+              <View
+                style={{
+                  width: 56,
+                  height: 56,
+                  borderRadius: 28,
+                  backgroundColor: "rgba(26, 107, 60, 0.1)",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  marginBottom: 12,
+                }}
+              >
+                <Compass size={28} color="#1A6B3C" />
+              </View>
+
+              <Text
+                style={{
+                  fontFamily: "Fraunces-Bold",
+                  fontSize: 18,
+                  fontWeight: "700",
+                  color: "#111827",
+                  marginBottom: 6,
+                  textAlign: "center",
+                }}
+              >
+                No students match your filter
+              </Text>
+              <Text
+                style={{
+                  fontFamily: "PlusJakartaSans",
+                  fontSize: 12,
+                  color: "#6B7280",
+                  textAlign: "center",
+                  marginBottom: 16,
+                  lineHeight: 18,
+                }}
+              >
+                We couldn't find anyone matching your current search terms. Try clearing your filters or launch an anonymous match!
+              </Text>
+
+              <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap", justifyContent: "center" }}>
+                {hasActiveFilter && (
+                  <Pressable
+                    onPress={handleResetFilters}
+                    style={{
+                      paddingVertical: 10,
+                      paddingHorizontal: 16,
+                      borderRadius: 12,
+                      borderWidth: 1,
+                      borderColor: "#E5E7EB",
+                      flexDirection: "row",
+                      alignItems: "center",
+                      gap: 6,
+                    }}
+                  >
+                    <RotateCcw size={14} color="#4B5563" />
+                    <Text
+                      style={{
+                        fontFamily: "PlusJakartaSans",
+                        fontSize: 12,
+                        fontWeight: "700",
+                        color: "#4B5563",
+                      }}
+                    >
+                      Clear Filters
+                    </Text>
+                  </Pressable>
+                )}
+
+                <Pressable
+                  onPress={handleFindMatch}
+                  disabled={!canMatch}
+                  style={{
+                    backgroundColor: "#1A6B3C",
+                    paddingVertical: 10,
+                    paddingHorizontal: 16,
+                    borderRadius: 12,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 6,
+                  }}
+                >
+                  <Sparkles size={14} color="#FFFFFF" />
+                  <Text
+                    style={{
+                      fontFamily: "PlusJakartaSans",
+                      fontSize: 12,
+                      fontWeight: "700",
+                      color: "#FFFFFF",
+                    }}
+                  >
+                    Pair Anonymously Now
+                  </Text>
+                </Pressable>
+              </View>
+            </View>
+          )
         }
       />
 
-      {/* ═══ Filter Modal ═══ */}
-      <Modal visible={showFilterModal} transparent animationType="slide">
+      {/* ═══ Profile Discovery Detail Modal ═══ */}
+      {selectedCard && (() => {
+        const student = selectedCard.student;
+        const selectedAvatarKey =
+          student.avatarKey ||
+          student.avatarPresetId ||
+          getDeterministicAnonymousAvatar(student.id);
+        const selectedAnonName = getAnonymousName(student, selectedAvatarKey);
+        const cardStatus = connections[student.id] || "none";
+
+        return (
+          <Modal visible transparent animationType="slide">
+            <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "flex-end" }}>
+              <View
+                style={{
+                  backgroundColor: "#FFFFFF",
+                  borderTopLeftRadius: 28,
+                  borderTopRightRadius: 28,
+                  maxHeight: "88%",
+                  overflow: "hidden",
+                }}
+              >
+                {/* Modal Header with Rich Forest Green Gradient */}
+                <LinearGradient
+                  colors={["#1A6B3C", "#14532D", "#0A331C"]}
+                  style={{ padding: 20, position: "relative" }}
+                >
+                  <Pressable
+                    onPress={() => setSelectedCard(null)}
+                    hitSlop={8}
+                    style={{
+                      position: "absolute",
+                      top: 16,
+                      right: 16,
+                      width: 32,
+                      height: 32,
+                      borderRadius: 16,
+                      backgroundColor: "rgba(255, 255, 255, 0.2)",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <X size={18} color="#FFFFFF" />
+                  </Pressable>
+
+                  <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 14, paddingRight: 32 }}>
+                    <View style={{ position: "relative" }}>
+                      <AnonymousAvatar avatarKey={selectedAvatarKey} size={64} />
+                      {isOnline(student.id) && (
+                        <View
+                          style={{
+                            position: "absolute",
+                            bottom: -2,
+                            right: -2,
+                            width: 16,
+                            height: 16,
+                            borderRadius: 8,
+                            backgroundColor: "#22C55E",
+                            borderWidth: 2,
+                            borderColor: "#FFFFFF",
+                          }}
+                        />
+                      )}
+                    </View>
+
+                    <View style={{ flex: 1 }}>
+                      <Text
+                        style={{
+                          fontFamily: "Fraunces-Bold",
+                          fontSize: 20,
+                          fontWeight: "700",
+                          color: "#FFFFFF",
+                        }}
+                        numberOfLines={1}
+                      >
+                        {selectedAnonName}
+                      </Text>
+
+                      <Text
+                        style={{
+                          fontFamily: "PlusJakartaSans",
+                          fontSize: 12,
+                          color: "#D1FAE5",
+                          marginTop: 2,
+                        }}
+                        numberOfLines={1}
+                      >
+                        {student.course || student.department?.replace("College of ", "") || "CHMSU Student"}
+                      </Text>
+
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 8 }}>
+                        <View
+                          style={{
+                            backgroundColor: "rgba(255, 255, 255, 0.2)",
+                            paddingHorizontal: 8,
+                            paddingVertical: 2,
+                            borderRadius: 10,
+                          }}
+                        >
+                          <Text
+                            style={{
+                              fontFamily: "PlusJakartaSans",
+                              fontSize: 11,
+                              fontWeight: "600",
+                              color: "#FFFFFF",
+                            }}
+                          >
+                            {student.yearLevel || "Student"}
+                          </Text>
+                        </View>
+
+                        {student.isVerified && (
+                          <View
+                            style={{
+                              backgroundColor: "rgba(16, 185, 129, 0.25)",
+                              borderWidth: 1,
+                              borderColor: "rgba(16, 185, 129, 0.4)",
+                              paddingHorizontal: 8,
+                              paddingVertical: 2,
+                              borderRadius: 10,
+                              flexDirection: "row",
+                              alignItems: "center",
+                              gap: 4,
+                            }}
+                          >
+                            <ShieldCheck size={12} color="#6EE7B7" />
+                            <Text
+                              style={{
+                                fontFamily: "PlusJakartaSans",
+                                fontSize: 10,
+                                fontWeight: "700",
+                                color: "#D1FAE5",
+                              }}
+                            >
+                              Verified CHMSU
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                    </View>
+                  </View>
+                </LinearGradient>
+
+                {/* Modal Body */}
+                <ScrollView contentContainerStyle={{ padding: 20, gap: 16 }}>
+                  {/* Match Compatibility Highlight */}
+                  <View
+                    style={{
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      backgroundColor: "rgba(26, 107, 60, 0.08)",
+                      borderWidth: 1,
+                      borderColor: "rgba(26, 107, 60, 0.15)",
+                      borderRadius: 18,
+                      padding: 16,
+                    }}
+                  >
+                    <View style={{ flex: 1, marginRight: 12 }}>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                        <Sparkles size={14} color="#1A6B3C" />
+                        <Text
+                          style={{
+                            fontFamily: "PlusJakartaSans",
+                            fontSize: 13,
+                            fontWeight: "700",
+                            color: "#1A6B3C",
+                          }}
+                        >
+                          Peer Compatibility
+                        </Text>
+                      </View>
+                      <Text
+                        style={{
+                          fontFamily: "PlusJakartaSans",
+                          fontSize: 11,
+                          color: "#6B7280",
+                          marginTop: 3,
+                        }}
+                      >
+                        {selectedCard.sharedInterests.length > 0
+                          ? "Shared campus passions and college synergy"
+                          : "Calculated from campus discovery preferences"}
+                      </Text>
+                    </View>
+
+                    <View style={{ alignItems: "flex-end" }}>
+                      <Text
+                        style={{
+                          fontFamily: "Fraunces-Bold",
+                          fontSize: 26,
+                          fontWeight: "800",
+                          color: "#1A6B3C",
+                        }}
+                      >
+                        {selectedCard.matchPercentage}%
+                      </Text>
+                      <Text
+                        style={{
+                          fontFamily: "PlusJakartaSans",
+                          fontSize: 9,
+                          fontWeight: "800",
+                          color: "#9CA3AF",
+                          textTransform: "uppercase",
+                          letterSpacing: 0.5,
+                        }}
+                      >
+                        Match
+                      </Text>
+                    </View>
+                  </View>
+
+                  {/* About / Bio */}
+                  {Boolean(student.bio) && (
+                    <View>
+                      <Text
+                        style={{
+                          fontFamily: "PlusJakartaSans",
+                          fontSize: 11,
+                          fontWeight: "700",
+                          color: "#9CA3AF",
+                          textTransform: "uppercase",
+                          marginBottom: 6,
+                        }}
+                      >
+                        About
+                      </Text>
+                      <View
+                        style={{
+                          backgroundColor: "#F9FAFB",
+                          padding: 14,
+                          borderRadius: 14,
+                          borderWidth: 1,
+                          borderColor: "#E5E7EB",
+                        }}
+                      >
+                        <Text
+                          style={{
+                            fontFamily: "PlusJakartaSans",
+                            fontSize: 13,
+                            color: "#374151",
+                            fontStyle: "italic",
+                            lineHeight: 18,
+                          }}
+                        >
+                          "{student.bio}"
+                        </Text>
+                      </View>
+                    </View>
+                  )}
+
+                  {/* Shared Interests */}
+                  {selectedCard.sharedInterests.length > 0 && (
+                    <View>
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8 }}>
+                        <Sparkles size={13} color="#1A6B3C" />
+                        <Text
+                          style={{
+                            fontFamily: "PlusJakartaSans",
+                            fontSize: 11,
+                            fontWeight: "700",
+                            color: "#1A6B3C",
+                            textTransform: "uppercase",
+                          }}
+                        >
+                          {selectedCard.sharedInterests.length} Shared Interest
+                          {selectedCard.sharedInterests.length > 1 ? "s" : ""}
+                        </Text>
+                      </View>
+
+                      <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+                        {selectedCard.sharedInterests.map((interest) => (
+                          <View
+                            key={interest}
+                            style={{
+                              backgroundColor: "#ECFDF5",
+                              borderWidth: 1,
+                              borderColor: "#86EFAC",
+                              paddingHorizontal: 10,
+                              paddingVertical: 5,
+                              borderRadius: 10,
+                              flexDirection: "row",
+                              alignItems: "center",
+                              gap: 4,
+                            }}
+                          >
+                            <Text style={{ fontSize: 10, color: "#15803D" }}>✦</Text>
+                            <Text
+                              style={{
+                                fontFamily: "PlusJakartaSans",
+                                fontSize: 12,
+                                fontWeight: "600",
+                                color: "#15803D",
+                              }}
+                            >
+                              {interest}
+                            </Text>
+                          </View>
+                        ))}
+                      </View>
+                    </View>
+                  )}
+
+                  {/* Other Passions */}
+                  {student.interests &&
+                    student.interests.filter((i) => !selectedCard.sharedInterests.includes(i)).length > 0 && (
+                      <View>
+                        <Text
+                          style={{
+                            fontFamily: "PlusJakartaSans",
+                            fontSize: 11,
+                            fontWeight: "700",
+                            color: "#9CA3AF",
+                            textTransform: "uppercase",
+                            marginBottom: 8,
+                          }}
+                        >
+                          Other Passions
+                        </Text>
+                        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
+                          {student.interests
+                            .filter((i) => !selectedCard.sharedInterests.includes(i))
+                            .map((interest) => {
+                              const catColor = INTEREST_COLOR_MAP[interest] || "blue";
+                              const tStyle = TAG_STYLES[catColor] || TAG_STYLES.blue;
+                              return (
+                                <View
+                                  key={interest}
+                                  style={{
+                                    backgroundColor: tStyle.bg,
+                                    borderWidth: 1,
+                                    borderColor: tStyle.border,
+                                    paddingHorizontal: 10,
+                                    paddingVertical: 5,
+                                    borderRadius: 10,
+                                  }}
+                                >
+                                  <Text
+                                    style={{
+                                      fontFamily: "PlusJakartaSans",
+                                      fontSize: 12,
+                                      fontWeight: "600",
+                                      color: tStyle.text,
+                                    }}
+                                  >
+                                    {interest}
+                                  </Text>
+                                </View>
+                              );
+                            })}
+                        </View>
+                      </View>
+                    )}
+
+                  {/* Student Organizations */}
+                  {student.organizations && student.organizations.length > 0 && (
+                    <View>
+                      <Text
+                        style={{
+                          fontFamily: "PlusJakartaSans",
+                          fontSize: 11,
+                          fontWeight: "700",
+                          color: "#9CA3AF",
+                          textTransform: "uppercase",
+                          marginBottom: 8,
+                        }}
+                      >
+                        Student Organizations
+                      </Text>
+                      <View style={{ gap: 6 }}>
+                        {student.organizations.map((org) => {
+                          const isSharedOrg = Boolean(currentUser?.organizations?.includes(org));
+                          return (
+                            <View
+                              key={org}
+                              style={{
+                                flexDirection: "row",
+                                alignItems: "center",
+                                gap: 8,
+                                paddingHorizontal: 12,
+                                paddingVertical: 9,
+                                borderRadius: 12,
+                                borderWidth: 1,
+                                borderColor: isSharedOrg ? "rgba(26, 107, 60, 0.25)" : "#E5E7EB",
+                                backgroundColor: isSharedOrg ? "rgba(26, 107, 60, 0.08)" : "#F9FAFB",
+                              }}
+                            >
+                              <Text style={{ fontSize: 13 }}>🏛️</Text>
+                              <Text
+                                style={{
+                                  fontFamily: "PlusJakartaSans",
+                                  fontSize: 12,
+                                  fontWeight: "600",
+                                  color: isSharedOrg ? "#1A6B3C" : "#374151",
+                                  flex: 1,
+                                }}
+                                numberOfLines={1}
+                              >
+                                {org}
+                              </Text>
+                              {isSharedOrg && (
+                                <View
+                                  style={{
+                                    backgroundColor: "rgba(26, 107, 60, 0.15)",
+                                    paddingHorizontal: 6,
+                                    paddingVertical: 2,
+                                    borderRadius: 6,
+                                  }}
+                                >
+                                  <Text
+                                    style={{
+                                      fontFamily: "PlusJakartaSans",
+                                      fontSize: 9,
+                                      fontWeight: "800",
+                                      color: "#1A6B3C",
+                                    }}
+                                  >
+                                    Shared Org!
+                                  </Text>
+                                </View>
+                              )}
+                            </View>
+                          );
+                        })}
+                      </View>
+                    </View>
+                  )}
+                </ScrollView>
+
+                {/* Modal Footer */}
+                <View
+                  style={{
+                    padding: 16,
+                    borderTopWidth: 1,
+                    borderTopColor: "#F3F4F6",
+                    backgroundColor: "#FFFFFF",
+                  }}
+                >
+                  {cardStatus === "none" && (
+                    <Pressable
+                      onPress={() => {
+                        handleConnect(student.id);
+                        setSelectedCard(null);
+                      }}
+                      style={{
+                        backgroundColor: "#1A6B3C",
+                        paddingVertical: 13,
+                        borderRadius: 14,
+                        flexDirection: "row",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        gap: 6,
+                      }}
+                    >
+                      <UserPlus size={16} color="#FFFFFF" strokeWidth={2.2} />
+                      <Text
+                        style={{
+                          fontFamily: "PlusJakartaSans",
+                          fontSize: 14,
+                          fontWeight: "700",
+                          color: "#FFFFFF",
+                        }}
+                      >
+                        Connect With Student
+                      </Text>
+                    </Pressable>
+                  )}
+
+                  {cardStatus === "pending" && (
+                    <View
+                      style={{
+                        backgroundColor: "#FEF3C7",
+                        borderWidth: 1,
+                        borderColor: "#FDE68A",
+                        paddingVertical: 13,
+                        borderRadius: 14,
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontFamily: "PlusJakartaSans",
+                          fontSize: 14,
+                          fontWeight: "700",
+                          color: "#B45309",
+                        }}
+                      >
+                        ⏳ Connection Request Pending
+                      </Text>
+                    </View>
+                  )}
+
+                  {cardStatus === "accepted" && (
+                    <View style={{ flexDirection: "row", gap: 10 }}>
+                      <View
+                        style={{
+                          flex: 1,
+                          backgroundColor: "rgba(26, 107, 60, 0.1)",
+                          paddingVertical: 13,
+                          borderRadius: 14,
+                          flexDirection: "row",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          gap: 6,
+                        }}
+                      >
+                        <Check size={16} color="#1A6B3C" strokeWidth={2.5} />
+                        <Text
+                          style={{
+                            fontFamily: "PlusJakartaSans",
+                            fontSize: 14,
+                            fontWeight: "700",
+                            color: "#1A6B3C",
+                          }}
+                        >
+                          Connected Ally
+                        </Text>
+                      </View>
+
+                      <Pressable
+                        onPress={() => {
+                          setSelectedCard(null);
+                          handleMessage(student.id);
+                        }}
+                        style={{
+                          backgroundColor: "#1A6B3C",
+                          paddingVertical: 13,
+                          paddingHorizontal: 20,
+                          borderRadius: 14,
+                          flexDirection: "row",
+                          alignItems: "center",
+                          justifyContent: "center",
+                          gap: 6,
+                        }}
+                      >
+                        <MessageCircle size={16} color="#FFFFFF" />
+                        <Text
+                          style={{
+                            fontFamily: "PlusJakartaSans",
+                            fontSize: 14,
+                            fontWeight: "700",
+                            color: "#FFFFFF",
+                          }}
+                        >
+                          Chat
+                        </Text>
+                      </Pressable>
+                    </View>
+                  )}
+                </View>
+              </View>
+            </View>
+          </Modal>
+        );
+      })()}
+
+      {/* ═══ Picker Selection Modal (for College, Course, Year) ═══ */}
+      <Modal visible={pickerModal !== null} transparent animationType="fade">
         <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" }}>
-          <View style={{ backgroundColor: "#FFFFFF", borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20, paddingBottom: 32 }}>
-            <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-              <Text style={{ fontSize: 18, fontWeight: "700", color: "#111827" }}>Filter & Sort</Text>
-              <Pressable onPress={() => setShowFilterModal(false)}>
+          <View
+            style={{
+              backgroundColor: "#FFFFFF",
+              borderTopLeftRadius: 24,
+              borderTopRightRadius: 24,
+              maxHeight: "75%",
+              padding: 20,
+              paddingBottom: insets.bottom + 16,
+            }}
+          >
+            <View
+              style={{
+                flexDirection: "row",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: 16,
+              }}
+            >
+              <Text
+                style={{
+                  fontFamily: "Fraunces-Bold",
+                  fontSize: 18,
+                  fontWeight: "700",
+                  color: "#111827",
+                }}
+              >
+                {pickerModal === "department"
+                  ? "Select College"
+                  : pickerModal === "course"
+                  ? "Select Degree Course"
+                  : "Select Year Level"}
+              </Text>
+              <Pressable onPress={() => setPickerModal(null)} hitSlop={8}>
                 <X size={20} color="#6B7280" />
               </Pressable>
             </View>
 
-            {/* Department Filter */}
-            <Text style={{ fontSize: 13, fontWeight: "600", color: "#374151", marginBottom: 8 }}>Department</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 16 }}>
+            <ScrollView contentContainerStyle={{ gap: 8 }}>
+              {/* Option "All" */}
               <Pressable
-                onPress={() => setSelectedDept("")}
+                onPress={() => {
+                  if (pickerModal === "department") {
+                    setFilters((prev) => ({ ...prev, department: "", course: "" }));
+                  } else if (pickerModal === "course") {
+                    setFilters((prev) => ({ ...prev, course: "" }));
+                  } else if (pickerModal === "year") {
+                    setFilters((prev) => ({ ...prev, yearLevel: "" }));
+                  }
+                  setPickerModal(null);
+                }}
                 style={{
+                  paddingVertical: 12,
                   paddingHorizontal: 14,
-                  paddingVertical: 8,
                   borderRadius: 12,
-                  backgroundColor: !selectedDept ? "#1A6B3C" : "#F3F4F6",
-                  marginRight: 8,
+                  backgroundColor:
+                    (pickerModal === "department" && !filters.department) ||
+                    (pickerModal === "course" && !filters.course) ||
+                    (pickerModal === "year" && !filters.yearLevel)
+                      ? "#1A6B3C"
+                      : "#F3F4F6",
                 }}
               >
-                <Text style={{ fontSize: 12, fontWeight: "600", color: !selectedDept ? "#FFFFFF" : "#374151" }}>All Departments</Text>
-              </Pressable>
-              {DEPARTMENTS.map((dept) => (
-                <Pressable
-                  key={dept}
-                  onPress={() => setSelectedDept(dept)}
+                <Text
                   style={{
-                    paddingHorizontal: 14,
-                    paddingVertical: 8,
-                    borderRadius: 12,
-                    backgroundColor: selectedDept === dept ? "#1A6B3C" : "#F3F4F6",
-                    marginRight: 8,
+                    fontFamily: "PlusJakartaSans",
+                    fontSize: 13,
+                    fontWeight: "600",
+                    color:
+                      (pickerModal === "department" && !filters.department) ||
+                      (pickerModal === "course" && !filters.course) ||
+                      (pickerModal === "year" && !filters.yearLevel)
+                        ? "#FFFFFF"
+                        : "#374151",
                   }}
                 >
-                  <Text style={{ fontSize: 12, fontWeight: "600", color: selectedDept === dept ? "#FFFFFF" : "#374151" }}>{dept.replace("College of ", "")}</Text>
-                </Pressable>
-              ))}
+                  {pickerModal === "department"
+                    ? "All Colleges"
+                    : pickerModal === "course"
+                    ? "All Degree Courses"
+                    : "All Year Levels"}
+                </Text>
+              </Pressable>
+
+              {/* Specific Options */}
+              {pickerModal === "department" &&
+                departments.map((dept) => {
+                  const isSel = filters.department === dept;
+                  return (
+                    <Pressable
+                      key={dept}
+                      onPress={() => {
+                        setFilters((prev) => ({
+                          ...prev,
+                          department: dept,
+                          course: coursesByDept?.[dept]?.includes(prev.course) ? prev.course : "",
+                        }));
+                        setPickerModal(null);
+                      }}
+                      style={{
+                        paddingVertical: 12,
+                        paddingHorizontal: 14,
+                        borderRadius: 12,
+                        backgroundColor: isSel ? "#1A6B3C" : "#F3F4F6",
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontFamily: "PlusJakartaSans",
+                          fontSize: 13,
+                          fontWeight: "600",
+                          color: isSel ? "#FFFFFF" : "#374151",
+                        }}
+                      >
+                        {dept.replace("College of ", "")}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+
+              {pickerModal === "course" &&
+                availableCourses.map((c) => {
+                  const isSel = filters.course === c;
+                  return (
+                    <Pressable
+                      key={c}
+                      onPress={() => {
+                        setFilters((prev) => ({ ...prev, course: c }));
+                        setPickerModal(null);
+                      }}
+                      style={{
+                        paddingVertical: 12,
+                        paddingHorizontal: 14,
+                        borderRadius: 12,
+                        backgroundColor: isSel ? "#1A6B3C" : "#F3F4F6",
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontFamily: "PlusJakartaSans",
+                          fontSize: 13,
+                          fontWeight: "600",
+                          color: isSel ? "#FFFFFF" : "#374151",
+                        }}
+                      >
+                        {c}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+
+              {pickerModal === "year" &&
+                YEAR_LEVELS.map((y) => {
+                  const isSel = filters.yearLevel === y;
+                  return (
+                    <Pressable
+                      key={y}
+                      onPress={() => {
+                        setFilters((prev) => ({ ...prev, yearLevel: y }));
+                        setPickerModal(null);
+                      }}
+                      style={{
+                        paddingVertical: 12,
+                        paddingHorizontal: 14,
+                        borderRadius: 12,
+                        backgroundColor: isSel ? "#1A6B3C" : "#F3F4F6",
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontFamily: "PlusJakartaSans",
+                          fontSize: 13,
+                          fontWeight: "600",
+                          color: isSel ? "#FFFFFF" : "#374151",
+                        }}
+                      >
+                        {y}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
             </ScrollView>
-
-            {/* Year Level Filter */}
-            <Text style={{ fontSize: 13, fontWeight: "600", color: "#374151", marginBottom: 8 }}>Year Level</Text>
-            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
-              <Pressable
-                onPress={() => setSelectedYear("")}
-                style={{
-                  paddingHorizontal: 14,
-                  paddingVertical: 8,
-                  borderRadius: 12,
-                  backgroundColor: !selectedYear ? "#1A6B3C" : "#F3F4F6",
-                }}
-              >
-                <Text style={{ fontSize: 12, fontWeight: "600", color: !selectedYear ? "#FFFFFF" : "#374151" }}>All Years</Text>
-              </Pressable>
-              {YEAR_LEVELS.map((yr) => (
-                <Pressable
-                  key={yr}
-                  onPress={() => setSelectedYear(yr)}
-                  style={{
-                    paddingHorizontal: 14,
-                    paddingVertical: 8,
-                    borderRadius: 12,
-                    backgroundColor: selectedYear === yr ? "#1A6B3C" : "#F3F4F6",
-                  }}
-                >
-                  <Text style={{ fontSize: 12, fontWeight: "600", color: selectedYear === yr ? "#FFFFFF" : "#374151" }}>{yr}</Text>
-                </Pressable>
-              ))}
-            </View>
-
-            {/* Sort Option */}
-            <Text style={{ fontSize: 13, fontWeight: "600", color: "#374151", marginBottom: 8 }}>Sort By</Text>
-            <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 24 }}>
-              {[
-                { id: "match", label: "Highest Match %" },
-                { id: "popular", label: "🔥 Most Popular" },
-                { id: "newest", label: "Newest Members" },
-                { id: "name", label: "Name A-Z" },
-              ].map((opt) => (
-                <Pressable
-                  key={opt.id}
-                  onPress={() => setSortBy(opt.id as SortOption)}
-                  style={{
-                    paddingVertical: 9,
-                    paddingHorizontal: 12,
-                    borderRadius: 12,
-                    backgroundColor: sortBy === opt.id ? "#1A6B3C" : "#F3F4F6",
-                    alignItems: "center",
-                  }}
-                >
-                  <Text style={{ fontSize: 11, fontWeight: "700", color: sortBy === opt.id ? "#FFFFFF" : "#374151" }}>{opt.label}</Text>
-                </Pressable>
-              ))}
-            </View>
-
-            <Pressable
-              onPress={() => setShowFilterModal(false)}
-              style={{
-                backgroundColor: "#1A6B3C",
-                paddingVertical: 14,
-                borderRadius: 14,
-                alignItems: "center",
-              }}
-            >
-              <Text style={{ fontSize: 15, fontWeight: "700", color: "#FFFFFF" }}>Apply Filters</Text>
-            </Pressable>
           </View>
         </View>
       </Modal>
-
-      {/* ═══ Student Detail Bottom Sheet Modal ═══ */}
-      {selectedMatch && (
-        <Modal visible transparent animationType="slide">
-          <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" }}>
-            <View style={{ backgroundColor: "#FFFFFF", borderTopLeftRadius: 24, borderTopRightRadius: 24, maxHeight: "80%", paddingBottom: 24 }}>
-              {/* Header Gradient Region */}
-              <View style={{ backgroundColor: "#1A6B3C", borderTopLeftRadius: 24, borderTopRightRadius: 24, padding: 20 }}>
-                <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start" }}>
-                  <View style={{ flexDirection: "row", gap: 14, flex: 1 }}>
-                    <AnonymousAvatar avatarKey="fox" size={56} />
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 20, fontWeight: "700", color: "#FFFFFF" }}>Anonymous Peer</Text>
-                      {Boolean(selectedMatch.profile.course) && (
-                        <Text style={{ fontSize: 12, color: "#FFFFFF", marginTop: 4, opacity: 0.9 }}>{selectedMatch.profile.course}</Text>
-                      )}
-                    </View>
-                  </View>
-                  <Pressable onPress={() => setSelectedMatch(null)}>
-                    <X size={22} color="#FFFFFF" />
-                  </Pressable>
-                </View>
-
-                {/* Compatibility Badge */}
-                <View style={{ marginTop: 14, backgroundColor: "rgba(255,255,255,0.15)", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, alignSelf: "flex-start" }}>
-                  <Text style={{ fontSize: 13, fontWeight: "800", color: "#FFFFFF" }}>⚡ {selectedMatch.matchPercentage}% Compatibility Match</Text>
-                </View>
-              </View>
-
-              <ScrollView contentContainerStyle={{ padding: 20 }}>
-                {/* Shared Interests */}
-                {selectedMatch.sharedInterests.length > 0 && (
-                  <View style={{ marginBottom: 16 }}>
-                    <Text style={{ fontSize: 12, fontWeight: "700", color: "#9CA3AF", textTransform: "uppercase", marginBottom: 8 }}>
-                      {selectedMatch.sharedInterests.length} Shared Interest{selectedMatch.sharedInterests.length > 1 ? "s" : ""}
-                    </Text>
-                    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 6 }}>
-                      {selectedMatch.sharedInterests.map((interest) => (
-                        <View key={interest} style={{ backgroundColor: "#F0FDF4", borderWidth: 1, borderColor: "#86EFAC", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 }}>
-                          <Text style={{ fontSize: 12, fontWeight: "600", color: "#16A34A" }}>{interest}</Text>
-                        </View>
-                      ))}
-                    </View>
-                  </View>
-                )}
-
-                {/* Close Preview Button */}
-                <Pressable
-                  onPress={() => setSelectedMatch(null)}
-                  style={{
-                    backgroundColor: "#F3F4F6",
-                    paddingVertical: 14,
-                    borderRadius: 14,
-                    alignItems: "center",
-                    justifyContent: "center",
-                    marginTop: 8,
-                  }}
-                >
-                  <Text style={{ fontSize: 14, fontWeight: "600", color: "#4B5563" }}>Close Preview</Text>
-                </Pressable>
-              </ScrollView>
-            </View>
-          </View>
-        </Modal>
-      )}
 
       {/* ═══ Matchmaking Fullscreen Queue Overlay Modal ═══ */}
       <MatchmakingOverlayModal

@@ -426,8 +426,8 @@ export default function ConversationScreen() {
     otherProfile?.avatar_url,
   ]);
 
-  // Media sharing is locked for anonymous matches below Stage 3 (including when streak ends & resets level)
-  const isImagesLocked = Boolean(isAnonymous && (matchInfo?.stage ?? 1) < 3);
+  // Media sharing is always unlocked (streak is used as multiplier only)
+  const isImagesLocked = false;
 
   const isEnded =
     conversationVariant === "anonymous_ended" ||

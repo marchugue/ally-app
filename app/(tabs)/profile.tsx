@@ -5,6 +5,7 @@ import {
   FlatList,
   ScrollView,
   Pressable,
+  TouchableOpacity,
   RefreshControl,
   ActivityIndicator,
   Modal,
@@ -197,6 +198,48 @@ export default function ProfileScreen() {
   return (
     <SafeAreaView className="flex-1" style={{ backgroundColor: COLORS.bg }} edges={["top"]}>
       <ResponsiveContainer maxContentWidth={540} backgroundColor={COLORS.bg}>
+        {/* ── Top Header Bar with Settings Icon ── */}
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
+            paddingHorizontal: 16,
+            paddingTop: 8,
+            paddingBottom: 8,
+            backgroundColor: COLORS.bg,
+            borderBottomWidth: 1,
+            borderBottomColor: "#F3F4F6",
+          }}
+        >
+          <Text
+            style={{
+              fontSize: 18,
+              fontWeight: "700",
+              fontFamily: "PlusJakartaSans-Bold",
+              color: "#111827",
+            }}
+          >
+            {profile.username ? `@${profile.username}` : "Profile"}
+          </Text>
+
+          <TouchableOpacity
+            onPress={() => router.push("/pages/settings" as any)}
+            activeOpacity={0.7}
+            hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
+            style={{
+              width: 38,
+              height: 38,
+              borderRadius: 19,
+              backgroundColor: "#F4F5F7",
+              alignItems: "center",
+              justifyContent: "center",
+            }}
+          >
+            <Settings size={20} color="#1F2937" />
+          </TouchableOpacity>
+        </View>
+
         <FlatList
           key={`profile-list-${activeTab}`}
           data={activeTab === "feed" ? posts : activeTab === "media" ? mediaPosts : []}

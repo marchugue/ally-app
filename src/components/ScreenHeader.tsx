@@ -47,16 +47,6 @@ export function ScreenHeader({ right }: ScreenHeaderProps) {
           Ally-jis
         </Text>
       </Pressable>
-
-      {/* Hamburger Icon on Right */}
-      {right ?? (
-        <Pressable
-          hitSlop={12}
-          onPress={() => router.push("/pages/settings" as any)}
-        >
-          <Menu size={isSmallScreen ? 22 : 24} color="#111827" />
-        </Pressable>
-      )}
     </View>
   );
 }
