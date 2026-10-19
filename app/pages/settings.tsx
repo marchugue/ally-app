@@ -55,6 +55,7 @@ import {
 
 // 6. Components
 import { ConfirmModal } from "@/components/ConfirmModal";
+import { PasswordStrengthMeter } from "@/components/buttons/password";
 
 const DEFAULT_PREFERENCES: UserPreferences = {
   user_id: "",
@@ -845,6 +846,7 @@ export default function SettingsScreen() {
                     color: "#111827",
                   }}
                 />
+                <PasswordStrengthMeter value={newPass} />
               </View>
 
               <View>

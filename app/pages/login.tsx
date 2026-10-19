@@ -1,25 +1,28 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import {
   View,
   Text,
   ScrollView,
   Pressable,
   StatusBar,
-  Image,
-  Animated
+  TextInput,
+  ActivityIndicator,
+  Animated,
+  StyleSheet,
 } from "react-native";
 import { router } from "expo-router";
-import { ArrowRight } from "lucide-react-native";
+import { ArrowLeft } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth, ApiError } from "@/lib/auth/AuthContext";
-import { DiagonalStripes } from "@/components/DiagonalStripes";
-import { SlideIn } from "@/components/SlideIn";
-import { Button } from "@/components/Button";
 import { validateEmail } from "@/lib/validator/email";
 import EmailInput from "@/components/buttons/email";
 import PasswordInput from "@/components/buttons/password";
 import AlertMessage from "@/components/AlertMessage";
 import LoadingOverlay from "@/components/LoadingOverlay";
+import { Button } from "@/components/Button";
+
+const BRAND_GREEN = "#1A6B3C";
+const BRAND_GREEN_DARK = "#155a33";
 
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
@@ -33,25 +36,41 @@ export default function LoginScreen() {
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [Touched, setTouched] = useState(false);
+  const [touchedEmail, setTouchedEmail] = useState(false);
+  const [touchedPassword, setTouchedPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [verification, setVerification] = useState(false);
 
+  const emailRef = useRef<TextInput>(null);
+  const passwordRef = useRef<TextInput>(null);
+
+  // Validation
   const emailError =
-  Touched && email.trim().length > 0
-    ? validateEmail(email)
-    : null;
-  const isValid = validateEmail(email) === null && password.length > 0;
-  const passError = password.length < 6 && password.length > 0  ? "Password must be at least 6 characters. " : null;
+    touchedEmail && email.trim().length > 0 ? validateEmail(email) : null;
+  const passError =
+    touchedPassword && password.length > 0 && password.length < 6
+      ? "Password must be at least 6 characters."
+      : null;
+  const isValid =
+    validateEmail(email) === null &&
+    email.trim().length > 0 &&
+    password.length >= 6;
+
+  const handleBack = () => {
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace("/pages/landing" as any);
+    }
+  };
 
   async function handleLogin() {
-    if (!isValid || isSubmitting) return;
+    setTouchedEmail(true);
+    setTouchedPassword(true);
 
-    const emailError = validateEmail(email);
-
-    if (emailError) {
-      setErrorMessage(emailError);
+    const emailErr = validateEmail(email);
+    if (emailErr) {
+      setErrorMessage(emailErr);
       return;
     }
 
@@ -60,164 +79,226 @@ export default function LoginScreen() {
       return;
     }
 
+    if (isSubmitting) return;
+
     setErrorMessage(null);
     setIsSubmitting(true);
-    
+
     try {
       const [session] = await Promise.all([
         signIn(email.trim().toLowerCase(), password),
-        new Promise(resolve => setTimeout(resolve, 2000)),
+        new Promise((resolve) => setTimeout(resolve, 1000)),
       ]);
 
       // Non-CHMSU students with pending student ID review go to waiting room.
       // CHMSU / approved users go straight to the main app.
       const isPending =
         session.user?.user_metadata?.pending_student_verification === true &&
-        session.user?.user_metadata?.student_verification_status !== 'approved';
+        session.user?.user_metadata?.student_verification_status !== "approved";
 
-      router.replace(isPending ? ('/pages/pending-approval' as any) : '/(tabs)');
+      router.replace(
+        isPending ? ("/pages/pending-approval" as any) : "/(tabs)"
+      );
     } catch (error: any) {
       // OTP not yet verified — redirect to verify screen
       if (error?.requiresOtp && error?.userId) {
         router.replace(
-          `/pages/verify-otp?userId=${encodeURIComponent(error.userId)}&email=${encodeURIComponent(error.email ?? email)}` as any
+          `/pages/verify-otp?userId=${encodeURIComponent(
+            error.userId
+          )}&email=${encodeURIComponent(error.email ?? email)}` as any
         );
         return;
       }
       if (error instanceof ApiError) {
         setErrorMessage(error.message);
       } else {
-        setErrorMessage("Something went wrong. Please try again.");
+        setErrorMessage("Invalid credentials. Please try again.");
       }
     } finally {
       setIsSubmitting(false);
     }
   }
-  
 
   return (
-    <View style={{ flex: 1, backgroundColor: "#1A6B3C" }}>
-      <StatusBar barStyle="light-content" />
-      
-      <AlertMessage
-              message={errorMessage}
-              type="error"
-            />
+    <View style={styles.root}>
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+
+      <AlertMessage message={errorMessage} type="error" />
       <LoadingOverlay visible={isSubmitting} />
-      <View style={{ paddingTop: insets.top + 12, paddingHorizontal: 24, paddingBottom: 90, overflow: "hidden" }}>
-        <DiagonalStripes />
 
-
-
-        <SlideIn delay={0} style={{ alignItems: "center" }}>
-          <View style={{ width: 60, height: 60, borderRadius: 16, overflow: "hidden", marginBottom: 12 }}>
-            <Image
-              source={require("../../assets/images/logo.png")}
-              style={{ width: "100%", height: "100%" }}
-              resizeMode="cover"
-            />
-          </View>
-          <Text style={{ fontSize: 20, fontWeight: "800", color: "#FFFFFF", letterSpacing: -0.5 }}>
-            Ally<Text style={{ color: "#E8A838" }}>-jis</Text>
-          </Text>
-        </SlideIn>
-      </View>
-
-      <View style={{ flex: 1 }}>
-        <SlideIn delay={120} distance={30} style={{ flex: 1, marginTop: -60 }}>
-          <ScrollView
-            contentContainerStyle={{
-              flexGrow: 1,
-              backgroundColor: "#FDFCFB",
-              borderTopLeftRadius: 32,
-              borderTopRightRadius: 32,
-              paddingHorizontal: 28,
-              paddingTop: 32,
-              paddingBottom: insets.bottom + 32,
-            }}
-            keyboardShouldPersistTaps="handled"
-            automaticallyAdjustKeyboardInsets={true}
-            keyboardDismissMode="on-drag"
-            showsVerticalScrollIndicator={false}
+      <ScrollView
+        contentContainerStyle={[
+          styles.scrollContent,
+          {
+            paddingTop: insets.top + 10,
+            paddingBottom: Math.max(insets.bottom, 24) + 16,
+          },
+        ]}
+        keyboardShouldPersistTaps="handled"
+        automaticallyAdjustKeyboardInsets={true}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* ── Top Bar: Back Action ── */}
+        <View style={styles.topBar}>
+          <Pressable
+            onPress={handleBack}
+            hitSlop={12}
+            style={styles.backBtn}
+            accessibilityLabel="Go back"
           >
-            <Text style={{ fontSize: 26, fontWeight: "800", color: "#1A6B3C", letterSpacing: -0.5, marginBottom: 4 }}>
-              Welcome back
-            </Text>
-            <Text style={{ color: "#6B7280", fontSize: 14, marginBottom: 28 }}>
-              Sign in to your Ally-jis account
-            </Text>
+            <ArrowLeft size={22} color="#111827" strokeWidth={2.2} />
+          </Pressable>
+        </View>
 
-            <EmailInput
-              value={email}
-              onChangeText={setEmail}
-              onBlur={() => setTouched(true)}
-              error={emailError}
-            />
+        {/* ── Centered ALLY-JIS Branding (No Icon, Fraunces Font) ── */}
+        <View style={styles.brandContainer}>
+          <Text style={styles.brandTitle}>ALLY-JIS</Text>
+        </View>
 
-            <PasswordInput
-              value={password}
-              onChangeText={setPassword}
-              onBlur={() => setTouched(true)}
-              error={passError}
-              showStrength={false}
-            />
+        {/* ── Screen Title: Left-Aligned ── */}
+        <Text style={styles.screenTitle}>Login to your Account</Text>
 
-            <Pressable onPress={() => router.push("/pages/forgot-password" as any)} style={{ alignSelf: "flex-end", marginBottom: 24 }}>
-              <Text style={{ fontSize: 12, fontWeight: "600", color: "#1A6B3C" }}>Forgot password?</Text>
+        {/* ── Inputs: Same as Register (EmailInput & PasswordInput) ── */}
+        <View style={styles.formContainer}>
+          <EmailInput
+            ref={emailRef}
+            value={email}
+            onChangeText={(text) => {
+              setEmail(text);
+              if (errorMessage) setErrorMessage(null);
+            }}
+            onBlur={() => setTouchedEmail(true)}
+            error={touchedEmail ? emailError : null}
+            placeholder="Email"
+            returnKeyType="next"
+            onSubmitEditing={() => passwordRef.current?.focus()}
+          />
+
+          <PasswordInput
+            ref={passwordRef}
+            value={password}
+            onChangeText={(text) => {
+              setPassword(text);
+              if (errorMessage) setErrorMessage(null);
+            }}
+            onBlur={() => setTouchedPassword(true)}
+            error={touchedPassword ? passError : null}
+            placeholder="Password"
+            showStrength={false}
+            returnKeyType="done"
+            onSubmitEditing={handleLogin}
+          />
+
+          {/* Forgot Password Link */}
+          <View style={styles.forgotPassRow}>
+            <Pressable
+              onPress={() => router.push("/pages/forgot-password" as any)}
+              hitSlop={8}
+            >
+              <Text style={styles.forgotPassText}>Forgot password?</Text>
             </Pressable>
+          </View>
 
+          {/* Primary Action Button */}
+          <View style={styles.submitBtnWrapper}>
             <Button
               label={isSubmitting ? "Signing in…" : "Sign in"}
               variant="primary"
               pill
               size="lg"
               loading={isSubmitting}
-              disabled={!isValid}
-              icon={!isSubmitting && <ArrowRight size={18} color="#FFFFFF" />}
+              disabled={!isValid || isSubmitting}
               onPress={handleLogin}
               className="w-full"
             />
+          </View>
+        </View>
 
-              <View style={{ marginTop: "auto", marginBottom: -24 }}>
-                <View
-                  style={{
-                    flexDirection: "row",
-                    justifyContent: "center",
-                    gap: 4,
-                  }}
-                >
-                  <Text style={{ fontSize: 13, color: "#6B7280" }}>
-                    Don't have an account?
-                  </Text>
-
-                  <Pressable onPress={() => router.push("/pages/select-email" as any)}>
-                    <Text
-                      style={{
-                        fontSize: 13,
-                        fontWeight: "700",
-                        color: "#1A6B3C",
-                      }}
-                    >
-                      Sign up
-                    </Text>
-                  </Pressable>
-                </View>
-
-                <Text
-                  style={{
-                    textAlign: "center",
-                    fontSize: 11,
-                    color: "#9CA3AF",
-                    marginTop: 10,
-                    lineHeight: 16,
-                  }}
-                >
-                  For CHMSU Alijis Campus students only
-                </Text>
-              </View>
-          </ScrollView>
-        </SlideIn>
-      </View>
+        {/* ── Footer: Centered Sign Up Link ── */}
+        <View style={styles.footerContainer}>
+          <Text style={styles.footerPrompt}>Don't have an account? </Text>
+          <Pressable
+            onPress={() => router.push("/pages/select-email" as any)}
+            hitSlop={8}
+          >
+            <Text style={styles.footerLink}>Sign up</Text>
+          </Pressable>
+        </View>
+      </ScrollView>
     </View>
   );
 }
+
+const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+    backgroundColor: "#FFFFFF",
+  },
+  scrollContent: {
+    paddingHorizontal: 24,
+    flexGrow: 1,
+  },
+  topBar: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginBottom: 8,
+  },
+  backBtn: {
+    padding: 6,
+    marginLeft: -6,
+    alignSelf: "flex-start",
+  },
+  brandContainer: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingTop: 16,
+    paddingBottom: 36,
+  },
+  brandTitle: {
+    fontFamily: "Fraunces_700Bold",
+    fontSize: 34,
+    color: BRAND_GREEN,
+    letterSpacing: -0.5,
+  },
+  screenTitle: {
+    fontSize: 22,
+    fontWeight: "700",
+    color: "#111827",
+    marginBottom: 26,
+    letterSpacing: -0.3,
+  },
+  formContainer: {
+    width: "100%",
+  },
+  forgotPassRow: {
+    alignItems: "flex-end",
+    marginTop: -8,
+    marginBottom: 24,
+  },
+  forgotPassText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: BRAND_GREEN,
+  },
+  submitBtnWrapper: {
+    width: "100%",
+    marginBottom: 16,
+  },
+  footerContainer: {
+    marginTop: "auto",
+    paddingTop: 32,
+    paddingBottom: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  footerPrompt: {
+    fontSize: 14,
+    color: "#6B7280",
+  },
+  footerLink: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: BRAND_GREEN,
+  },
+});

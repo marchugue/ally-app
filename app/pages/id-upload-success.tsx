@@ -11,6 +11,7 @@ import {
   ActivityIndicator,
   ScrollView,
   Modal,
+  BackHandler,
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -84,6 +85,27 @@ export default function IdUploadSuccessScreen() {
       Animated.timing(opacityAnim, { toValue: 1, duration: 350, useNativeDriver: true }),
     ]).start();
   }, []);
+
+  // Intercept phone hardware & gesture back navigation
+  useEffect(() => {
+    const onBackPress = () => {
+      if (enlargedUri) {
+        setEnlargedUri(null);
+        return true;
+      }
+      if (router.canGoBack()) {
+        router.back();
+      } else {
+        router.replace({
+          pathname: "/pages/id-upload" as any,
+          params: { ...params, step: "front" },
+        });
+      }
+      return true;
+    };
+    const sub = BackHandler.addEventListener("hardwareBackPress", onBackPress);
+    return () => sub.remove();
+  }, [enlargedUri, params]);
 
   const handleRotateFront = async () => {
     if (!frontUri || isRotatingFront) return;

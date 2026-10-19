@@ -1,4 +1,4 @@
-import { useEffect, useRef, forwardRef } from "react";
+import { useEffect, useRef, useState, forwardRef } from "react";
 import {
   View,
   Text,
@@ -36,74 +36,48 @@ const EmailInput = forwardRef<TextInput, EmailInputProps>(function EmailInput(
   },
   ref
 ) {
+  const [focused, setFocused] = useState(false);
   const errorAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.timing(errorAnim, {
       toValue: error ? 1 : 0,
-      duration: 200,
+      duration: 150,
       useNativeDriver: true,
     }).start();
   }, [error]);
 
+  const borderColor = error ? "#DC2626" : focused ? "#1A6B3C" : "#E5E7EB";
+
   return (
     <View style={[{ position: "relative", marginBottom: 20 }, containerStyle]}>
-      {/* Floating Error */}
-      <Animated.View
-        style={{
-          position: "absolute",
-          left: 18,
-          backgroundColor: "#FDFCFB",
-          paddingHorizontal: 6,
-          zIndex: 1,
-          transform: [
-            {
-              translateY: errorAnim.interpolate({
-                inputRange: [0, 1],
-                outputRange: [22, -8],
-              }),
-            },
-          ],
-          opacity: errorAnim,
-        }}
-      >
-        <Text
-          style={{
-            color: "#DC2626",
-            fontSize: 12,
-            fontWeight: "600",
-          }}
-        >
-          {error}
-        </Text>
-      </Animated.View>
-
-      {/* Input */}
+      {/* Input Box with clean stroke border, NO shadow */}
       <View
         style={{
           flexDirection: "row",
           alignItems: "center",
-          borderWidth: error ? 1.5 : 0,
-          borderColor: error ? "#DC2626" : "transparent",
-          borderRadius: 20,
-          backgroundColor: "#FFF",
-          paddingHorizontal: 18,
+          borderWidth: 1.5,
+          borderColor: borderColor,
+          borderRadius: 35,
+          backgroundColor: "#FFFFFF",
+          paddingHorizontal: 16,
           paddingVertical: 10,
-          shadowColor: "#000",
-          shadowOffset: { width: 0, height: 2 },
-          shadowOpacity: 0.04,
-          shadowRadius: 6,
-          elevation: 2,
         }}
       >
-        <Mail size={17} color={error ? "#DC2626" : "#9CA3AF"} />
+        <Mail size={17} color={error ? "#DC2626" : focused ? "#1A6B3C" : "#9CA3AF"} />
 
         <TextInput
           ref={ref}
           value={value}
           onChangeText={onChangeText}
-          onBlur={onBlur}
-          onFocus={onFocus}
+          onBlur={() => {
+            setFocused(false);
+            onBlur?.();
+          }}
+          onFocus={() => {
+            setFocused(true);
+            onFocus?.();
+          }}
           placeholder={placeholder}
           placeholderTextColor="#9CA3AF"
           autoCapitalize="none"
@@ -120,6 +94,32 @@ const EmailInput = forwardRef<TextInput, EmailInputProps>(function EmailInput(
           }}
         />
       </View>
+
+      {/* Floating Error cutting top stroke */}
+      {error ? (
+        <Animated.View
+          pointerEvents="none"
+          style={{
+            position: "absolute",
+            left: 14,
+            top: -9,
+            backgroundColor: "#FFFFFF",
+            paddingHorizontal: 6,
+            zIndex: 10,
+            opacity: errorAnim,
+          }}
+        >
+          <Text
+            style={{
+              color: "#DC2626",
+              fontSize: 11,
+              fontWeight: "700",
+            }}
+          >
+            {error}
+          </Text>
+        </Animated.View>
+      ) : null}
     </View>
   );
 });

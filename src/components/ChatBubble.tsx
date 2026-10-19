@@ -9,6 +9,7 @@ import type { AvatarRevealView } from "@/lib/api/matchmaking";
 import { getFluentEmojiUrl } from "@/lib/fluentEmoji";
 import { OfflineAnimatedEmoji } from "@/components/OfflineAnimatedEmoji";
 import { LockedMediaThumbnail } from "@/components/LockedMediaThumbnail";
+import { GameInviteCard } from "@/components/GameInviteCard";
 
 export interface BubbleLayout {
   x: number;
@@ -227,6 +228,7 @@ export function ChatBubble({
   const hasImage = images.length > 0;
   const isImageOnly = hasImage && !message.content?.trim();
   const isEmojiOnly = !hasImage && isOnlyEmoji(message.content);
+  const isGameInvite = Boolean(message.game_invite);
   const hasReply = !!message.replied_message;
   const hasReactions = message.reactions && message.reactions.length > 0;
   const bubbleRef = useRef<View>(null);
@@ -420,17 +422,17 @@ export function ChatBubble({
       >
         <Pressable
           onPress={() => {
-          if (!isImageOnly && !isEmojiOnly) {
+          if (!isImageOnly && !isEmojiOnly && !isGameInvite) {
             onToggleTime?.(message.id);
           }
         }}
         onLongPress={handleBubbleLongPress}
         delayLongPress={300}
-        android_ripple={isImageOnly || isEmojiOnly ? undefined : { color: "rgba(0,0,0,0.06)" }}
+        android_ripple={isImageOnly || isEmojiOnly || isGameInvite ? undefined : { color: "rgba(0,0,0,0.06)" }}
         style={{
           alignSelf: isMine ? "flex-end" : "flex-start",
           maxWidth: "100%",
-          backgroundColor: isImageOnly || isEmojiOnly
+          backgroundColor: isImageOnly || isEmojiOnly || isGameInvite
             ? "transparent"
             : isMine
               ? isFailed
@@ -438,21 +440,21 @@ export function ChatBubble({
                 : "#1A6B3C"
               : "#FFFFFF",
           opacity: isSending ? 0.85 : 1,
-          ...(isImageOnly || isEmojiOnly ? {} : radii),
-          paddingHorizontal: isImageOnly || isEmojiOnly ? 0 : hasImage ? 4 : 14,
-          paddingTop: isImageOnly || isEmojiOnly ? 0 : hasImage ? 4 : 10,
-          paddingBottom: isImageOnly || isEmojiOnly
+          ...(isImageOnly || isEmojiOnly || isGameInvite ? {} : radii),
+          paddingHorizontal: isImageOnly || isEmojiOnly || isGameInvite ? 0 : hasImage ? 4 : 14,
+          paddingTop: isImageOnly || isEmojiOnly || isGameInvite ? 0 : hasImage ? 4 : 10,
+          paddingBottom: isImageOnly || isEmojiOnly || isGameInvite
             ? 0
             : (hasImage || isActiveTime || isSending)
               ? hasImage ? 4 : 8
               : 10,
-          borderWidth: isImageOnly || isEmojiOnly ? 0 : isMine ? (isFailed ? 1 : 0) : 1,
-          borderColor: isImageOnly || isEmojiOnly ? "transparent" : isFailed ? "#EF4444" : "#E2DED7",
+          borderWidth: isImageOnly || isEmojiOnly || isGameInvite ? 0 : isMine ? (isFailed ? 1 : 0) : 1,
+          borderColor: isImageOnly || isEmojiOnly || isGameInvite ? "transparent" : isFailed ? "#EF4444" : "#E2DED7",
           shadowColor: "#000",
           shadowOffset: { width: 0, height: 1 },
-          shadowOpacity: isImageOnly || isEmojiOnly ? 0 : 0.04,
-          shadowRadius: isImageOnly || isEmojiOnly ? 0 : 4,
-          elevation: isImageOnly || isEmojiOnly ? 0 : 1,
+          shadowOpacity: isImageOnly || isEmojiOnly || isGameInvite ? 0 : 0.04,
+          shadowRadius: isImageOnly || isEmojiOnly || isGameInvite ? 0 : 4,
+          elevation: isImageOnly || isEmojiOnly || isGameInvite ? 0 : 1,
         }}
       >
         {/* Locked image replacement (streak ended → level dropped below Lv.3) */}
@@ -610,8 +612,17 @@ export function ChatBubble({
           </View>
         )}
 
+        {/* Game Invite Card */}
+        {isGameInvite && message.game_invite && (
+          <GameInviteCard
+            invite={message.game_invite}
+            isMine={isMine}
+            currentUserId={isMine ? message.sender_id : (message.game_invite.guestId || "")}
+          />
+        )}
+
         {/* Text content */}
-        {message.content ? (
+        {!isGameInvite && message.content ? (
           <View style={{ paddingHorizontal: hasImage ? 10 : 0, paddingBottom: hasImage ? 6 : 0, maxWidth: "100%" }}>
             {isEmojiOnly ? (
               <OfflineAnimatedEmoji

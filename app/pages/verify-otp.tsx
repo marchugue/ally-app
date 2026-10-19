@@ -2,18 +2,25 @@
 //
 // OTP verification screen for mobile.
 // Params: userId, email (passed via router or AsyncStorage from register).
-// ─ Auto-advances on each digit input
-// ─ Supports paste of full 6-digit code
-// ─ Responsive box sizing based on screen width
 
 import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
-  View, Text, TextInput, TouchableOpacity, StyleSheet,
-  ActivityIndicator, ScrollView, Dimensions, Clipboard, BackHandler,
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  StyleSheet,
+  ActivityIndicator,
+  ScrollView,
+  Dimensions,
+  Clipboard,
+  BackHandler,
+  KeyboardAvoidingView,
+  Platform,
 } from 'react-native';
 
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { ArrowLeft, AlertCircle, ClipboardPaste } from 'lucide-react-native';
+import { ArrowLeft, AlertCircle, Pencil } from 'lucide-react-native';
 import * as authApi from '@/lib/api/auth';
 import {
   getMobileRegisterCache,
@@ -21,24 +28,30 @@ import {
   clearMobileRegisterCache,
 } from '@/lib/registerCache';
 import { useAuth } from '@/lib/auth/AuthContext';
-import { OtpIllustration } from '@/components/OnboardingIllustrations';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { Button } from '@/components/Button';
 
 const OTP_LENGTH = 6;
 const RESEND_COOLDOWN = 60;
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-// Responsive box: fits 6 boxes + gaps in any screen width
+// Responsive box: fits 6 boxes + gaps on any screen width
 const BOX_GAP = 8;
-const CARD_PADDING = 24 * 2;
+const HORIZONTAL_PADDING = 24 * 2;
 const BOX_SIZE = Math.min(
-  Math.floor((SCREEN_WIDTH - CARD_PADDING - BOX_GAP * (OTP_LENGTH - 1)) / OTP_LENGTH),
-  48, // cap so it doesn't grow huge on tablets
+  Math.floor((SCREEN_WIDTH - HORIZONTAL_PADDING - BOX_GAP * (OTP_LENGTH - 1)) / OTP_LENGTH),
+  48
 );
 const BOX_FONT = Math.round(BOX_SIZE * 0.44);
 
 const GREEN = '#1A6B3C';
+
+function formatTimer(secs: number): string {
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
 
 export default function VerifyOtpPage() {
   const router = useRouter();
@@ -180,7 +193,7 @@ export default function VerifyOtpPage() {
       return;
     }
 
-    // Single digit — take last char typed (handles both empty and fill)
+    // Single digit — take last char typed
     const singleDigit = cleaned.slice(-1);
     const next = [...digits];
     next[idx] = singleDigit;
@@ -206,20 +219,6 @@ export default function VerifyOtpPage() {
     }
   };
 
-  // Paste from clipboard
-  const handlePaste = async () => {
-    try {
-      const text = await Clipboard.getString();
-      const cleaned = text.replace(/\D/g, '').slice(0, OTP_LENGTH);
-      if (cleaned.length > 0) {
-        const next = cleaned.padEnd(OTP_LENGTH, '').split('').slice(0, OTP_LENGTH);
-        setDigits(next);
-        inputsRef.current[Math.min(cleaned.length, OTP_LENGTH - 1)]?.focus();
-        if (cleaned.length === OTP_LENGTH) submitCode(cleaned);
-      }
-    } catch {}
-  };
-
   const handleResend = async () => {
     if (isResending || cooldown > 0 || resendCount >= resendLimit) return;
     setIsResending(true);
@@ -238,6 +237,17 @@ export default function VerifyOtpPage() {
     }
   };
 
+  const handleEditEmail = () => {
+    router.push({
+      pathname: '/pages/register' as any,
+      params: {
+        ...params,
+        step: '1',
+        subStep: 'email',
+      },
+    });
+  };
+
   if (!userId || !email) {
     return (
       <View style={styles.center}>
@@ -252,56 +262,48 @@ export default function VerifyOtpPage() {
   const fullCode = digits.join('');
   const canVerify = fullCode.length === OTP_LENGTH && !isVerifying;
   const canResend = !isResending && cooldown === 0 && resendCount < resendLimit;
-  const resendsLeft = resendLimit - resendCount;
-  const illustrationSize = Math.min(SCREEN_WIDTH * 0.38, 150);
 
   return (
-    <View style={styles.root}>
-      <ScrollView
-        contentContainerStyle={{ flexGrow: 1 }}
-        keyboardShouldPersistTaps="handled"
-        showsVerticalScrollIndicator={false}
+    <View style={[styles.root, { paddingTop: Math.max(insets.top, 12), paddingBottom: Math.max(insets.bottom, 16) }]}>
+      {/* Top Bar with Back Button */}
+      <View style={styles.topBar}>
+        <TouchableOpacity
+          onPress={handleBack}
+          hitSlop={14}
+          style={styles.backBtn}
+          accessibilityLabel="Go back"
+        >
+          <ArrowLeft size={24} color={GREEN} />
+        </TouchableOpacity>
+      </View>
+
+      <KeyboardAvoidingView
+        style={{ flex: 1 }}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        {/* Header */}
-        <View style={[styles.header, { paddingTop: Math.max(insets.top + 8, 20) }]}>
-          <TouchableOpacity
-            onPress={handleBack}
-            hitSlop={14}
-            style={styles.backBtn}
-            accessibilityLabel="Go back"
-          >
-
-            <ArrowLeft size={24} color={GREEN} />
-          </TouchableOpacity>
-
-          <View style={styles.illustrationWrap}>
-            <OtpIllustration size={illustrationSize} />
+        <ScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+        >
+          {/* Title & Subtitle */}
+          <View style={styles.headerContent}>
+            <Text style={styles.title}>We just sent a 6-digit code</Text>
+            <Text style={styles.subtitle}>Enter the 6-digit code we sent to</Text>
+            <View style={styles.emailRow}>
+              <Text style={styles.emailHighlight}>{email}</Text>
+              <TouchableOpacity
+                onPress={handleEditEmail}
+                hitSlop={12}
+                accessibilityLabel="Edit email"
+                style={styles.editPenBtn}
+              >
+                <Pencil size={15} color={GREEN} />
+              </TouchableOpacity>
+            </View>
           </View>
 
-          <Text style={styles.title}>Verify your email</Text>
-          <Text style={styles.subtitle}>
-            We sent a 6-digit code to{'\n'}
-            <Text style={styles.emailHighlight}>{email}</Text>
-          </Text>
-
-          <View style={styles.dotsRow}>
-            {[1, 2].map((i) => (
-              <View key={i} style={[styles.dot, i === 1 ? styles.dotDone : styles.dotActive]} />
-            ))}
-          </View>
-        </View>
-
-        {/* Card */}
-        <View style={styles.card}>
-          {/* Instruction */}
-          <View style={{ alignItems: 'center', marginBottom: 16 }}>
-            <Text style={{ fontSize: 13, color: '#6B7280', textAlign: 'center' }}>
-              Enter the 6-digit code below — expires in{' '}
-              <Text style={{ fontWeight: '700', color: '#111827' }}>10 minutes</Text>.
-            </Text>
-          </View>
-
-          {/* OTP boxes */}
+          {/* OTP boxes (blended to white screen, no container) */}
           <View style={styles.otpRow}>
             {digits.map((d, i) => (
               <TextInput
@@ -316,7 +318,7 @@ export default function VerifyOtpPage() {
                 onChangeText={(v) => handleDigitChange(i, v)}
                 onKeyPress={({ nativeEvent }) => handleKeyPress(i, nativeEvent.key)}
                 keyboardType="number-pad"
-                maxLength={6} // allow paste of full code
+                maxLength={6}
                 textAlign="center"
                 editable={!isVerifying}
                 selectTextOnFocus
@@ -331,142 +333,142 @@ export default function VerifyOtpPage() {
               <Text style={styles.errorBannerText}>{error}</Text>
             </View>
           ) : null}
+        </ScrollView>
 
-          {/* Verify button */}
-          <TouchableOpacity
+        {/* Bottom Area: Verify button + Didn't receive the code? + Resend with 00:00 timer */}
+        <View style={styles.bottomSection}>
+          <Button
+            label={isVerifying ? "Verifying…" : "Verify"}
+            variant="primary"
+            pill
+            size="lg"
+            loading={isVerifying}
+            disabled={!canVerify || isVerifying}
             onPress={() => submitCode(fullCode)}
-            disabled={!canVerify}
-            style={[styles.verifyBtn, !canVerify && styles.verifyBtnDisabled]}
-            activeOpacity={0.85}
-          >
-            {isVerifying ? (
-              <ActivityIndicator color="#fff" size="small" />
-            ) : (
-              <Text style={styles.verifyBtnText}>Verify Code</Text>
-            )}
-          </TouchableOpacity>
+            className="w-full"
+          />
 
-          {/* Resend under verify button */}
-          <View style={styles.resendSection}>
+          <View style={styles.resendArea}>
             {resendCount >= resendLimit ? (
               <Text style={styles.resendLimitText}>Maximum resends reached. Contact support.</Text>
             ) : (
-              <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
-                <Text style={{ fontSize: 13, color: '#6B7280' }}>
-                  Didn&apos;t receive code?
+              <View style={styles.resendInner}>
+                <Text style={styles.didntReceiveText}>
+                  Didn&apos;t receive the code?
                 </Text>
-                {cooldown > 0 ? (
-                  <Text style={{ fontSize: 13, fontWeight: '700', color: '#9CA3AF' }}>
-                    Resend in {cooldown}s
+                <TouchableOpacity
+                  onPress={handleResend}
+                  disabled={!canResend}
+                  style={styles.resendBtnTouch}
+                >
+                  <Text
+                    style={[
+                      styles.resendText,
+                      !canResend && styles.resendTextDisabled,
+                    ]}
+                  >
+                    Resend ({formatTimer(cooldown)})
                   </Text>
-                ) : (
-                  <TouchableOpacity onPress={handleResend} disabled={!canResend}>
-                    <Text style={{ fontSize: 13, fontWeight: '700', color: GREEN }}>
-                      {isResending ? 'Sending…' : 'Resend'}
-                    </Text>
-                  </TouchableOpacity>
-                )}
+                </TouchableOpacity>
               </View>
             )}
           </View>
         </View>
-
-        <Text style={styles.spamHint}>Check your spam folder if you don't see the email.</Text>
-      </ScrollView>
+      </KeyboardAvoidingView>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  root: { flex: 1, backgroundColor: '#F9FAFB' },
-  center: { flex: 1, justifyContent: 'center', alignItems: 'center', padding: 24 },
-  header: {
+  root: {
+    flex: 1,
     backgroundColor: '#FFFFFF',
-    paddingBottom: 18,
-    paddingHorizontal: 20,
+  },
+  center: {
+    flex: 1,
+    justifyContent: 'center',
     alignItems: 'center',
+    padding: 24,
+    backgroundColor: '#FFFFFF',
+  },
+  topBar: {
+    paddingHorizontal: 20,
+    height: 48,
+    justifyContent: 'center',
   },
   backBtn: {
-    alignSelf: 'flex-start',
     width: 40,
     height: 40,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 8,
   },
-  illustrationWrap: { marginBottom: 12 },
+  scrollContent: {
+    paddingHorizontal: 24,
+    paddingTop: 16,
+    paddingBottom: 24,
+    alignItems: 'center',
+  },
+  headerContent: {
+    alignItems: 'center',
+    marginBottom: 28,
+  },
   title: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: '800',
     color: '#111827',
-    marginBottom: 5,
+    marginBottom: 8,
     textAlign: 'center',
-    letterSpacing: -0.5,
+    letterSpacing: -0.4,
   },
   subtitle: {
-    fontSize: 12,
+    fontSize: 14,
     color: '#6B7280',
-    lineHeight: 18,
     textAlign: 'center',
+    lineHeight: 20,
   },
-  emailHighlight: { color: GREEN, fontWeight: '700' },
-  dotsRow: {
-    flexDirection: 'row',
-    gap: 8,
-    marginTop: 12,
-    alignItems: 'center',
-  },
-  dot: { height: 7, borderRadius: 4 },
-  dotDone: { width: 7, backgroundColor: GREEN },
-  dotActive: { width: 20, backgroundColor: GREEN },
-  card: {
-    margin: 16,
-    backgroundColor: '#FFFFFF',
-    borderRadius: 22,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.06,
-    shadowRadius: 10,
-    elevation: 3,
-  },
-  instructionRow: {
+  emailRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 16,
+    justifyContent: 'center',
+    gap: 6,
+    marginTop: 4,
   },
-  instruction: { fontSize: 12, color: '#6B7280', lineHeight: 18, flex: 1 },
-  pasteBtn: {
-    flexDirection: 'row',
+  emailHighlight: {
+    fontSize: 14,
+    color: GREEN,
+    fontWeight: '700',
+  },
+  editPenBtn: {
+    padding: 4,
     alignItems: 'center',
-    gap: 4,
-    backgroundColor: '#F0FDF4',
-    borderRadius: 8,
-    paddingHorizontal: 9,
-    paddingVertical: 5,
-    marginLeft: 8,
+    justifyContent: 'center',
   },
-  pasteBtnText: { fontSize: 11, color: GREEN, fontWeight: '700' },
   otpRow: {
     flexDirection: 'row',
     gap: BOX_GAP,
     justifyContent: 'center',
-    marginBottom: 14,
+    marginBottom: 20,
+    width: '100%',
   },
   otpBox: {
     width: BOX_SIZE,
-    height: BOX_SIZE + 8,
+    height: BOX_SIZE + 10,
     borderRadius: 12,
-    borderWidth: 2,
+    borderWidth: 1.5,
     borderColor: '#E5E7EB',
-    backgroundColor: '#F9FAFB',
+    backgroundColor: '#FFFFFF',
     fontSize: BOX_FONT,
     fontWeight: '700',
     color: '#111827',
   },
-  otpBoxFilled: { borderColor: GREEN, backgroundColor: '#F0FDF4' },
-  otpBoxError: { borderColor: '#EF4444', backgroundColor: '#FEF2F2' },
+  otpBoxFilled: {
+    borderColor: GREEN,
+    backgroundColor: '#F0FDF4',
+  },
+  otpBoxError: {
+    borderColor: '#EF4444',
+    backgroundColor: '#FEF2F2',
+  },
   errorBanner: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -475,45 +477,64 @@ const styles = StyleSheet.create({
     borderColor: '#FECACA',
     borderRadius: 10,
     padding: 10,
-    marginBottom: 14,
+    marginTop: 8,
+    width: '100%',
   },
-  errorBannerText: { fontSize: 12, color: '#DC2626', flex: 1 },
-  verifyBtn: {
-    backgroundColor: GREEN,
-    borderRadius: 14,
-    height: 48,
+  errorBannerText: {
+    fontSize: 12,
+    color: '#DC2626',
+    flex: 1,
+  },
+  bottomSection: {
+    paddingHorizontal: 24,
+    paddingTop: 12,
+    paddingBottom: 8,
+    backgroundColor: '#FFFFFF',
+  },
+  resendArea: {
+    alignItems: 'center',
+    marginTop: 14,
+  },
+  resendInner: {
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 18,
-    shadowColor: GREEN,
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.25,
-    shadowRadius: 8,
-    elevation: 4,
   },
-  verifyBtnDisabled: {
-    backgroundColor: '#D1D5DB',
-    shadowOpacity: 0,
-    elevation: 0,
-  },
-  verifyBtnText: { color: '#fff', fontWeight: '700', fontSize: 14 },
-  resendSection: {
-    alignItems: 'center',
-    paddingTop: 14,
-  },
-  resendHint: { fontSize: 11, color: '#9CA3AF', marginBottom: 5 },
-  resendBtn: { fontSize: 13, color: GREEN, fontWeight: '600' },
-  resendBtnDisabled: { color: '#9CA3AF' },
-  resendLimitText: { fontSize: 12, color: '#9CA3AF', textAlign: 'center' },
-  spamHint: {
+  didntReceiveText: {
+    fontSize: 13,
+    color: '#6B7280',
     textAlign: 'center',
-    fontSize: 11,
-    color: '#9CA3AF',
-    marginTop: 10,
-    paddingHorizontal: 20,
-    paddingBottom: 20,
   },
-  errorText: { fontSize: 14, color: '#6B7280', textAlign: 'center', marginBottom: 12 },
-  linkBtn: { paddingVertical: 8 },
-  linkText: { color: GREEN, fontWeight: '600', textDecorationLine: 'underline' },
+  resendBtnTouch: {
+    marginTop: 4,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+  },
+  resendText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: GREEN,
+    textAlign: 'center',
+  },
+  resendTextDisabled: {
+    color: '#9CA3AF',
+  },
+  resendLimitText: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    textAlign: 'center',
+  },
+  errorText: {
+    fontSize: 14,
+    color: '#6B7280',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  linkBtn: {
+    paddingVertical: 8,
+  },
+  linkText: {
+    color: GREEN,
+    fontWeight: '600',
+    textDecorationLine: 'underline',
+  },
 });

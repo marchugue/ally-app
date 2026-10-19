@@ -1021,9 +1021,39 @@ export default function ConversationScreen() {
       }
     };
 
+    const onGameInviteUpdated = (payload: {
+      sessionId: string;
+      messageId?: string;
+      conversationId?: string;
+      status: 'pending' | 'active' | 'finished' | 'declined' | 'expired';
+      game_invite?: any;
+    }) => {
+      if (!payload?.sessionId) return;
+      setMessages((prev) => {
+        const updated = prev.map((m) => {
+          const matchBySession = m.game_invite?.sessionId === payload.sessionId;
+          const matchByMsg = payload.messageId && m.id === payload.messageId;
+          if (matchBySession || matchByMsg) {
+            return {
+              ...m,
+              game_invite: {
+                ...(m.game_invite || {}),
+                ...(payload.game_invite || {}),
+                sessionId: payload.sessionId,
+                status: payload.status,
+              },
+            };
+          }
+          return m;
+        });
+        return updated;
+      });
+    };
+
     socket.on("conversation:message_new", onMessageNew);
     socket.on("conversation:read", onConversationRead);
     socket.on("conversation:message_deleted", onMessageDeleted);
+    socket.on("game:invite_updated", onGameInviteUpdated);
     socket.on("conversation:streak_updated", onStreakUpdate);
     socket.on("conversation:streak_event", onStreakEvent);
     socket.on("matchmaking:stage_updated", onStageUpdated);
@@ -1043,6 +1073,7 @@ export default function ConversationScreen() {
       socket.off("conversation:message_new", onMessageNew);
       socket.off("conversation:read", onConversationRead);
       socket.off("conversation:message_deleted", onMessageDeleted);
+      socket.off("game:invite_updated", onGameInviteUpdated);
       socket.off("conversation:streak_updated", onStreakUpdate);
       socket.off("conversation:streak_event", onStreakEvent);
       socket.off("matchmaking:stage_updated", onStageUpdated);

@@ -10,6 +10,7 @@ import {
   Alert,
   Platform,
   ActivityIndicator,
+  BackHandler,
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -138,6 +139,20 @@ export default function IdScanFrontScreen() {
       router.replace("/pages/register" as any);
     }
   };
+
+  // Intercept phone hardware & gesture back navigation
+  useEffect(() => {
+    const onBackPress = () => {
+      if (capturedUri) {
+        setCapturedUri(null);
+        return true;
+      }
+      handleBack();
+      return true;
+    };
+    const sub = BackHandler.addEventListener("hardwareBackPress", onBackPress);
+    return () => sub.remove();
+  }, [capturedUri]);
 
   // ── Permission pending / denied ─────────────────────────────────────────────
   if (!permission) {

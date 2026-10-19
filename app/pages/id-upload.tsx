@@ -7,6 +7,7 @@ import {
   StatusBar,
   StyleSheet,
   Dimensions,
+  BackHandler,
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -74,6 +75,16 @@ export default function IdUploadScreen() {
     }
   };
 
+  // Intercept phone hardware & gesture back navigation
+  useEffect(() => {
+    const onBackPress = () => {
+      handleBack();
+      return true;
+    };
+    const sub = BackHandler.addEventListener("hardwareBackPress", onBackPress);
+    return () => sub.remove();
+  }, [isBackStep]);
+
   const handleScanFront = () => {
     router.push({
       pathname: "/pages/id-scan-front" as any,
@@ -131,28 +142,14 @@ export default function IdUploadScreen() {
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        {/* Top Illustration */}
+        {/* Illustration */}
         <View style={styles.illustrationWrapper}>
-          <IdUploadIllustration size={Math.min(SCREEN_WIDTH * 0.42, 160)} />
-        </View>
-
-        {/* Step Badge */}
-        <View style={styles.stepBadge}>
-          <Text style={styles.stepBadgeText}>
-            {isBackStep ? "Step 2 of 2 • Back Side" : "Step 1 of 2 • Front Side"}
-          </Text>
+          <IdUploadIllustration size={160} />
         </View>
 
         {/* Title */}
         <Text style={styles.title}>
           {isBackStep ? "Scan Back of ID" : "Scan Front ID or COR"}
-        </Text>
-
-        {/* Subtitle */}
-        <Text style={styles.subtitle}>
-          {isBackStep
-            ? "Now capture the back side of your student ID, or skip if your card has no back."
-            : "Please scan the front side of your CHMSU student ID or official Certificate of Registration."}
         </Text>
 
         {/* Instruction Bullets */}

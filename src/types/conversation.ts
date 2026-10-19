@@ -30,6 +30,15 @@ export interface MessageReaction {
 
 export type MessageGroupPosition = "single" | "first" | "middle" | "last";
 
+export interface GameInvitePayload {
+  sessionId: string;
+  gameId: 'merge' | 'ttt' | 'clue';
+  status: 'pending' | 'active' | 'finished' | 'declined' | 'expired';
+  hostId: string;
+  guestId: string;
+  expiresAt: string | null;
+}
+
 export interface Message {
   id: string;
   conversation_id: string;
@@ -45,6 +54,7 @@ export interface Message {
   /** True when the sender deleted the message for everyone (tombstone). */
   is_deleted?: boolean;
   deleted_at?: string | null;
+  game_invite?: GameInvitePayload | null;
 }
 
 export interface Conversation {

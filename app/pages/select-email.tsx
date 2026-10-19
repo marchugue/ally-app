@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   View,
   Text,
@@ -7,12 +7,12 @@ import {
   StatusBar,
   StyleSheet,
   Dimensions,
+  BackHandler,
 } from "react-native";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ArrowLeft, GraduationCap, FileCheck, CheckCircle2 } from "lucide-react-native";
 import { Button } from "@/components/Button";
-import { EmailSelectIllustration } from "@/components/OnboardingIllustrations";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const GREEN = "#1A6B3C";
@@ -29,6 +29,16 @@ export default function SelectEmailScreen() {
       router.replace("/pages/onboarding" as any);
     }
   };
+
+  // Intercept phone hardware & gesture back navigation
+  useEffect(() => {
+    const onBackPress = () => {
+      handleBack();
+      return true;
+    };
+    const sub = BackHandler.addEventListener("hardwareBackPress", onBackPress);
+    return () => sub.remove();
+  }, []);
 
   const handleContinue = () => {
     router.push({
@@ -58,11 +68,6 @@ export default function SelectEmailScreen() {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scrollContent}
         >
-          {/* Top Illustration */}
-          <View style={styles.illustrationWrapper}>
-            <EmailSelectIllustration size={Math.min(SCREEN_WIDTH * 0.44, 175)} />
-          </View>
-
           {/* Title & Subtitle */}
           <View style={styles.headerText}>
             <Text style={styles.title}>How would you like to sign up?</Text>
@@ -179,14 +184,10 @@ const styles = StyleSheet.create({
     paddingBottom: 24,
     alignItems: "center",
   },
-  illustrationWrapper: {
-    alignItems: "center",
-    marginTop: 8,
-    marginBottom: 16,
-  },
   headerText: {
     alignItems: "center",
     marginBottom: 24,
+    marginTop: 12,
   },
   title: {
     fontSize: 22,

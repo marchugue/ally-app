@@ -16,6 +16,7 @@ import {
   ArrowRight,
   KeyRound,
   CheckCircle,
+  Pencil,
 } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Button } from "@/components/Button";
@@ -36,6 +37,12 @@ type ResetStep = "email" | "otp" | "new_password";
 const OTP_LENGTH = 6;
 const GREEN = "#1A6B3C";
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
+
+function formatTimer(secs: number): string {
+  const m = Math.floor(secs / 60);
+  const s = secs % 60;
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
 
 export default function ForgotPasswordScreen() {
   const insets = useSafeAreaInsets();
@@ -304,7 +311,7 @@ export default function ForgotPasswordScreen() {
                 }}
               >
                 {step === "email" && "Reset Password"}
-                {step === "otp" && "Check your email"}
+                {step === "otp" && ""}
                 {step === "new_password" && "Create new password"}
               </Text>
 
@@ -368,43 +375,60 @@ export default function ForgotPasswordScreen() {
 
             {/* STEP 2: OTP Verification */}
             {step === "otp" && (
-              <View style={{ alignItems: "center" }}>
-                <View style={{ marginVertical: 8 }}>
-                  <OtpIllustration size={150} />
-                </View>
-
+              <View style={{ alignItems: "center", paddingTop: 8 }}>
                 <Text
                   style={{
-                    fontSize: 17,
+                    fontSize: 22,
                     fontWeight: "800",
                     color: "#111827",
                     textAlign: "center",
-                    marginTop: 4,
+                    marginBottom: 8,
+                    letterSpacing: -0.4,
                   }}
                 >
-                  We just sent a verification code
-                </Text>
-                <Text
-                  style={{
-                    fontSize: 13,
-                    color: "#6B7280",
-                    textAlign: "center",
-                    marginTop: 4,
-                  }}
-                >
-                  Enter the 6-digit code sent to
+                  We just sent a 6-digit code
                 </Text>
                 <Text
                   style={{
                     fontSize: 14,
-                    fontWeight: "700",
-                    color: GREEN,
+                    color: "#6B7280",
                     textAlign: "center",
-                    marginBottom: 18,
+                    lineHeight: 20,
                   }}
                 >
-                  {email}
+                  Enter the 6-digit code we sent to
                 </Text>
+                <View
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    gap: 6,
+                    marginTop: 4,
+                    marginBottom: 24,
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 14,
+                      fontWeight: "700",
+                      color: GREEN,
+                    }}
+                  >
+                    {email}
+                  </Text>
+                  <TouchableOpacity
+                    onPress={() => {
+                      setStep("email");
+                      setError("");
+                    }}
+                    hitSlop={12}
+                    accessibilityLabel="Edit email"
+                    style={{ padding: 4 }}
+                  >
+                    <Pencil size={15} color={GREEN} />
+                  </TouchableOpacity>
+                </View>
 
                 {/* 6 OTP Boxes */}
                 <View style={styles.otpContainer}>
@@ -529,7 +553,7 @@ export default function ForgotPasswordScreen() {
             {step === "otp" && (
               <>
                 <Button
-                  label={loading ? "Verifying…" : "Verify Code"}
+                  label={loading ? "Verifying…" : "Verify"}
                   variant="primary"
                   pill
                   size="lg"
@@ -542,40 +566,30 @@ export default function ForgotPasswordScreen() {
                 {/* Resend under verify button */}
                 <View
                   style={{
-                    flexDirection: "row",
-                    justifyContent: "center",
                     alignItems: "center",
                     marginTop: 14,
-                    gap: 6,
                   }}
                 >
-                  <Text style={{ fontSize: 13, color: "#6B7280" }}>
-                    Didn&apos;t receive code?
+                  <Text style={{ fontSize: 13, color: "#6B7280", textAlign: "center" }}>
+                    Didn&apos;t receive the code?
                   </Text>
-                  {resendCooldown > 0 ? (
-                    <Text style={{ fontSize: 13, fontWeight: "700", color: "#9CA3AF" }}>
-                      Resend in {resendCooldown}s
+                  <TouchableOpacity
+                    onPress={handleResend}
+                    disabled={loading || resendCooldown > 0}
+                    style={{ marginTop: 4, paddingVertical: 4, paddingHorizontal: 8 }}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 13,
+                        fontWeight: "700",
+                        color: resendCooldown > 0 || loading ? "#9CA3AF" : GREEN,
+                        textAlign: "center",
+                      }}
+                    >
+                      Resend ({formatTimer(resendCooldown)})
                     </Text>
-                  ) : (
-                    <TouchableOpacity onPress={handleResend} disabled={loading}>
-                      <Text style={{ fontSize: 13, fontWeight: "700", color: GREEN }}>
-                        Resend
-                      </Text>
-                    </TouchableOpacity>
-                  )}
+                  </TouchableOpacity>
                 </View>
-
-                <TouchableOpacity
-                  onPress={() => {
-                    setStep("email");
-                    setError("");
-                  }}
-                  style={{ marginTop: 8, padding: 4 }}
-                >
-                  <Text style={{ fontSize: 12, color: "#9CA3AF", textAlign: "center" }}>
-                    ← Change email address
-                  </Text>
-                </TouchableOpacity>
               </>
             )}
 
@@ -585,8 +599,8 @@ export default function ForgotPasswordScreen() {
                   loading
                     ? "Updating password…"
                     : focusedField === "password"
-                    ? "Next"
-                    : "Reset Password"
+                      ? "Next"
+                      : "Reset Password"
                 }
                 variant="primary"
                 pill

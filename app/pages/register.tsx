@@ -13,26 +13,21 @@ import {
   Dimensions,
   ActivityIndicator,
   BackHandler,
+  StyleSheet,
 } from "react-native";
 
-import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
 import {
   ArrowLeft,
   ArrowRight,
   Check,
   User,
-  Mail,
-  Lock,
-  Eye,
-  EyeOff,
   GraduationCap,
   Sparkles,
   FileText,
   Plus,
   X,
   ChevronDown,
-  Users,
 } from "lucide-react-native";
 import {
   validateUsername,
@@ -52,10 +47,8 @@ import {
   clearMobileRegisterCache,
 } from "@/lib/registerCache";
 import { updateMyProfile } from "@/lib/api/profiles";
-import { uploadStudentIdFile, getPresetAvatars, PresetAvatarRow } from "@/lib/api/media";
+import { getPresetAvatars, PresetAvatarRow } from "@/lib/api/media";
 import { UserAvatar } from "@/components/UserAvatar";
-import { DiagonalStripes } from "@/components/DiagonalStripes";
-import { SlideIn } from "@/components/SlideIn";
 import { Button } from "@/components/Button";
 import { KeyboardHugView } from "@/components/KeyboardHugView";
 import { useKeyboard } from "@/hooks/useKeyboard";
@@ -63,10 +56,9 @@ import Input from "@/components/buttons/button";
 import EmailInput from "@/components/buttons/email";
 import PasswordInput from "@/components/buttons/password";
 import AlertMessage from "@/components/AlertMessage";
-import LoadingOverlay from "@/components/LoadingOverlay";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
-
+const GREEN = "#1A6B3C";
 
 // ── Lookup Data ──────────────────────────────────────────────────────────────
 
@@ -148,13 +140,6 @@ const PRIVACY_TEXT = `Privacy Policy for Ally-jis:
 
 Official Policy on Website: https://ally-jis.com/privacy`;
 
-const STEPS = [
-  { num: 1, label: "Basic Info",    icon: User,          hint: "Your identity on the platform" },
-  { num: 2, label: "Academic",      icon: GraduationCap, hint: "Your course & year at CHMSU" },
-  { num: 3, label: "Interests",     icon: Sparkles,      hint: "Powers your matches!" },
-  { num: 4, label: "Avatar & Bio",  icon: FileText,      hint: "Pick your emoji & intro" },
-];
-
 // ── Types ────────────────────────────────────────────────────────────────────
 
 interface FormData {
@@ -171,14 +156,12 @@ interface FormData {
   bio: string;
 }
 
-// ── Helpers ──────────────────────────────────────────────────────────────────
+type CredentialStep = "username" | "email" | "password";
 
 function FieldError({ msg }: { msg?: string }) {
   if (!msg) return null;
   return <Text style={{ color: "#EF4444", fontSize: 11, marginTop: 6, marginLeft: 4 }}>{msg}</Text>;
 }
-
-
 
 // ── Main Component ───────────────────────────────────────────────────────────
 
@@ -187,16 +170,25 @@ export default function RegisterScreen() {
   const params = useLocalSearchParams();
   const { user, signUp, completeLogin, accessToken, refreshSession, updateUserMetadata } = useAuth();
   const scrollViewRef = useRef<ScrollView>(null);
+
+  // Overall onboarding step: 1 (Credentials), 2 (Academic), 3 (Interests), 4 (Avatar & Bio)
   const [step, setStep] = useState(() => {
-    // If redirected from the incomplete-profile guard, start at the specified step.
     const startStep = Number(params.startStep);
     return startStep >= 2 && startStep <= 4 ? startStep : 1;
   });
 
-  // Scroll to top on step changes so user starts at the top of each onboarding step
+  // Credential sub-step for Step 1: username -> email -> password
+  const [credStep, setCredStep] = useState<CredentialStep>(() => {
+    if (params.subStep === "password") return "password";
+    if (params.subStep === "email" || params.editEmail === "true") return "email";
+    return "username";
+  });
+
+  // Scroll to top on step or credStep change
   useEffect(() => {
     scrollViewRef.current?.scrollTo({ y: 0, animated: false });
-  }, [step]);
+  }, [step, credStep]);
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDone, setIsDone] = useState(false);
   const [submitError, setSubmitError] = useState("");
@@ -204,9 +196,9 @@ export default function RegisterScreen() {
   const [lastModalContent, setLastModalContent] = useState<"terms" | "privacy">("terms");
   const [agreedToTerms, setAgreedToTerms] = useState(false);
   const [termsError, setTermsError] = useState("");
-  const [Touched, setTouched] = useState(false);
-  
-  // Email type & Student ID state (from params or default)
+  const [touched, setTouched] = useState(false);
+
+  // Email type & Student ID state
   const [emailType, setEmailType] = useState<"chmsu" | "external">(
     (params.emailType as "chmsu" | "external") || "chmsu"
   );
@@ -234,7 +226,24 @@ export default function RegisterScreen() {
         username: (params.username as string) || prev.username,
       }));
     }
-  }, [params.emailType, params.studentIdFrontUri, params.studentIdBackUri, params.email, params.username]);
+    if (params.subStep === "password") {
+      setCredStep("password");
+    } else if (params.subStep === "email" || params.editEmail === "true") {
+      setCredStep("email");
+    }
+  }, [params.emailType, params.studentIdFrontUri, params.studentIdBackUri, params.email, params.username, params.subStep, params.editEmail]);
+
+  // Auto-focus input when transitioning credential sub-steps
+  useEffect(() => {
+    if (step === 1) {
+      const timer = setTimeout(() => {
+        if (credStep === "username") usernameInputRef.current?.focus();
+        else if (credStep === "email") emailInputRef.current?.focus();
+        else if (credStep === "password") passwordInputRef.current?.focus();
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [step, credStep]);
 
   // Sync existing user metadata into form if user arrived from incomplete profile guard
   useEffect(() => {
@@ -255,100 +264,22 @@ export default function RegisterScreen() {
     }
   }, [user]);
 
-  // custom interests
+  // Custom interests
   const [customInterest, setCustomInterest] = useState("");
   const [showCustomInput, setShowCustomInput] = useState(false);
 
-  // OTP State for Step 1
-  const [registeredUserId, setRegisteredUserId] = useState<string | null>(null);
-  const [showOtpView, setShowOtpView] = useState(false);
-  const [otpDigits, setOtpDigits] = useState<string[]>(["", "", "", "", "", ""]);
-  const [otpError, setOtpError] = useState("");
-  const [isVerifyingOtp, setIsVerifyingOtp] = useState(false);
-  const [isResendingOtp, setIsResendingOtp] = useState(false);
-  const [resendCooldown, setResendCooldown] = useState(0);
-  const otpInputsRef = useRef<Array<TextInput | null>>([]);
-
-  // dept picker modal
+  // Picker modals
   const [showDeptPicker, setShowDeptPicker] = useState(false);
   const [showCoursePicker, setShowCoursePicker] = useState(false);
 
-  // Keyboard visibility via native state
+  // Keyboard visibility
   const { isKeyboardVisible } = useKeyboard();
 
-  // Step 1 input refs for sequential focus & navigation
+  // Input refs for auto-focus
   const usernameInputRef = useRef<TextInput>(null);
   const emailInputRef = useRef<TextInput>(null);
   const passwordInputRef = useRef<TextInput>(null);
   const confirmPasswordInputRef = useRef<TextInput>(null);
-
-  // Layout positions of step 1 inputs for auto-scroll
-  const usernameYRef = useRef(0);
-  const emailYRef = useRef(0);
-  const passwordYRef = useRef(0);
-  const confirmPasswordYRef = useRef(0);
-
-  // Track focused field in Step 1
-  const [focusedField, setFocusedField] = useState<
-    "username" | "email" | "password" | "confirmPassword" | null
-  >(null);
-
-  const isPasswordOrConfirmFocused =
-    step === 1 &&
-    !showOtpView &&
-    (focusedField === "password" || focusedField === "confirmPassword");
-
-  const isStep1NextState =
-    step === 1 &&
-    !showOtpView &&
-    (focusedField === "username" || focusedField === "email" || focusedField === "password");
-
-  const handleInputFocus = (field: "username" | "email" | "password" | "confirmPassword") => {
-    setFocusedField(field);
-
-    if (field === "password") {
-      requestAnimationFrame(() => {
-        scrollViewRef.current?.scrollTo({ y: passwordYRef.current, animated: true });
-      });
-    } else if (field === "confirmPassword") {
-      requestAnimationFrame(() => {
-        scrollViewRef.current?.scrollTo({ y: confirmPasswordYRef.current, animated: true });
-      });
-    } else {
-      requestAnimationFrame(() => {
-        scrollViewRef.current?.scrollTo({ y: 0, animated: true });
-      });
-    }
-  };
-
-  const handleInputBlur = (field: "username" | "email" | "password" | "confirmPassword") => {
-    setTouched(true);
-  };
-
-  const handleStep1NextInput = () => {
-    if (focusedField === "username") {
-      emailInputRef.current?.focus();
-    } else if (focusedField === "email") {
-      passwordInputRef.current?.focus();
-    } else if (focusedField === "password") {
-      confirmPasswordInputRef.current?.focus();
-    } else {
-      handleNext();
-    }
-  };
-
-  // Restore scroll and reset focus state when keyboard closes
-  useEffect(() => {
-    if (!isKeyboardVisible && step === 1 && !showOtpView) {
-      setFocusedField(null);
-      scrollViewRef.current?.scrollTo({ y: 0, animated: true });
-    }
-  }, [isKeyboardVisible, step, showOtpView]);
-
-  useEffect(() => {
-    setFocusedField(null);
-  }, [step]);
-
 
   const [presetAvatars, setPresetAvatars] = useState<PresetAvatarRow[]>([]);
   const [isLoadingPresets, setIsLoadingPresets] = useState(false);
@@ -368,6 +299,7 @@ export default function RegisterScreen() {
     bio: "",
   });
 
+  const [registeredUserId, setRegisteredUserId] = useState<string | null>(null);
   const pendingUserIdRef = useRef<string | null>(null);
   const isVerifiedRef = useRef<boolean>(false);
   const formEmailRef = useRef<string>("");
@@ -380,19 +312,78 @@ export default function RegisterScreen() {
     formEmailRef.current = form.email.trim().toLowerCase();
   }, [form.email]);
 
-  // Handle Android hardware back press when on OTP view
-  useEffect(() => {
-    if (!showOtpView) return;
-
-    const onBackPress = () => {
-      setShowOtpView(false);
-      saveMobileRegisterCache({ showOtpView: false });
+  // Unified back navigation action for phone back button & UI back button
+  const handleBack = () => {
+    // 1. Modals
+    if (activeModal !== null) {
+      setActiveModal(null);
       return true;
-    };
+    }
+    if (showDeptPicker) {
+      setShowDeptPicker(false);
+      return true;
+    }
+    if (showCoursePicker) {
+      setShowCoursePicker(false);
+      return true;
+    }
+    if (showCustomInput) {
+      setShowCustomInput(false);
+      return true;
+    }
 
+    // 2. Step 1 Credential sub-steps
+    if (step === 1) {
+      if (credStep === "password") {
+        setCredStep("email");
+        setSubmitError("");
+        return true;
+      }
+      if (credStep === "email") {
+        setCredStep("username");
+        setSubmitError("");
+        return true;
+      }
+      // Username step back returns to email type selection
+      if (router.canGoBack()) {
+        router.back();
+      } else {
+        router.replace("/pages/select-email" as any);
+      }
+      return true;
+    }
+
+    // 3. Multi-steps (Step 2, 3, 4)
+    if (step > 1) {
+      const minStep = Number(params.startStep) >= 2 ? Number(params.startStep) : 1;
+      if (step > minStep) {
+        setStep((s) => s - 1);
+        setSubmitError("");
+        return true;
+      }
+      return false;
+    }
+
+    return true;
+  };
+
+  // Intercept Android hardware & gesture back navigation
+  useEffect(() => {
+    const onBackPress = () => {
+      const handled = handleBack();
+      return handled !== false;
+    };
     const sub = BackHandler.addEventListener("hardwareBackPress", onBackPress);
     return () => sub.remove();
-  }, [showOtpView]);
+  }, [
+    activeModal,
+    showDeptPicker,
+    showCoursePicker,
+    showCustomInput,
+    step,
+    credStep,
+    params.startStep,
+  ]);
 
   // Restore cached verification process and form data on mount
   useEffect(() => {
@@ -406,33 +397,18 @@ export default function RegisterScreen() {
           const status = await authApi.getOtpStatus(cached.registeredUserId);
           if (status.verified) {
             setStep(cached.step > 1 ? cached.step : 2);
-            setShowOtpView(false);
             if (cached.form) setForm((prev) => ({ ...prev, ...cached.form }));
           } else if (status.exists) {
-            if (cached.emailType) setEmailType(cached.emailType);
-            setStep(cached.step || 1);
-            setRegisteredUserId(cached.registeredUserId);
-            setShowOtpView(true);
-            if (cached.otpDigits && Array.isArray(cached.otpDigits)) {
-              setOtpDigits(cached.otpDigits);
-            }
-            if (cached.form) setForm((prev) => ({ ...prev, ...cached.form }));
-            if (cached.studentIdFrontUri) setStudentIdUri(cached.studentIdFrontUri);
-            if (cached.studentIdBackUri) setStudentIdBackUri(cached.studentIdBackUri);
-          } else {
-            if (cached.emailType) setEmailType(cached.emailType);
-            setStep(1);
-            setShowOtpView(false);
-            if (cached.form) setForm((prev) => ({ ...prev, ...cached.form }));
+            // Pending verification: navigate to verify-otp page
+            router.replace({
+              pathname: "/pages/verify-otp" as any,
+              params: {
+                userId: cached.registeredUserId,
+                email: cached.form?.email || "",
+              },
+            });
           }
-        } catch {
-          if (cached.emailType) setEmailType(cached.emailType);
-          setStep(cached.step || 1);
-          setRegisteredUserId(cached.registeredUserId);
-          setShowOtpView(true);
-          if (cached.otpDigits) setOtpDigits(cached.otpDigits);
-          if (cached.form) setForm((prev) => ({ ...prev, ...cached.form }));
-        }
+        } catch {}
       } else {
         if (cached.emailType && !params.emailType) setEmailType(cached.emailType);
         if (cached.step && cached.step >= 1 && !params.startStep) setStep(cached.step);
@@ -452,8 +428,8 @@ export default function RegisterScreen() {
       emailType,
       step,
       registeredUserId,
-      showOtpView,
-      otpDigits,
+      showOtpView: false,
+      otpDigits: [],
       form,
       studentIdFrontUri: studentIdUri,
       studentIdBackUri,
@@ -464,8 +440,6 @@ export default function RegisterScreen() {
     emailType,
     step,
     registeredUserId,
-    showOtpView,
-    otpDigits,
     form,
     studentIdUri,
     studentIdBackUri,
@@ -489,7 +463,7 @@ export default function RegisterScreen() {
         }
       })
       .catch((err) => {
-        console.warn("[register] Failed to load preset avatars (falling back to emojis):", err?.message || err);
+        console.warn("[register] Failed to load preset avatars:", err?.message || err);
         if (isMounted) {
           setAvatarTab("emojis");
         }
@@ -511,114 +485,90 @@ export default function RegisterScreen() {
     course?: string;
     yearLevel?: string;
     interests?: string;
-  }>({}); 
+  }>({});
 
   const set = (key: keyof FormData, val: any) => setForm(prev => ({ ...prev, [key]: val }));
 
-
   const knownCategories = Object.values(INTERESTS_BY_CATEGORY).flat();
   const customInterests = form.interests.filter(i => !knownCategories.includes(i));
-
   const availableCourses = form.department ? DEPARTMENTS[form.department] || [] : [];
-
-  const StepIcon = STEPS[step - 1].icon;
 
   // Realtime live validation messages
   const usernameError =
-    Touched && form.username.trim().length > 0
+    touched && form.username.trim().length > 0
       ? validateUsername(form.username)
       : null;
 
   const emailError =
-    Touched && form.email.trim().length > 0
+    touched && form.email.trim().length > 0
       ? validateEmail(form.email, emailType)
       : null;
 
   const passwordError =
-    Touched && form.password.trim().length > 0
+    touched && form.password.trim().length > 0
       ? validatePass(form.password)
       : null;
 
   const confirmPasswordError =
-    Touched && form.confirmPassword.trim().length > 0
+    touched && form.confirmPassword.trim().length > 0
       ? form.confirmPassword !== form.password
         ? 'Passwords do not match.'
         : null
       : null;
 
-  const departmentError =
-    Touched
-      ? validateDepartment(form.department)
-      : null;
+  // ── Step 1: Credential Navigation (Username -> Email -> Password) ──────────
 
-  const courseError =
-    Touched
-      ? validateCourse(form.course)
-      : null;
-
-  const yearLevelError =
-    Touched
-      ? validateYearLevel(form.yearLevel)
-      : null;
-
-  function validate(): boolean {
-    const errs: typeof errors = {};
-
-    if (step === 1) {
-      const uErr = validateUsername(form.username);
-      if (uErr) errs.username = uErr;
-
-      const eErr = validateEmail(form.email, emailType);
-      if (eErr) errs.email = eErr;
-
-      const pErr = validatePass(form.password);
-      if (pErr) errs.password = pErr;
-
-      if (!form.confirmPassword) {
-        errs.confirmPassword = 'Please confirm your password.';
-      } else if (form.confirmPassword !== form.password) {
-        errs.confirmPassword = 'Passwords do not match.';
-      }
-    }
-
-    if (step === 2) {
-      const dErr = validateDepartment(form.department);
-      if (dErr) errs.department = dErr;
-
-      const cErr = validateCourse(form.course);
-      if (cErr) errs.course = cErr;
-
-      const yErr = validateYearLevel(form.yearLevel);
-      if (yErr) errs.yearLevel = yErr;
-    }
-
-    if (step === 3) {
-      const iErr = validateInterests(form.interests);
-      if (iErr) errs.interests = iErr;
-    }
-    setErrors(errs);
-    return Object.keys(errs).length === 0;
-  }
-
-  // ── Navigation & Verification ───────────────────────────────────────────────
-
-  const handleNext = async () => {
-    if (!validate()) return;
+  const handleContinueCredentials = async () => {
     setSubmitError("");
 
-    if (step === 1) {
-      if (showOtpView) {
-        const code = otpDigits.join("");
-        if (code.length < 6) {
-          setOtpError("Please enter the full 6-digit verification code.");
-          return;
-        }
-        await handleVerifyOtpInStep1(code);
+    if (credStep === "username") {
+      const uErr = validateUsername(form.username);
+      if (uErr) {
+        setTouched(true);
+        setErrors((prev) => ({ ...prev, username: uErr }));
         return;
       }
+      setErrors((prev) => ({ ...prev, username: undefined }));
+      setCredStep("email");
+      return;
+    }
 
-      // External email: navigate to Student Verification page (id-upload).
-      // Account creation happens in id-upload-success after both scans.
+    if (credStep === "email") {
+      const eErr = validateEmail(form.email, emailType);
+      if (eErr) {
+        setTouched(true);
+        setErrors((prev) => ({ ...prev, email: eErr }));
+        return;
+      }
+      setErrors((prev) => ({ ...prev, email: undefined }));
+      setCredStep("password");
+      return;
+    }
+
+    if (credStep === "password") {
+      const pErr = validatePass(form.password);
+      const cErr = !form.confirmPassword
+        ? "Please confirm your password."
+        : form.confirmPassword !== form.password
+        ? "Passwords do not match."
+        : null;
+
+      if (pErr || cErr) {
+        setTouched(true);
+        setErrors((prev) => ({
+          ...prev,
+          password: pErr || undefined,
+          confirmPassword: cErr || undefined,
+        }));
+        return;
+      }
+      setErrors((prev) => ({
+        ...prev,
+        password: undefined,
+        confirmPassword: undefined,
+      }));
+
+      // External email: navigate to Student Verification (id-upload)
       if (emailType === "external") {
         router.push({
           pathname: "/pages/id-upload" as any,
@@ -632,7 +582,7 @@ export default function RegisterScreen() {
         return;
       }
 
-      // CHMSU email: create account immediately and show OTP inline
+      // CHMSU email: sign up immediately and navigate to verify-otp
       setIsSubmitting(true);
       try {
         const result = await signUp({
@@ -647,121 +597,71 @@ export default function RegisterScreen() {
         pendingUserIdRef.current = result.userId;
         isVerifiedRef.current = false;
         formEmailRef.current = form.email.trim().toLowerCase();
-        setShowOtpView(true);
+
+        router.push({
+          pathname: "/pages/verify-otp" as any,
+          params: {
+            userId: result.userId,
+            email: form.email,
+          },
+        });
       } catch (err: any) {
-        setSubmitError(err instanceof ApiError ? err.message : err?.message || "Registration failed.");
+        setSubmitError(
+          err instanceof ApiError
+            ? err.message
+            : err?.message || "Registration failed. Please try again."
+        );
       } finally {
         setIsSubmitting(false);
       }
+    }
+  };
+
+  // ── Step 2: Academic Navigation ───────────────────────────────────────────
+
+  const handleNextAcademic = () => {
+    const dErr = validateDepartment(form.department);
+    const cErr = validateCourse(form.course);
+    const yErr = validateYearLevel(form.yearLevel);
+    if (dErr || cErr || yErr) {
+      setTouched(true);
+      setErrors({
+        department: dErr || undefined,
+        course: cErr || undefined,
+        yearLevel: yErr || undefined,
+      });
       return;
     }
+    setErrors({});
+    setStep(3);
+  };
 
-    if (step === 4) {
-      if (!agreedToTerms) {
-        setTermsError("You must agree to the Terms & Conditions to continue.");
-        return;
-      }
-      await handleSubmit();
+  // ── Step 3: Interests Navigation ──────────────────────────────────────────
+
+  const handleNextInterests = () => {
+    const iErr = validateInterests(form.interests);
+    if (iErr) {
+      setTouched(true);
+      setErrors({ interests: iErr });
       return;
     }
-    setStep(s => s + 1);
+    setErrors({});
+    setStep(4);
   };
 
-  const handleVerifyOtpInStep1 = async (code: string) => {
-    if (!registeredUserId) return;
-    setIsVerifyingOtp(true);
-    setOtpError("");
-    try {
-      const session = await authApi.verifyOtp(registeredUserId, code);
-      isVerifiedRef.current = true;
-      pendingUserIdRef.current = null;
-      await completeLogin(session);
-      setShowOtpView(false);
-      saveMobileRegisterCache({ showOtpView: false, step: 2 });
-      setStep(2);
-    } catch (err: any) {
-      setOtpError(err?.message || "Invalid verification code. Please try again.");
-    } finally {
-      setIsVerifyingOtp(false);
-    }
-  };
+  // ── Step 4: Submit Profile ────────────────────────────────────────────────
 
-  const handleResendOtpInStep1 = async () => {
-    if (!registeredUserId || isResendingOtp || resendCooldown > 0) return;
-    setIsResendingOtp(true);
-    setOtpError("");
-    try {
-      await authApi.resendOtp(registeredUserId);
-      setResendCooldown(60);
-      const timer = setInterval(() => {
-        setResendCooldown((prev) => {
-          if (prev <= 1) {
-            clearInterval(timer);
-            return 0;
-          }
-          return prev - 1;
-        });
-      }, 1000);
-    } catch (err: any) {
-      setOtpError(err?.message || "Could not resend code.");
-    } finally {
-      setIsResendingOtp(false);
-    }
-  };
-
-  const handleBack = () => {
-    if (step === 1 && showOtpView) {
-      // Hide OTP view so user can review/edit their details without cancelling on the server
-      setShowOtpView(false);
-      saveMobileRegisterCache({ showOtpView: false });
+  const handleNextAvatar = async () => {
+    if (!agreedToTerms) {
+      setTermsError("You must agree to the Terms & Conditions to continue.");
       return;
     }
-    if (step > 1) {
-      // If user was redirected here to complete an incomplete profile,
-      // don't go below the step they started at.
-      const minStep = Number(params.startStep) >= 2 ? Number(params.startStep) : 1;
-      if (step > minStep) {
-        setStep(s => s - 1);
-        setSubmitError("");
-      }
-      // If already at the minimum step (e.g. step 2 for resume flow), do nothing —
-      // the user can't go back to Step 1 since their account already exists.
-    } else {
-      // Step 1 back returns to email type selection
-      router.replace("/pages/select-email" as any);
-    }
+    await handleSubmit();
   };
-
-  /**
-   * Resets OTP view state and optionally rolls back pending registration if explicitly cancelled.
-   */
-  const handleCancelRegistration = async (explicitCancel?: boolean | unknown) => {
-    const isExplicit = explicitCancel === true;
-    const prevUserId = registeredUserId || pendingUserIdRef.current;
-    const prevEmail = form.email || formEmailRef.current;
-    pendingUserIdRef.current = null;
-    isVerifiedRef.current = false;
-    // Reset OTP view state immediately so the user sees the form again
-    setShowOtpView(false);
-    setOtpDigits(["", "", "", "", "", ""]);
-    setOtpError("");
-    saveMobileRegisterCache({ showOtpView: false, otpDigits: ["", "", "", "", "", ""] });
-
-    if (isExplicit && prevUserId) {
-      clearMobileRegisterCache();
-      try {
-        await authApi.cancelRegistration({ userId: prevUserId, email: prevEmail });
-      } catch (err: any) {
-        console.warn('[register] cancelRegistration error (non-blocking):', err?.message);
-      }
-    }
-  };
-
-
-  // ── Submit Profile (Step 4) ───────────────────────────────────────────────
 
   const handleSubmit = async () => {
     setIsSubmitting(true);
+    setSubmitError("");
     try {
       if (accessToken) {
         const finalUsername = (
@@ -785,7 +685,6 @@ export default function RegisterScreen() {
           accessToken
         );
 
-        // Update in-memory and cached user immediately so router guards don't loop back
         await updateUserMetadata({
           onboarding_complete: true,
           username: finalUsername,
@@ -798,7 +697,6 @@ export default function RegisterScreen() {
           organizations: form.organizations,
         });
 
-        // Silently sync fresh session from backend
         void refreshSession();
       }
       setIsDone(true);
@@ -835,14 +733,56 @@ export default function RegisterScreen() {
     setCustomInterest("");
   };
 
-  // ── Done screen ────────────────────────────────────────────────────────────
+  // Titles and Subtitles matching select-email style
+  const getHeaderInfo = () => {
+    if (step === 1) {
+      if (credStep === "username") {
+        return {
+          title: "Choose a username",
+          subtitle: "This will be your unique campus handle on Ally-jis.",
+        };
+      }
+      if (credStep === "email") {
+        return {
+          title: emailType === "chmsu" ? "Enter your university email" : "Enter your email address",
+          subtitle: emailType === "chmsu"
+            ? "We'll send a 6-digit verification code to verify your campus identity."
+            : "Enter your active email to receive your verification code.",
+        };
+      }
+      return {
+        title: "Create a password",
+        subtitle: "Choose a strong password with at least 8 characters.",
+      };
+    }
+    if (step === 2) {
+      return {
+        title: "Academic Details",
+        subtitle: "Select your department, degree program, and year level.",
+      };
+    }
+    if (step === 3) {
+      return {
+        title: "Your Interests",
+        subtitle: "Pick topics you enjoy to help discover like-minded peers.",
+      };
+    }
+    return {
+      title: "Profile & Bio",
+      subtitle: "Personalize your avatar and write a short intro for your peers.",
+    };
+  };
+
+  const { title: currentTitle, subtitle: currentSubtitle } = getHeaderInfo();
+
+  // ── Done Screen ────────────────────────────────────────────────────────────
 
   if (isDone) {
     return (
       <View
         style={{
           flex: 1,
-          backgroundColor: "#FAF8F5",
+          backgroundColor: "#FFFFFF",
           alignItems: "center",
           justifyContent: "center",
           padding: 28,
@@ -898,767 +838,565 @@ export default function RegisterScreen() {
     );
   }
 
-  // ── Form view ──────────────────────────────────────────────────────────────
+  // ── Main Layout ────────────────────────────────────────────────────────────
 
   return (
-    <View style={{ flex: 1, backgroundColor: "#FFFFFF" }}>
-      <StatusBar barStyle="dark-content" />
+    <View style={[styles.root, { paddingTop: insets.top }]}>
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+
+      {/* Top Bar with back arrow (fixed at the top) */}
+      <View style={styles.topBar}>
+        <Pressable
+          onPress={handleBack}
+          hitSlop={14}
+          style={styles.iconBtn}
+          accessibilityLabel="Go back"
+        >
+          <ArrowLeft size={24} color={GREEN} />
+        </Pressable>
+      </View>
 
       <KeyboardHugView style={{ flex: 1 }}>
-        <View
-          style={{ flex: 1, width: "100%", maxWidth: 620, alignSelf: "center" }}
-        >
-          {/* ── Header Page (Pinned at top) ── */}
-          <View
-            style={{
-              paddingHorizontal: 20,
-              paddingTop: Math.max(insets.top, 12),
-              paddingBottom: 12,
-              backgroundColor: "#FFFFFF",
-              borderBottomWidth: 1,
-              borderBottomColor: "#F3F4F6",
-            }}
-          >
-            {/* Header row: green arrow back (left, no border) + Title (center) */}
-            <View
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
+        <View style={{ flex: 1, width: "100%", maxWidth: 620, alignSelf: "center" }}>
+
+          {/* ── STEP 1: CREDENTIALS (Username -> Email -> Password separated) ── */}
+          {step === 1 && (
+            <ScrollView
+              ref={scrollViewRef}
+              showsVerticalScrollIndicator={false}
+              style={{ flex: 1, backgroundColor: "#FFFFFF" }}
+              contentContainerStyle={{
+                flexGrow: 1,
                 justifyContent: "space-between",
+                paddingHorizontal: 24,
+                paddingTop: 8,
+                paddingBottom: isKeyboardVisible ? 10 : Math.max(insets.bottom + 12, 16),
               }}
+              keyboardShouldPersistTaps="handled"
+              keyboardDismissMode="on-drag"
             >
-              <Pressable
-                onPress={handleBack}
-                hitSlop={14}
-                style={{
-                  width: 40,
-                  height: 40,
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-                accessibilityLabel="Go back"
-              >
-                <ArrowLeft size={24} color="#1A6B3C" />
-              </Pressable>
-
-              <Text
-                style={{
-                  fontSize: 18,
-                  fontWeight: "800",
-                  color: "#111827",
-                  textAlign: "center",
-                  letterSpacing: -0.4,
-                }}
-              >
-                {STEPS[step - 1].label}
-              </Text>
-
-              {/* Balanced spacer so title is centered */}
-              <View style={{ width: 40 }} />
-            </View>
-
-            {/* Subtitle / hint */}
-            <Text
-              style={{
-                fontSize: 13,
-                color: "#6B7280",
-                textAlign: "center",
-                marginTop: 2,
-              }}
-            >
-              {STEPS[step - 1].hint}
-            </Text>
-
-            {submitError ? (
-              <View style={{ marginTop: 8, width: "100%" }}>
-                <AlertMessage message={submitError} type="error" />
+              {/* Top: Header Text (Label and sub-label styled like select-email) */}
+              <View style={styles.headerText}>
+                <Text style={styles.title}>{currentTitle}</Text>
+                <Text style={styles.subtitle}>{currentSubtitle}</Text>
+                {submitError ? (
+                  <View style={{ marginTop: 12, width: "100%" }}>
+                    <AlertMessage message={submitError} type="error" />
+                  </View>
+                ) : null}
               </View>
-            ) : null}
-          </View>
 
-          {/* ── Scrollable Content (Upper input positioned directly under header page) ── */}
-          <ScrollView
-            ref={scrollViewRef}
-            showsVerticalScrollIndicator={false}
-            style={{ flex: 1, backgroundColor: "#FFFFFF" }}
-            contentContainerStyle={{
-              paddingHorizontal: 24,
-              paddingTop: 16,
-              paddingBottom: isPasswordOrConfirmFocused ? SCREEN_WIDTH * 0.9 : 24,
-            }}
-            keyboardShouldPersistTaps="handled"
-            keyboardDismissMode="on-drag"
-            scrollEnabled={!isPasswordOrConfirmFocused}
-          >
-            {/* ── STEP 1: Basic Info & Email Type & Inline OTP ── */}
-            {step === 1 && (
-              showOtpView ? (
-                <View style={{ alignItems: "center", paddingVertical: 16 }}>
-                  <View style={{ width: 56, height: 56, borderRadius: 20, backgroundColor: "#1A6B3C15", alignItems: "center", justifyContent: "center", marginBottom: 12 }}>
-                    <Mail size={26} color="#1A6B3C" />
-                  </View>
-                  <Text style={{ fontSize: 20, fontWeight: "800", color: "#111827", textAlign: "center" }}>Verify your email</Text>
-                  <Text style={{ fontSize: 13, color: "#6B7280", textAlign: "center", marginTop: 4, paddingHorizontal: 16 }}>
-                    We sent a 6-digit verification code to{" "}
-                    <Text style={{ fontWeight: "700", color: "#111827" }}>{form.email}</Text>
-                  </Text>
-
-                  {/* 6 OTP Inputs */}
-                  <View style={{ flexDirection: "row", gap: 8, marginVertical: 20, justifyContent: "center" }}>
-                    {otpDigits.map((digit, idx) => (
-                      <TextInput
-                        key={idx}
-                        ref={(el) => {
-                          otpInputsRef.current[idx] = el;
-                        }}
-                        value={digit}
-                        onChangeText={(text) => {
-                          setOtpError("");
-                          const cleaned = text.replace(/\D/g, "");
-                          if (cleaned.length >= 6) {
-                            const next = cleaned.slice(0, 6).split("");
-                            setOtpDigits(next);
-                            otpInputsRef.current[5]?.focus();
-                            handleVerifyOtpInStep1(next.join(""));
-                            return;
-                          }
-                          const single = cleaned.slice(-1);
-                          const updated = [...otpDigits];
-                          updated[idx] = single;
-                          setOtpDigits(updated);
-                          if (single && idx < 5) {
-                            otpInputsRef.current[idx + 1]?.focus();
-                          }
-                          if (single && updated.every(Boolean)) {
-                            handleVerifyOtpInStep1(updated.join(""));
-                          }
-                        }}
-                        onKeyPress={({ nativeEvent }) => {
-                          if (nativeEvent.key === "Backspace" && !otpDigits[idx] && idx > 0) {
-                            const next = [...otpDigits];
-                            next[idx - 1] = "";
-                            setOtpDigits(next);
-                            otpInputsRef.current[idx - 1]?.focus();
-                          }
-                        }}
-                        keyboardType="number-pad"
-                        maxLength={6}
-                        selectTextOnFocus
-                        caretHidden
-                        style={{
-                          width: 44,
-                          height: 52,
-                          borderRadius: 12,
-                          borderWidth: 1.5,
-                          borderColor: digit ? "#1A6B3C" : "#E5E7EB",
-                          backgroundColor: digit ? "#F0FDF4" : "#F9FAFB",
-                          textAlign: "center",
-                          fontSize: 20,
-                          fontWeight: "700",
-                          color: digit ? "#1A6B3C" : "#111827",
-                        }}
-                      />
-                    ))}
-                  </View>
-
-                  {otpError ? (
-                    <View style={{ width: "100%", marginBottom: 12 }}>
-                      <AlertMessage message={otpError} type="error" />
-                    </View>
-                  ) : null}
-
-                  {/* Resend under inputs */}
-                  <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, marginTop: 4 }}>
-                    <Text style={{ fontSize: 13, color: "#6B7280" }}>Didn&apos;t receive code?</Text>
-                    {resendCooldown > 0 ? (
-                      <Text style={{ fontSize: 13, fontWeight: "700", color: "#9CA3AF" }}>
-                        Resend in {resendCooldown}s
-                      </Text>
-                    ) : (
-                      <TouchableOpacity onPress={handleResendOtpInStep1} disabled={isResendingOtp}>
-                        <Text style={{ fontSize: 13, fontWeight: "700", color: "#1A6B3C" }}>
-                          {isResendingOtp ? "Resending..." : "Resend"}
-                        </Text>
-                      </TouchableOpacity>
-                    )}
-                  </View>
-
-                  <TouchableOpacity
-                    onPress={() => handleCancelRegistration(false)}
-                    style={{ marginTop: 12, padding: 4 }}
-                  >
-                    <Text style={{ fontSize: 12, color: "#9CA3AF", textAlign: "center" }}>← Change email address</Text>
-                  </TouchableOpacity>
-                </View>
-              ) : (
-                <View>
-                  <View
-                    onLayout={(e) => {
-                      usernameYRef.current = e.nativeEvent.layout.y;
-                    }}
-                  >
+              {/* Bottom: Input + Continue button stick together */}
+              <View style={styles.bottomStickArea}>
+                {credStep === "username" && (
+                  <View style={{ marginBottom: 14 }}>
                     <Input
                       ref={usernameInputRef}
                       value={form.username}
-                      onChangeText={(text) => setForm((prev) => ({ ...prev, username: text }))}
-                      onBlur={() => handleInputBlur("username")}
-                      onFocus={() => handleInputFocus("username")}
-                      error={usernameError}
+                      onChangeText={(text) => {
+                        setForm((prev) => ({ ...prev, username: text }));
+                        if (errors.username) setErrors((prev) => ({ ...prev, username: undefined }));
+                      }}
+                      onBlur={() => setTouched(true)}
+                      error={errors.username || usernameError}
                       placeholder="Username"
-                      icon={<User size={17} color={usernameError ? "#DC2626" : "#9CA3AF"} />}
+                      icon={<User size={17} color={(errors.username || usernameError) ? "#DC2626" : "#9CA3AF"} />}
                       returnKeyType="next"
-                      onSubmitEditing={() => emailInputRef.current?.focus()}
+                      onSubmitEditing={handleContinueCredentials}
                     />
                   </View>
+                )}
 
-                  <View
-                    onLayout={(e) => {
-                      emailYRef.current = e.nativeEvent.layout.y;
-                    }}
-                  >
+                {credStep === "email" && (
+                  <View style={{ marginBottom: 14 }}>
                     <EmailInput
                       ref={emailInputRef}
                       value={form.email}
-                      onChangeText={(text) => setForm((prev) => ({ ...prev, email: text }))}
-                      onBlur={() => handleInputBlur("email")}
-                      onFocus={() => handleInputFocus("email")}
-                      error={emailError}
-                      placeholder={emailType === "chmsu" ? "Your@chmsu.edu.ph" : "yourname@gmail.com"}
+                      onChangeText={(text) => {
+                        setForm((prev) => ({ ...prev, email: text }));
+                        if (errors.email) setErrors((prev) => ({ ...prev, email: undefined }));
+                      }}
+                      onBlur={() => setTouched(true)}
+                      error={errors.email || emailError}
+                      placeholder={emailType === "chmsu" ? "yourname@chmsu.edu.ph" : "yourname@gmail.com"}
                       returnKeyType="next"
-                      onSubmitEditing={() => passwordInputRef.current?.focus()}
+                      onSubmitEditing={handleContinueCredentials}
                     />
                   </View>
+                )}
 
-                  <View
-                    onLayout={(e) => {
-                      passwordYRef.current = e.nativeEvent.layout.y;
-                    }}
-                  >
+                {credStep === "password" && (
+                  <View style={{ marginBottom: 14, gap: 12 }}>
                     <PasswordInput
                       ref={passwordInputRef}
                       value={form.password}
-                      onChangeText={(text) => setForm((prev) => ({ ...prev, password: text }))}
-                      onBlur={() => handleInputBlur("password")}
-                      onFocus={() => handleInputFocus("password")}
-                      error={passwordError}
+                      onChangeText={(text) => {
+                        setForm((prev) => ({ ...prev, password: text }));
+                        if (errors.password) setErrors((prev) => ({ ...prev, password: undefined }));
+                      }}
+                      onBlur={() => setTouched(true)}
+                      error={errors.password || passwordError}
                       returnKeyType="next"
                       onSubmitEditing={() => confirmPasswordInputRef.current?.focus()}
                     />
-                  </View>
-
-                  <View
-                    onLayout={(e) => {
-                      confirmPasswordYRef.current = e.nativeEvent.layout.y;
-                    }}
-                  >
                     <PasswordInput
                       ref={confirmPasswordInputRef}
                       value={form.confirmPassword}
-                      onChangeText={(text) => setForm((prev) => ({ ...prev, confirmPassword: text }))}
-                      onBlur={() => handleInputBlur("confirmPassword")}
-                      onFocus={() => handleInputFocus("confirmPassword")}
-                      error={confirmPasswordError}
+                      onChangeText={(text) => {
+                        setForm((prev) => ({ ...prev, confirmPassword: text }));
+                        if (errors.confirmPassword) setErrors((prev) => ({ ...prev, confirmPassword: undefined }));
+                      }}
+                      onBlur={() => setTouched(true)}
+                      error={errors.confirmPassword || confirmPasswordError}
                       placeholder="Confirm your password"
                       showStrength={false}
                       returnKeyType="done"
-                      onSubmitEditing={handleNext}
+                      onSubmitEditing={handleContinueCredentials}
                     />
                   </View>
-                </View>
-              )
-            )}
+                )}
 
-            {/* ── STEP 2: Academic Details & Student Organizations ── */}
-            {step === 2 && (
-              <View>
-                <Pressable
-                  onPress={() => setShowDeptPicker(true)}
-                  style={[rowInputStyle, { paddingVertical: 14 }, errors.department && errorRowStyle]}
-                >
-                  <GraduationCap size={17} color="#9CA3AF" />
-                  <Text style={{ flex: 1, marginLeft: 10, fontSize: 14, color: form.department ? "#111827" : "#9CA3AF" }}>
-                    {form.department || "Select department"}
-                  </Text>
-                  <ChevronDown size={16} color="#9CA3AF" />
-                </Pressable>
-                <FieldError msg={errors.department} />
+                {/* Continue button */}
+                <Button
+                  label={isSubmitting ? "Processing…" : "Continue"}
+                  variant="primary"
+                  pill
+                  size="lg"
+                  loading={isSubmitting}
+                  disabled={isSubmitting}
+                  icon={<ArrowRight size={16} color="#FFFFFF" />}
+                  onPress={handleContinueCredentials}
+                  className="w-full"
+                />
 
-                <Pressable
-                  onPress={() => form.department && setShowCoursePicker(true)}
-                  style={[
-                    rowInputStyle,
-                    { paddingVertical: 14, marginTop: 14 },
-                    !form.department && { opacity: 0.5 },
-                    errors.course && errorRowStyle,
-                  ]}
-                >
-                  <FileText size={17} color="#9CA3AF" />
-                  <Text style={{ flex: 1, marginLeft: 10, fontSize: 14, color: form.course ? "#111827" : "#9CA3AF" }}>
-                    {form.course || "Select course"}
-                  </Text>
-                  <ChevronDown size={16} color="#9CA3AF" />
-                </Pressable>
-                <FieldError msg={errors.course} />
-
-                <Text style={[labelStyle, { marginTop: 22 }]}>Year Level</Text>
-                <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
-                  {YEAR_LEVELS.map(y => (
-                    <Pressable
-                      key={y}
-                      onPress={() => set("yearLevel", y)}
-                      style={{
-                        paddingHorizontal: 14, paddingVertical: 9,
-                        borderRadius: 20, borderWidth: 1.5,
-                        borderColor: form.yearLevel === y ? "#1A6B3C" : "#E2DED7",
-                        backgroundColor: form.yearLevel === y ? "#1A6B3C" : "#FFFFFF",
-                      }}
-                    >
-                      <Text style={{ fontSize: 12, fontWeight: "600", color: form.yearLevel === y ? "#fff" : "#374151" }}>
-                        {y.replace(" Year", "")}
-                      </Text>
+                {!isKeyboardVisible && credStep === "username" && (
+                  <View style={{ flexDirection: "row", justifyContent: "center", marginTop: 14, gap: 4 }}>
+                    <Text style={{ fontSize: 13, color: "#6B7280" }}>Already have an account?</Text>
+                    <Pressable onPress={() => router.replace("/pages/login")}>
+                      <Text style={{ fontSize: 13, fontWeight: "700", color: "#1A6B3C" }}>Sign in</Text>
                     </Pressable>
-                  ))}
-                </View>
-                <FieldError msg={errors.yearLevel} />
-
-                <Text style={[labelStyle, { marginTop: 24, marginBottom: 8 }]}>
-                  Student Organizations <Text style={{ color: "#9CA3AF", fontWeight: "400" }}>(optional)</Text>
-                </Text>
-                <View style={{ gap: 8 }}>
-                  {ORGANIZATIONS.map(org => {
-                    const selected = form.organizations.includes(org);
-                    return (
-                      <Pressable
-                        key={org}
-                        onPress={() =>
-                          set("organizations", selected
-                            ? form.organizations.filter(o => o !== org)
-                            : [...form.organizations, org])
-                        }
-                        style={{
-                          flexDirection: "row", alignItems: "center", gap: 10,
-                          padding: 12, borderRadius: 16, borderWidth: 1.5,
-                          borderColor: selected ? "#1A6B3C" : "#E2DED7",
-                          backgroundColor: selected ? "#1A6B3C08" : "#FFFFFF",
-                        }}
-                      >
-                        <View style={{
-                          width: 20, height: 20, borderRadius: 6, borderWidth: 1.5,
-                          borderColor: selected ? "#1A6B3C" : "#D1D5DB",
-                          backgroundColor: selected ? "#1A6B3C" : "transparent",
-                          alignItems: "center", justifyContent: "center",
-                        }}>
-                          {selected && <Check size={11} color="#fff" />}
-                        </View>
-                        <Text style={{ fontSize: 13, color: selected ? "#1A6B3C" : "#374151", fontWeight: selected ? "600" : "400", flex: 1 }}>
-                          {org}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
+                  </View>
+                )}
               </View>
-            )}
+            </ScrollView>
+          )}
 
-            {/* ── STEP 3: Interests ── */}
-            {step === 3 && (
-              <View>
-                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 16 }}>
-                  <Text style={{ fontSize: 13, color: "#6B7280" }}>
-                    {form.interests.length >= 3
-                      ? "You're all set!"
-                      : `Select ${3 - form.interests.length} more interest${3 - form.interests.length === 1 ? "" : "s"}`}
-                  </Text>
-                  <View style={{
-                    paddingHorizontal: 10, paddingVertical: 4, borderRadius: 20,
-                    backgroundColor: form.interests.length >= 3 ? "#1A6B3C12" : "#E8A83820",
-                  }}>
-                    <Text style={{ fontSize: 12, fontWeight: "700", color: form.interests.length >= 3 ? "#1A6B3C" : "#E8A838" }}>
-                      {form.interests.length} selected
-                    </Text>
-                  </View>
+          {/* ── STEPS 2, 3, 4 (Academic, Interests, Avatar & Bio) ── */}
+          {step > 1 && (
+            <View style={{ flex: 1 }}>
+              <ScrollView
+                ref={scrollViewRef}
+                showsVerticalScrollIndicator={false}
+                style={{ flex: 1, backgroundColor: "#FFFFFF" }}
+                contentContainerStyle={{
+                  paddingHorizontal: 24,
+                  paddingTop: 8,
+                  paddingBottom: 24,
+                }}
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="on-drag"
+              >
+                {/* Top: Header Text (Label and sub-label styled like select-email) */}
+                <View style={styles.headerText}>
+                  <Text style={styles.title}>{currentTitle}</Text>
+                  <Text style={styles.subtitle}>{currentSubtitle}</Text>
+                  {submitError ? (
+                    <View style={{ marginTop: 12, width: "100%" }}>
+                      <AlertMessage message={submitError} type="error" />
+                    </View>
+                  ) : null}
                 </View>
 
-                {errors.interests ? (
-                  <View style={{ backgroundColor: "#FEF2F2", borderWidth: 1, borderColor: "#FECACA", borderRadius: 10, padding: 10, marginBottom: 12 }}>
-                    <Text style={{ color: "#EF4444", fontSize: 12 }}>⚠️ {errors.interests}</Text>
-                  </View>
-                ) : null}
+                {/* ── STEP 2: Academic Details ── */}
+                {step === 2 && (
+                  <View>
+                    <Pressable
+                      onPress={() => setShowDeptPicker(true)}
+                      style={[rowInputStyle, { paddingVertical: 14 }, errors.department && errorRowStyle]}
+                    >
+                      <GraduationCap size={17} color="#9CA3AF" />
+                      <Text style={{ flex: 1, marginLeft: 10, fontSize: 14, color: form.department ? "#111827" : "#9CA3AF" }}>
+                        {form.department || "Select department"}
+                      </Text>
+                      <ChevronDown size={16} color="#9CA3AF" />
+                    </Pressable>
+                    <FieldError msg={errors.department} />
 
-                <View style={{ gap: 20 }}>
-                  {Object.entries(INTERESTS_BY_CATEGORY).map(([category, items]) => (
-                    <View key={category}>
+                    <Pressable
+                      onPress={() => form.department && setShowCoursePicker(true)}
+                      style={[
+                        rowInputStyle,
+                        { paddingVertical: 14, marginTop: 14 },
+                        !form.department && { opacity: 0.5 },
+                        errors.course && errorRowStyle,
+                      ]}
+                    >
+                      <FileText size={17} color="#9CA3AF" />
+                      <Text style={{ flex: 1, marginLeft: 10, fontSize: 14, color: form.course ? "#111827" : "#9CA3AF" }}>
+                        {form.course || "Select course"}
+                      </Text>
+                      <ChevronDown size={16} color="#9CA3AF" />
+                    </Pressable>
+                    <FieldError msg={errors.course} />
+
+                    <Text style={[labelStyle, { marginTop: 22 }]}>Year Level</Text>
+                    <View style={{ flexDirection: "row", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+                      {YEAR_LEVELS.map(y => (
+                        <Pressable
+                          key={y}
+                          onPress={() => set("yearLevel", y)}
+                          style={{
+                            paddingHorizontal: 14, paddingVertical: 9,
+                            borderRadius: 20, borderWidth: 1.5,
+                            borderColor: form.yearLevel === y ? "#1A6B3C" : "#E2DED7",
+                            backgroundColor: form.yearLevel === y ? "#1A6B3C" : "#FFFFFF",
+                          }}
+                        >
+                          <Text style={{ fontSize: 12, fontWeight: "600", color: form.yearLevel === y ? "#fff" : "#374151" }}>
+                            {y.replace(" Year", "")}
+                          </Text>
+                        </Pressable>
+                      ))}
+                    </View>
+                    <FieldError msg={errors.yearLevel} />
+                  </View>
+                )}
+
+                {/* ── STEP 3: Interests ── */}
+                {step === 3 && (
+                  <View>
+                    {Object.entries(INTERESTS_BY_CATEGORY).map(([category, items]) => (
+                      <View key={category} style={{ marginBottom: 18 }}>
+                        <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10 }}>
+                          <View style={{ flex: 1, height: 1, backgroundColor: "#F0EDE8" }} />
+                          <Text style={{ fontSize: 10, fontWeight: "700", color: "#9CA3AF", letterSpacing: 1.5 }}>
+                            {category.toUpperCase()}
+                          </Text>
+                          <View style={{ flex: 1, height: 1, backgroundColor: "#F0EDE8" }} />
+                        </View>
+                        <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
+                          {items.map(item => {
+                            const isSelected = form.interests.includes(item);
+                            return (
+                              <Pressable
+                                key={item}
+                                onPress={() => toggleInterest(item)}
+                                style={{
+                                  paddingHorizontal: 14, paddingVertical: 8,
+                                  borderRadius: 20, borderWidth: 1.5,
+                                  borderColor: isSelected ? "#1A6B3C" : "#E2DED7",
+                                  backgroundColor: isSelected ? "#1A6B3C" : "#FFFFFF",
+                                }}
+                              >
+                                <Text style={{ fontSize: 13, fontWeight: "500", color: isSelected ? "#fff" : "#374151" }}>
+                                  {item}
+                                </Text>
+                              </Pressable>
+                            );
+                          })}
+                        </View>
+                      </View>
+                    ))}
+
+                    <View>
                       <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10 }}>
                         <View style={{ flex: 1, height: 1, backgroundColor: "#F0EDE8" }} />
-                        <Text style={{ fontSize: 10, fontWeight: "700", color: "#9CA3AF", letterSpacing: 1.5 }}>
-                          {category.toUpperCase()}
-                        </Text>
+                        <Text style={{ fontSize: 10, fontWeight: "700", color: "#9CA3AF", letterSpacing: 1.5 }}>OTHERS</Text>
                         <View style={{ flex: 1, height: 1, backgroundColor: "#F0EDE8" }} />
                       </View>
                       <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-                        {items.map(label => {
-                          const selected = form.interests.includes(label);
-                          return (
-                            <Pressable
-                              key={label}
-                              onPress={() => toggleInterest(label)}
-                              style={{
-                                paddingHorizontal: 14, paddingVertical: 8,
-                                borderRadius: 20, borderWidth: 1.5,
-                                borderColor: selected ? "#1A6B3C" : "#E2DED7",
-                                backgroundColor: selected ? "#1A6B3C" : "#FFFFFF",
-                              }}
-                            >
-                              <Text style={{ fontSize: 13, fontWeight: "500", color: selected ? "#fff" : "#374151" }}>
-                                {label}
-                              </Text>
+                        {customInterests.map(interest => (
+                          <View
+                            key={interest}
+                            style={{
+                              flexDirection: "row", alignItems: "center", gap: 6,
+                              paddingLeft: 12, paddingRight: 8, paddingVertical: 8,
+                              borderRadius: 20, borderWidth: 1.5, borderColor: "#1A6B3C",
+                              backgroundColor: "#1A6B3C",
+                            }}
+                          >
+                            <Text style={{ fontSize: 13, fontWeight: "500", color: "#fff" }}>{interest}</Text>
+                            <Pressable onPress={() => updateInterests(form.interests.filter(i => i !== interest))} hitSlop={6}>
+                              <X size={12} color="rgba(255,255,255,0.7)" />
                             </Pressable>
-                          );
-                        })}
-                      </View>
-                    </View>
-                  ))}
+                          </View>
+                        ))}
 
-                  <View>
-                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8, marginBottom: 10 }}>
-                      <View style={{ flex: 1, height: 1, backgroundColor: "#F0EDE8" }} />
-                      <Text style={{ fontSize: 10, fontWeight: "700", color: "#9CA3AF", letterSpacing: 1.5 }}>OTHERS</Text>
-                      <View style={{ flex: 1, height: 1, backgroundColor: "#F0EDE8" }} />
-                    </View>
-                    <View style={{ flexDirection: "row", flexWrap: "wrap", gap: 8 }}>
-                      {customInterests.map(interest => (
-                        <View
-                          key={interest}
-                          style={{
-                            flexDirection: "row", alignItems: "center", gap: 6,
-                            paddingLeft: 12, paddingRight: 8, paddingVertical: 8,
-                            borderRadius: 20, borderWidth: 1.5, borderColor: "#1A6B3C",
-                            backgroundColor: "#1A6B3C",
-                          }}
-                        >
-                          <Text style={{ fontSize: 13, fontWeight: "500", color: "#fff" }}>{interest}</Text>
-                          <Pressable onPress={() => updateInterests(form.interests.filter(i => i !== interest))} hitSlop={6}>
-                            <X size={12} color="rgba(255,255,255,0.7)" />
+                        {!showCustomInput && (
+                          <Pressable
+                            onPress={() => setShowCustomInput(true)}
+                            style={{
+                              flexDirection: "row", alignItems: "center", gap: 6,
+                              paddingHorizontal: 14, paddingVertical: 8,
+                              borderRadius: 20, borderWidth: 1.5, borderStyle: "dashed",
+                              borderColor: "#D1D5DB",
+                              backgroundColor: "transparent",
+                            }}
+                          >
+                            <Plus size={13} color="#6B7280" />
+                            <Text style={{ fontSize: 13, color: "#6B7280" }}>Add your own</Text>
+                          </Pressable>
+                        )}
+                      </View>
+
+                      {showCustomInput && (
+                        <View style={{ flexDirection: "row", gap: 8, marginTop: 10 }}>
+                          <TextInput
+                            value={customInterest}
+                            onChangeText={setCustomInterest}
+                            placeholder="e.g. K-pop"
+                            placeholderTextColor="#9CA3AF"
+                            autoFocus
+                            maxLength={30}
+                            onSubmitEditing={addCustomInterest}
+                            style={[rowInputStyle, { flex: 1, paddingVertical: 10, marginTop: 0 }]}
+                          />
+                          <Pressable
+                            onPress={addCustomInterest}
+                            style={{ backgroundColor: "#1A6B3C", borderRadius: 16, paddingHorizontal: 16, justifyContent: "center" }}
+                          >
+                            <Text style={{ color: "#fff", fontWeight: "700", fontSize: 13 }}>Add</Text>
+                          </Pressable>
+                          <Pressable
+                            onPress={() => { setShowCustomInput(false); setCustomInterest(""); }}
+                            style={{ backgroundColor: "#F0EDE8", borderRadius: 16, paddingHorizontal: 12, justifyContent: "center" }}
+                          >
+                            <X size={16} color="#6B7280" />
                           </Pressable>
                         </View>
-                      ))}
-
-                      {!showCustomInput && (
-                        <Pressable
-                          onPress={() => setShowCustomInput(true)}
-                          style={{
-                            flexDirection: "row", alignItems: "center", gap: 6,
-                            paddingHorizontal: 14, paddingVertical: 8,
-                            borderRadius: 20, borderWidth: 1.5, borderStyle: "dashed",
-                            borderColor: "#D1D5DB",
-                            backgroundColor: "transparent",
-                          }}
-                        >
-                          <Plus size={13} color="#6B7280" />
-                          <Text style={{ fontSize: 13, color: "#6B7280" }}>Add your own</Text>
-                        </Pressable>
                       )}
                     </View>
-
-                    {showCustomInput && (
-                      <View style={{ flexDirection: "row", gap: 8, marginTop: 10 }}>
-                        <TextInput
-                          value={customInterest}
-                          onChangeText={setCustomInterest}
-                          placeholder="e.g. K-pop"
-                          placeholderTextColor="#9CA3AF"
-                          autoFocus
-                          maxLength={30}
-                          onSubmitEditing={addCustomInterest}
-                          style={[rowInputStyle, { flex: 1, paddingVertical: 10, marginTop: 0 }]}
-                        />
-                        <Pressable
-                          onPress={addCustomInterest}
-                          style={{ backgroundColor: "#1A6B3C", borderRadius: 16, paddingHorizontal: 16, justifyContent: "center" }}
-                        >
-                          <Text style={{ color: "#fff", fontWeight: "700", fontSize: 13 }}>Add</Text>
-                        </Pressable>
-                        <Pressable
-                          onPress={() => { setShowCustomInput(false); setCustomInterest(""); }}
-                          style={{ backgroundColor: "#F0EDE8", borderRadius: 16, paddingHorizontal: 12, justifyContent: "center" }}
-                        >
-                          <X size={16} color="#6B7280" />
-                        </Pressable>
-                      </View>
-                    )}
                   </View>
-                </View>
-              </View>
-            )}
-
-            {/* ── STEP 4: Avatar & Bio ── */}
-            {step === 4 && (
-              <View>
-                <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
-                  <Text style={labelStyle}>Select Avatar</Text>
-                  <View style={{ flexDirection: "row", backgroundColor: "#EDE8E1", borderRadius: 12, padding: 3 }}>
-                    <Pressable
-                      onPress={() => setAvatarTab("presets")}
-                      style={{
-                        paddingHorizontal: 12,
-                        paddingVertical: 5,
-                        borderRadius: 9,
-                        backgroundColor: avatarTab === "presets" ? "#FFFFFF" : "transparent",
-                      }}
-                    >
-                      <Text
-                        style={{
-                          fontSize: 11,
-                          fontWeight: "700",
-                          color: avatarTab === "presets" ? "#1A6B3C" : "#6B7280",
-                        }}
-                      >
-                        Presets
-                      </Text>
-                    </Pressable>
-                    <Pressable
-                      onPress={() => setAvatarTab("emojis")}
-                      style={{
-                        paddingHorizontal: 12,
-                        paddingVertical: 5,
-                        borderRadius: 9,
-                        backgroundColor: avatarTab === "emojis" ? "#FFFFFF" : "transparent",
-                      }}
-                    >
-                      <Text
-                        style={{
-                          fontSize: 11,
-                          fontWeight: "700",
-                          color: avatarTab === "emojis" ? "#1A6B3C" : "#6B7280",
-                        }}
-                      >
-                        Emojis
-                      </Text>
-                    </Pressable>
-                  </View>
-                </View>
-
-                {avatarTab === "presets" ? (
-                  isLoadingPresets ? (
-                    <View style={{ height: 68, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 8, marginBottom: 22 }}>
-                      <ActivityIndicator size="small" color="#1A6B3C" />
-                      <Text style={{ fontSize: 12, color: "#6B7280" }}>Loading preset avatars...</Text>
-                    </View>
-                  ) : presetAvatars.length === 0 ? (
-                    <View style={{ backgroundColor: "#F9F8F6", borderRadius: 16, padding: 16, alignItems: "center", marginBottom: 22, borderWidth: 1, borderColor: "#E5E1D8" }}>
-                      <Text style={{ fontSize: 12, color: "#6B7280", textAlign: "center", marginBottom: 8 }}>
-                        No preset avatars found. You can choose an emoji below!
-                      </Text>
-                      <Pressable
-                        onPress={() => setAvatarTab("emojis")}
-                        style={{ backgroundColor: "#1A6B3C12", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 10 }}
-                      >
-                        <Text style={{ fontSize: 12, fontWeight: "700", color: "#1A6B3C" }}>Switch to Emojis</Text>
-                      </Pressable>
-                    </View>
-                  ) : (
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -4, marginBottom: 22 }}>
-                      <View style={{ flexDirection: "row", gap: 10, paddingHorizontal: 4, paddingVertical: 4 }}>
-                        {presetAvatars.map((preset) => {
-                          const isSelected = form.avatar === preset.url;
-                          return (
-                            <Pressable
-                              key={preset.id}
-                              onPress={() => set("avatar", preset.url)}
-                              style={{
-                                width: 62,
-                                height: 62,
-                                borderRadius: 18,
-                                alignItems: "center",
-                                justifyContent: "center",
-                                borderWidth: 2,
-                                borderColor: isSelected ? "#1A6B3C" : "#E2DED7",
-                                backgroundColor: isSelected ? "#1A6B3C12" : "#FFFFFF",
-                                transform: [{ scale: isSelected ? 1.06 : 1 }],
-                                position: "relative",
-                                overflow: "hidden",
-                              }}
-                            >
-                              <Image
-                                source={{ uri: preset.url }}
-                                style={{ width: "100%", height: "100%", borderRadius: 16 }}
-                                resizeMode="cover"
-                              />
-                              {isSelected && (
-                                <View
-                                  style={{
-                                    position: "absolute",
-                                    top: 3,
-                                    right: 3,
-                                    width: 18,
-                                    height: 18,
-                                    borderRadius: 9,
-                                    backgroundColor: "#1A6B3C",
-                                    alignItems: "center",
-                                    justifyContent: "center",
-                                  }}
-                                >
-                                  <Check size={11} color="#FFFFFF" strokeWidth={3} />
-                                </View>
-                              )}
-                            </Pressable>
-                          );
-                        })}
-                      </View>
-                    </ScrollView>
-                  )
-                ) : (
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginHorizontal: -4, marginBottom: 22 }}>
-                    <View style={{ flexDirection: "row", gap: 8, paddingHorizontal: 4, paddingVertical: 4 }}>
-                      {AVATAR_OPTIONS.map((opt, i) => (
-                        <Pressable
-                          key={i}
-                          onPress={() => set("avatar", opt)}
-                          style={{
-                            width: 52, height: 52, borderRadius: 16,
-                            alignItems: "center", justifyContent: "center",
-                            borderWidth: 1.5,
-                            borderColor: form.avatar === opt ? "#1A6B3C" : "#E2DED7",
-                            backgroundColor: form.avatar === opt ? "#1A6B3C12" : "#FFFFFF",
-                            transform: [{ scale: form.avatar === opt ? 1.08 : 1 }],
-                          }}
-                        >
-                          <Text style={{ fontSize: 26 }}>{opt}</Text>
-                        </Pressable>
-                      ))}
-                    </View>
-                  </ScrollView>
                 )}
 
-                <Text style={labelStyle}>
-                  Bio <Text style={{ color: "#9CA3AF", fontWeight: "400" }}>(optional)</Text>
-                </Text>
-                <View style={{ position: "relative", marginTop: 8, marginBottom: 22 }}>
-                  <TextInput
-                    value={form.bio}
-                    onChangeText={v => set("bio", v.slice(0, 250))}
-                    placeholder="Tell your future friends a bit about yourself!"
-                    placeholderTextColor="#9CA3AF"
-                    multiline
-                    numberOfLines={4}
-                    style={multilineInputStyle}
-                  />
-                  <Text style={{ position: "absolute", bottom: 10, right: 14, fontSize: 11, color: "#9CA3AF" }}>
-                    {form.bio.length}/250
-                  </Text>
-                </View>
+                {/* ── STEP 4: Avatar & Bio ── */}
+                {step === 4 && (
+                  <View>
+                    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+                      <Text style={labelStyle}>Select Avatar</Text>
+                      <View style={{ flexDirection: "row", backgroundColor: "#EDE8E1", borderRadius: 12, padding: 3 }}>
+                        <Pressable
+                          onPress={() => setAvatarTab("presets")}
+                          style={{
+                            paddingHorizontal: 12,
+                            paddingVertical: 5,
+                            borderRadius: 9,
+                            backgroundColor: avatarTab === "presets" ? "#FFFFFF" : "transparent",
+                          }}
+                        >
+                          <Text
+                            style={{
+                              fontSize: 11,
+                              fontWeight: "700",
+                              color: avatarTab === "presets" ? "#1A6B3C" : "#6B7280",
+                            }}
+                          >
+                            Presets
+                          </Text>
+                        </Pressable>
+                        <Pressable
+                          onPress={() => setAvatarTab("emojis")}
+                          style={{
+                            paddingHorizontal: 12,
+                            paddingVertical: 5,
+                            borderRadius: 9,
+                            backgroundColor: avatarTab === "emojis" ? "#FFFFFF" : "transparent",
+                          }}
+                        >
+                          <Text
+                            style={{
+                              fontSize: 11,
+                              fontWeight: "700",
+                              color: avatarTab === "emojis" ? "#1A6B3C" : "#6B7280",
+                            }}
+                          >
+                            Emojis
+                          </Text>
+                        </Pressable>
+                      </View>
+                    </View>
 
-                <View style={{ backgroundColor: "#F7F4EF", borderRadius: 20, padding: 16, marginBottom: 22 }}>
-                  <Text style={{ fontSize: 11, fontWeight: "700", color: "#1A6B3C", marginBottom: 10, letterSpacing: 0.5 }}>
-                    PROFILE PREVIEW
-                  </Text>
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-                    <UserAvatar avatar={form.avatar} size="lg" />
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 15, fontWeight: "700", color: "#111827" }}>
-                        {form.username || "your_username"}
+                    {avatarTab === "presets" ? (
+                      isLoadingPresets ? (
+                        <View style={{ height: 68, alignItems: "center", justifyContent: "center", flexDirection: "row", gap: 8, marginBottom: 22 }}>
+                          <ActivityIndicator size="small" color="#1A6B3C" />
+                          <Text style={{ fontSize: 12, color: "#6B7280" }}>Loading preset avatars...</Text>
+                        </View>
+                      ) : presetAvatars.length === 0 ? (
+                        <View style={{ backgroundColor: "#F9F8F6", borderRadius: 16, padding: 16, alignItems: "center", marginBottom: 22, borderWidth: 1, borderColor: "#E5E1D8" }}>
+                          <Text style={{ fontSize: 12, color: "#6B7280", textAlign: "center", marginBottom: 8 }}>
+                            No preset avatars found.
+                          </Text>
+                          <TouchableOpacity onPress={() => setAvatarTab("emojis")}>
+                            <Text style={{ fontSize: 12, color: "#1A6B3C", fontWeight: "700" }}>
+                              Choose an Emoji instead
+                            </Text>
+                          </TouchableOpacity>
+                        </View>
+                      ) : (
+                        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 22 }}>
+                          <View style={{ flexDirection: "row", gap: 12, paddingVertical: 4 }}>
+                            {presetAvatars.map((preset) => (
+                              <Pressable
+                                key={preset.id}
+                                onPress={() => set("avatar", preset.url)}
+                                style={{
+                                  width: 60, height: 60, borderRadius: 30,
+                                  alignItems: "center", justifyContent: "center",
+                                  borderWidth: 2,
+                                  borderColor: form.avatar === preset.url ? "#1A6B3C" : "#E2DED7",
+                                  backgroundColor: "#FFFFFF",
+                                  transform: [{ scale: form.avatar === preset.url ? 1.08 : 1 }],
+                                  overflow: "hidden",
+                                }}
+                              >
+                                <Image source={{ uri: preset.url }} style={{ width: 60, height: 60 }} resizeMode="cover" />
+                              </Pressable>
+                            ))}
+                          </View>
+                        </ScrollView>
+                      )
+                    ) : (
+                      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 22 }}>
+                        <View style={{ flexDirection: "row", gap: 10, paddingVertical: 4 }}>
+                          {AVATAR_OPTIONS.map(opt => (
+                            <Pressable
+                              key={opt}
+                              onPress={() => set("avatar", opt)}
+                              style={{
+                                width: 52, height: 52, borderRadius: 26,
+                                alignItems: "center", justifyContent: "center",
+                                borderWidth: 1.5,
+                                borderColor: form.avatar === opt ? "#1A6B3C" : "#E2DED7",
+                                backgroundColor: form.avatar === opt ? "#1A6B3C12" : "#FFFFFF",
+                                transform: [{ scale: form.avatar === opt ? 1.08 : 1 }],
+                              }}
+                            >
+                              <Text style={{ fontSize: 26 }}>{opt}</Text>
+                            </Pressable>
+                          ))}
+                        </View>
+                      </ScrollView>
+                    )}
+
+                    <Text style={labelStyle}>
+                      Bio <Text style={{ color: "#9CA3AF", fontWeight: "400" }}>(optional)</Text>
+                    </Text>
+                    <View style={{ position: "relative", marginTop: 8, marginBottom: 22 }}>
+                      <TextInput
+                        value={form.bio}
+                        onChangeText={v => set("bio", v.slice(0, 250))}
+                        placeholder="Tell your future friends a bit about yourself!"
+                        placeholderTextColor="#9CA3AF"
+                        multiline
+                        numberOfLines={4}
+                        style={multilineInputStyle}
+                      />
+                      <Text style={{ position: "absolute", bottom: 10, right: 14, fontSize: 11, color: "#9CA3AF" }}>
+                        {form.bio.length}/250
                       </Text>
-                      <Text style={{ fontSize: 12, color: "#6B7280", marginTop: 1 }}>
-                        {form.course || "Your Course"} · {form.yearLevel || "Year"}
+                    </View>
+
+                    <View style={{ backgroundColor: "#F7F4EF", borderRadius: 20, padding: 16, marginBottom: 22 }}>
+                      <Text style={{ fontSize: 11, fontWeight: "700", color: "#1A6B3C", marginBottom: 10, letterSpacing: 0.5 }}>
+                        PROFILE PREVIEW
                       </Text>
-                      {form.bio ? (
-                        <Text numberOfLines={2} style={{ fontSize: 12, color: "#6B7280", marginTop: 4 }}>
-                          {form.bio}
+                      <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+                        <UserAvatar avatar={form.avatar} size="lg" />
+                        <View style={{ flex: 1 }}>
+                          <Text style={{ fontSize: 15, fontWeight: "700", color: "#111827" }}>
+                            {form.username || "your_username"}
+                          </Text>
+                          <Text style={{ fontSize: 12, color: "#6B7280", marginTop: 1 }}>
+                            {form.course || "Your Course"} · {form.yearLevel || "Year"}
+                          </Text>
+                          {form.bio ? (
+                            <Text numberOfLines={2} style={{ fontSize: 12, color: "#6B7280", marginTop: 4 }}>
+                              {form.bio}
+                            </Text>
+                          ) : null}
+                        </View>
+                      </View>
+                    </View>
+
+                    <View style={{
+                      borderRadius: 20, padding: 14, borderWidth: 1.5,
+                      borderColor: termsError ? "#FECACA" : "#E2DED7",
+                      backgroundColor: termsError ? "#FEF2F2" : "#FFFFFF",
+                    }}>
+                      <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 12 }}>
+                        <Pressable
+                          onPress={() => {
+                            if (!agreedToTerms) setActiveModal("terms");
+                            else { setAgreedToTerms(false); setTermsError(""); }
+                          }}
+                          style={{
+                            width: 20, height: 20, borderRadius: 6, borderWidth: 1.5,
+                            borderColor: agreedToTerms ? "#1A6B3C" : "#D1D5DB",
+                            backgroundColor: agreedToTerms ? "#1A6B3C" : "transparent",
+                            alignItems: "center", justifyContent: "center",
+                            marginTop: 1,
+                          }}
+                        >
+                          {agreedToTerms && <Check size={11} color="#fff" />}
+                        </Pressable>
+                        <Text style={{ flex: 1, fontSize: 13, color: "#374151", lineHeight: 20 }}>
+                          I agree to the{" "}
+                          <Text onPress={() => setActiveModal("terms")} style={{ color: "#1A6B3C", fontWeight: "700" }}>
+                            Terms & Conditions
+                          </Text>
+                          {" "}and{" "}
+                          <Text onPress={() => setActiveModal("privacy")} style={{ color: "#1A6B3C", fontWeight: "700" }}>
+                            Privacy Policy
+                          </Text>
+                          .
                         </Text>
+                      </View>
+                      {termsError ? (
+                        <Text style={{ color: "#EF4444", fontSize: 11, marginTop: 8 }}>{termsError}</Text>
                       ) : null}
                     </View>
                   </View>
-                </View>
+                )}
+              </ScrollView>
 
-                <View style={{
-                  borderRadius: 20, padding: 14, borderWidth: 1.5,
-                  borderColor: termsError ? "#FECACA" : "#E2DED7",
-                  backgroundColor: termsError ? "#FEF2F2" : "#FFFFFF",
-                }}>
-                  <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 12 }}>
-                    <Pressable
-                      onPress={() => {
-                        if (!agreedToTerms) setActiveModal("terms");
-                        else { setAgreedToTerms(false); setTermsError(""); }
-                      }}
-                      style={{
-                        width: 20, height: 20, borderRadius: 6, borderWidth: 1.5,
-                        borderColor: agreedToTerms ? "#1A6B3C" : "#D1D5DB",
-                        backgroundColor: agreedToTerms ? "#1A6B3C" : "transparent",
-                        alignItems: "center", justifyContent: "center",
-                        marginTop: 1,
-                      }}
-                    >
-                      {agreedToTerms && <Check size={11} color="#fff" />}
-                    </Pressable>
-                    <Text style={{ flex: 1, fontSize: 13, color: "#374151", lineHeight: 20 }}>
-                      I agree to the{" "}
-                      <Text onPress={() => setActiveModal("terms")} style={{ color: "#1A6B3C", fontWeight: "700" }}>
-                        Terms & Conditions
-                      </Text>
-                      {" "}and{" "}
-                      <Text onPress={() => setActiveModal("privacy")} style={{ color: "#1A6B3C", fontWeight: "700" }}>
-                        Privacy Policy
-                      </Text>
-                      .
-                    </Text>
-                  </View>
-                  {termsError ? (
-                    <Text style={{ color: "#EF4444", fontSize: 11, marginTop: 8 }}>{termsError}</Text>
-                  ) : null}
-                </View>
+              {/* Fixed Footer for Steps 2, 3, 4 */}
+              <View
+                style={{
+                  paddingHorizontal: 24,
+                  paddingTop: 10,
+                  paddingBottom: isKeyboardVisible ? 10 : Math.max(insets.bottom + 12, 16),
+                  borderTopWidth: 1,
+                  borderTopColor: "rgba(0,0,0,0.05)",
+                  backgroundColor: "#FFFFFF",
+                }}
+              >
+                <Button
+                  label={
+                    isSubmitting
+                      ? "Processing…"
+                      : step === 4
+                      ? "Complete Profile"
+                      : "Continue"
+                  }
+                  variant="primary"
+                  pill
+                  size="lg"
+                  disabled={isSubmitting || (step === 4 && !agreedToTerms)}
+                  icon={step === 4 ? <Check size={16} color="#FFFFFF" /> : <ArrowRight size={16} color="#FFFFFF" />}
+                  onPress={
+                    step === 2
+                      ? handleNextAcademic
+                      : step === 3
+                      ? handleNextInterests
+                      : handleNextAvatar
+                  }
+                  className="w-full"
+                />
               </View>
-            )}
+            </View>
+          )}
 
-          </ScrollView>
-
-          {/* ── Fixed Footer (Hugs keyboard when typing) ── */}
-          <View
-            style={{
-              paddingHorizontal: 24,
-              paddingTop: 10,
-              paddingBottom: isKeyboardVisible ? 10 : Math.max(insets.bottom + 12, 16),
-              borderTopWidth: 1,
-              borderTopColor: "rgba(0,0,0,0.05)",
-              backgroundColor: "#FFFFFF",
-            }}
-          >
-            <Button
-              label={
-                isSubmitting || isVerifyingOtp
-                  ? "Processing…"
-                  : (step === 1 && showOtpView)
-                  ? "Verify Code"
-                  : step === 4
-                  ? "Complete Profile"
-                  : isStep1NextState
-                  ? "Next"
-                  : "Continue"
-              }
-              variant="primary"
-              pill
-              size="lg"
-              disabled={isSubmitting || isVerifyingOtp || (step === 4 && !agreedToTerms)}
-              icon={step === 4 ? <Check size={16} color="#FFFFFF" /> : <ArrowRight size={16} color="#FFFFFF" />}
-              onPress={isStep1NextState ? handleStep1NextInput : handleNext}
-              className="w-full"
-            />
-
-            {!isKeyboardVisible && (
-              <>
-                <View style={{ flexDirection: "row", justifyContent: "center", marginTop: 14, gap: 4 }}>
-                  <Text style={{ fontSize: 13, color: "#6B7280" }}>Already have an account?</Text>
-                  <Pressable onPress={() => router.replace("/pages/login")}>
-                    <Text style={{ fontSize: 13, fontWeight: "700", color: "#1A6B3C" }}>Sign in</Text>
-                  </Pressable>
-                </View>
-
-                <Text style={{ textAlign: "center", fontSize: 11, color: "#9CA3AF", marginTop: 6, lineHeight: 16 }}>
-                  For CHMSU Alijis Campus students only
-                </Text>
-              </>
-            )}
-          </View>
         </View>
       </KeyboardHugView>
 
@@ -1817,6 +1555,51 @@ function LegalModal({
   );
 }
 
+const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+    backgroundColor: "#FFFFFF",
+  },
+  topBar: {
+    paddingHorizontal: 20,
+    height: 48,
+    justifyContent: "center",
+    backgroundColor: "#FFFFFF",
+  },
+  iconBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  headerText: {
+    alignItems: "center",
+    marginBottom: 20,
+    paddingHorizontal: 16,
+  },
+  title: {
+    fontSize: 22,
+    fontWeight: "800",
+    color: "#111827",
+    textAlign: "center",
+    marginBottom: 6,
+    letterSpacing: -0.4,
+  },
+  subtitle: {
+    fontSize: 14,
+    color: "#6B7280",
+    textAlign: "center",
+    lineHeight: 20,
+    maxWidth: 320,
+  },
+  bottomStickArea: {
+    width: "100%",
+    marginTop: "auto",
+    paddingTop: 16,
+  },
+});
+
 const labelStyle = {
   fontSize: 13,
   fontWeight: "700" as const,
@@ -1829,8 +1612,9 @@ const rowInputStyle = {
   backgroundColor: "#FFFFFF",
   borderWidth: 1.5,
   borderColor: "#E2DED7",
-  borderRadius: 16,
+  borderRadius: 12,
   paddingHorizontal: 14,
+  paddingVertical: 10,
 };
 
 const errorRowStyle = {
@@ -1841,8 +1625,8 @@ const multilineInputStyle = {
   backgroundColor: "#FFFFFF",
   borderWidth: 1.5,
   borderColor: "#E2DED7",
-  borderRadius: 16,
-  padding: 14,
+  borderRadius: 12,
+  padding: 12,
   fontSize: 13,
   color: "#111827",
   textAlignVertical: "top" as const,
