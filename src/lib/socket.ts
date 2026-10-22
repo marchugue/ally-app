@@ -26,7 +26,8 @@ export function getSocket(accessToken?: string | null): Socket | null {
   if (!socket) {
     activeToken = token;
     socket = io(SOCKET_URL, {
-      auth: { token },
+      auth: { token, platform: 'app' },
+      query: { platform: 'app' },
       autoConnect: true,
       reconnection: true,
       transports: ["websocket", "polling"],

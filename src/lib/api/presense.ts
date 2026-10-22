@@ -9,7 +9,12 @@ export interface OnlinePresenceResponse {
 }
 
 export function sendHeartbeat(accessToken: string): Promise<void> {
-  return apiRequest<void>("/presence/heartbeat", { method: "POST", accessToken, noContent: true });
+  return apiRequest<void>("/presence/heartbeat", {
+    method: "POST",
+    accessToken,
+    body: { platform: "app" },
+    noContent: true,
+  });
 }
 
 export function getOnlinePresence(accessToken: string): Promise<OnlinePresenceResponse> {

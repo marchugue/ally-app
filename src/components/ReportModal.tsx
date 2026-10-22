@@ -12,13 +12,20 @@ import {
 } from "react-native";
 import { KeyboardAvoidingView } from "react-native-keyboard-controller";
 import { X, ChevronLeft, ChevronRight, ShieldAlert, CheckCircle2 } from "lucide-react-native";
-import { COMMUNITY_STANDARDS, ReportCategory, ReportViolation } from "@/constants/communityStandards";
+import {
+  getCommunityStandards,
+  ReportCategory,
+  ReportViolation,
+  ReportTargetType,
+} from "@/constants/communityStandards";
 
 interface ReportModalProps {
   visible: boolean;
   onClose: () => void;
-  onSubmitReport: (reason: string, details?: string) => Promise<void>;
-  targetType?: "post" | "user" | "comment";
+  onSubmitReport: (violationId: string, details?: string) => Promise<void>;
+  targetType?: ReportTargetType;
+  targetName?: string;
+  previewText?: string;
 }
 
 export function ReportModal({
@@ -26,7 +33,11 @@ export function ReportModal({
   onClose,
   onSubmitReport,
   targetType = "post",
+  targetName,
+  previewText,
 }: ReportModalProps) {
+  const categories = getCommunityStandards(targetType);
+
   const [selectedCategory, setSelectedCategory] = useState<ReportCategory | null>(null);
   const [selectedViolation, setSelectedViolation] = useState<ReportViolation | null>(null);
   const [additionalDetails, setAdditionalDetails] = useState("");
@@ -46,13 +57,14 @@ export function ReportModal({
     onClose();
   };
 
+  const detailsMissing = Boolean(selectedViolation?.requiresDetails && additionalDetails.trim().length < 3);
+
   const handleSubmit = async () => {
-    if (!selectedCategory || !selectedViolation) return;
-    const fullReason = `${selectedCategory.label} - ${selectedViolation.label}`;
-    
+    if (!selectedCategory || !selectedViolation || detailsMissing) return;
+
     setSubmitting(true);
     try {
-      await onSubmitReport(fullReason, additionalDetails.trim());
+      await onSubmitReport(selectedViolation.id, additionalDetails.trim());
       setSubmitted(true);
     } catch (err) {
       console.warn("Failed to submit report", err);
@@ -61,6 +73,15 @@ export function ReportModal({
       setSubmitting(false);
     }
   };
+
+  const targetLabel =
+    targetType === "post"
+      ? "Post"
+      : targetType === "message"
+      ? "Message"
+      : targetType === "comment"
+      ? "Comment"
+      : "User";
 
   return (
     <Modal
@@ -121,7 +142,7 @@ export function ReportModal({
               <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                 <ShieldAlert size={20} color="#DC2626" />
                 <Text style={{ fontSize: 17, fontWeight: "700", color: "#111827" }}>
-                  Report {targetType.charAt(0).toUpperCase() + targetType.slice(1)}
+                  Report {targetName ? `${targetLabel}: ${targetName}` : targetLabel}
                 </Text>
               </View>
             )}
@@ -130,6 +151,26 @@ export function ReportModal({
               <X size={20} color="#6B7280" />
             </Pressable>
           </View>
+
+          {/* Preview Snippet if provided */}
+          {previewText && !submitted && (
+            <View
+              style={{
+                paddingHorizontal: 20,
+                paddingVertical: 8,
+                backgroundColor: "#F9FAFB",
+                borderBottomWidth: 1,
+                borderBottomColor: "#F3F4F6",
+              }}
+            >
+              <Text style={{ fontSize: 11, fontWeight: "600", color: "#6B7280", textTransform: "uppercase" }}>
+                Reported Content
+              </Text>
+              <Text numberOfLines={2} style={{ fontSize: 12, color: "#374151", fontStyle: "italic", marginTop: 2 }}>
+                "{previewText}"
+              </Text>
+            </View>
+          )}
 
           {/* Content Body */}
           <ScrollView
@@ -166,13 +207,13 @@ export function ReportModal({
               /* Step 1: Select Category */
               <View>
                 <Text style={{ fontSize: 15, fontWeight: "600", color: "#111827", marginBottom: 4 }}>
-                  Why are you reporting this {targetType}?
+                  Why are you reporting this {targetLabel.toLowerCase()}?
                 </Text>
                 <Text style={{ fontSize: 13, color: "#6B7280", marginBottom: 16 }}>
                   Select an issue that violates our Community Standards.
                 </Text>
 
-                {COMMUNITY_STANDARDS.map((category) => (
+                {categories.map((category) => (
                   <Pressable
                     key={category.id}
                     onPress={() => {
@@ -238,21 +279,27 @@ export function ReportModal({
                   );
                 })}
 
-                {/* Optional Additional Details */}
+                {/* Additional Details */}
                 <Text style={{ fontSize: 13, fontWeight: "600", color: "#374151", marginTop: 12, marginBottom: 6 }}>
-                  Additional details (optional)
+                  {selectedViolation?.requiresDetails
+                    ? "Tell us what happened (required)"
+                    : "Additional details (optional)"}
                 </Text>
                 <TextInput
                   value={additionalDetails}
                   onChangeText={setAdditionalDetails}
-                  placeholder="Provide any additional context for moderators..."
+                  placeholder={
+                    selectedViolation?.requiresDetails
+                      ? "Describe what happened in detail..."
+                      : "Provide any additional context for moderators..."
+                  }
                   placeholderTextColor="#9CA3AF"
                   multiline
                   numberOfLines={3}
                   style={{
                     backgroundColor: "#F9FAFB",
                     borderWidth: 1,
-                    borderColor: "#E5E7EB",
+                    borderColor: detailsMissing ? "#EF4444" : "#E5E7EB",
                     borderRadius: 12,
                     padding: 12,
                     fontSize: 14,
@@ -266,9 +313,10 @@ export function ReportModal({
                 {/* Submit Button */}
                 <Pressable
                   onPress={handleSubmit}
-                  disabled={!selectedViolation || submitting}
+                  disabled={!selectedViolation || submitting || detailsMissing}
                   style={{
-                    backgroundColor: selectedViolation && !submitting ? "#DC2626" : "#F3F4F6",
+                    backgroundColor:
+                      selectedViolation && !submitting && !detailsMissing ? "#DC2626" : "#F3F4F6",
                     paddingVertical: 14,
                     borderRadius: 12,
                     alignItems: "center",
@@ -282,7 +330,7 @@ export function ReportModal({
                       style={{
                         fontSize: 15,
                         fontWeight: "600",
-                        color: selectedViolation ? "#FFFFFF" : "#9CA3AF",
+                        color: selectedViolation && !detailsMissing ? "#FFFFFF" : "#9CA3AF",
                       }}
                     >
                       Submit Report

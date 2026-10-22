@@ -127,9 +127,18 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
       }
     };
 
+    const onPresenceChange = (payload: { userId?: string; user_id?: string; status?: string }) => {
+      if (payload?.status === "offline") {
+        onUserOffline(payload);
+      } else {
+        onUserOnline(payload);
+      }
+    };
+
     if (socket) {
       socket.on("presence:online", onUserOnline);
       socket.on("presence:offline", onUserOffline);
+      socket.on("presence:change", onPresenceChange);
     }
 
     return () => {
@@ -139,6 +148,7 @@ export function PresenceProvider({ children }: { children: ReactNode }) {
       if (socket) {
         socket.off("presence:online", onUserOnline);
         socket.off("presence:offline", onUserOffline);
+        socket.off("presence:change", onPresenceChange);
       }
     };
   }, [user?.id, accessToken, doHeartbeat, refreshOnlineUsers]);

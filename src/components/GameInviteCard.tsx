@@ -1,9 +1,7 @@
 // src/components/GameInviteCard.tsx
-
 import React, { useState } from 'react';
-import { View, Text, Pressable, Linking, ActivityIndicator, Alert, StyleSheet } from 'react-native';
+import { View, Text, Pressable, Linking, Alert, StyleSheet, Image } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Swords, Trophy, Clock, X, Check, ExternalLink, Sparkles, Hash, Search } from 'lucide-react-native';
 import type { GameInvitePayload } from '../types/conversation';
 import { getPersistedItem, ACCESS_TOKEN_KEY } from '../lib/auth/tokenStorage';
 import { acceptGameInvite, declineGameInvite, cancelGameInvite } from '../lib/api/games';
@@ -18,63 +16,52 @@ const GAME_META: Record<
   'merge' | 'ttt' | 'clue',
   {
     title: string;
-    tagline: string;
-    colors: [string, string, string];
-    borderColor: string;
-    badgeBg: string;
-    badgeText: string;
-    icon: (color: string) => React.ReactNode;
+    cover: any;
   }
 > = {
   merge: {
-    title: '2048: Number Merge',
-    tagline: 'Timed speed & merge race',
-    colors: ['#291807', '#1c1006', '#140c05'],
-    borderColor: 'rgba(245, 158, 11, 0.45)',
-    badgeBg: 'rgba(245, 158, 11, 0.2)',
-    badgeText: '#FCD34D',
-    icon: (c) => <Hash size={18} color={c} />,
+    title: '2048 Merge',
+    cover: require('../../assets/images/game-merge-cover.jpg'),
   },
   ttt: {
     title: 'Tic-Tac-Toe',
-    tagline: 'Turn-based tactical duel',
-    colors: ['#062319', '#041711', '#03100c'],
-    borderColor: 'rgba(16, 185, 129, 0.45)',
-    badgeBg: 'rgba(16, 185, 129, 0.2)',
-    badgeText: '#6EE7B7',
-    icon: (c) => <Swords size={18} color={c} />,
+    cover: require('../../assets/images/game-ttt-cover.jpg'),
   },
   clue: {
     title: 'Secret Clue',
-    tagline: 'Clue giver & guesser duel',
-    colors: ['#1d1135', '#130c24', '#0d0718'],
-    borderColor: 'rgba(168, 85, 247, 0.45)',
-    badgeBg: 'rgba(168, 85, 247, 0.2)',
-    badgeText: '#D8B4FE',
-    icon: (c) => <Search size={18} color={c} />,
+    cover: require('../../assets/images/game-clue-cover.jpg'),
   },
 };
 
-export const GameInviteCard: React.FC<GameInviteCardProps> = ({ invite, currentUserId }) => {
+export const GameInviteCard: React.FC<GameInviteCardProps> = ({ invite, isMine, currentUserId }) => {
   const [submitting, setSubmitting] = useState(false);
   const meta = GAME_META[invite.gameId] || GAME_META.ttt;
-  const isHost = invite.hostId === currentUserId;
-  const isGuest = invite.guestId === currentUserId;
 
-  const openGamePortal = async (sessionId: string) => {
+  // Authoritative host / guest determination
+  const isHost = isMine || (invite.hostId && invite.hostId === currentUserId);
+  const isGuest = !isMine || (invite.guestId && invite.guestId === currentUserId);
+
+  // Normalize status ('invited', 'pending', etc.)
+  const rawStatus = (invite.status || 'pending').toLowerCase();
+  const isPending = rawStatus === 'pending' || rawStatus === 'invited';
+  const isActive = rawStatus === 'active';
+  const isFinished = rawStatus === 'finished';
+  const isDeclined = rawStatus === 'declined' || rawStatus === 'cancelled';
+  const isExpired = rawStatus === 'expired';
+
+  const openGamePortal = async (sessionId?: string) => {
     try {
       const token = await getPersistedItem(ACCESS_TOKEN_KEY);
-      // In development on Android emulator or connected device via adb reverse, port 5174 is forwarded.
-      // In production, fallback to https://game.ally-jis.com
       const isProd = !__DEV__;
       const baseGameUrl = isProd
         ? 'https://game.ally-jis.com'
         : (process.env.EXPO_PUBLIC_GAME_URL || 'http://localhost:5174');
 
-      const fullUrl = token
-        ? `${baseGameUrl}?session=${encodeURIComponent(sessionId)}&token=${encodeURIComponent(token)}`
-        : `${baseGameUrl}?session=${encodeURIComponent(sessionId)}`;
+      const params: string[] = [];
+      if (sessionId) params.push(`session=${encodeURIComponent(sessionId)}`);
+      if (token) params.push(`token=${encodeURIComponent(token)}`);
 
+      const fullUrl = `${baseGameUrl}${params.length > 0 ? `?${params.join('&')}` : ''}`;
       await Linking.openURL(fullUrl);
     } catch (err: any) {
       Alert.alert('Unable to open game', err?.message || 'Please check your connection.');
@@ -84,7 +71,9 @@ export const GameInviteCard: React.FC<GameInviteCardProps> = ({ invite, currentU
   const handleAccept = async () => {
     try {
       setSubmitting(true);
-      await acceptGameInvite(invite.sessionId);
+      if (invite.sessionId) {
+        await acceptGameInvite(invite.sessionId);
+      }
       await openGamePortal(invite.sessionId);
     } catch (err: any) {
       Alert.alert('Duel Error', err?.message || 'Could not accept invite.');
@@ -96,7 +85,9 @@ export const GameInviteCard: React.FC<GameInviteCardProps> = ({ invite, currentU
   const handleDecline = async () => {
     try {
       setSubmitting(true);
-      await declineGameInvite(invite.sessionId);
+      if (invite.sessionId) {
+        await declineGameInvite(invite.sessionId);
+      }
     } catch (err: any) {
       Alert.alert('Duel Error', err?.message || 'Could not decline invite.');
     } finally {
@@ -107,7 +98,9 @@ export const GameInviteCard: React.FC<GameInviteCardProps> = ({ invite, currentU
   const handleCancel = async () => {
     try {
       setSubmitting(true);
-      await cancelGameInvite(invite.sessionId);
+      if (invite.sessionId) {
+        await cancelGameInvite(invite.sessionId);
+      }
     } catch (err: any) {
       Alert.alert('Duel Error', err?.message || 'Could not cancel invite.');
     } finally {
@@ -115,304 +108,305 @@ export const GameInviteCard: React.FC<GameInviteCardProps> = ({ invite, currentU
     }
   };
 
+  const statusLabel = isPending
+    ? 'Invited'
+    : isActive
+    ? 'Live'
+    : isFinished
+    ? 'Over'
+    : isDeclined
+    ? 'Declined'
+    : 'Expired';
+
+  const statusBg = isPending
+    ? '#D97706'
+    : isActive
+    ? '#059669'
+    : isFinished
+    ? '#2563EB'
+    : isDeclined
+    ? '#DC2626'
+    : '#4B5563';
+
   return (
-    <LinearGradient
-      colors={meta.colors}
-      start={{ x: 0, y: 0 }}
-      end={{ x: 1, y: 1 }}
-      style={[styles.container, { borderColor: meta.borderColor }]}
-    >
-      {/* Header */}
-      <View style={styles.header}>
-        <View style={styles.iconWrapper}>{meta.icon(meta.badgeText)}</View>
-        <View style={styles.headerText}>
-          <Text style={styles.title} numberOfLines={1}>
-            {meta.title}
-          </Text>
-          <Text style={styles.tagline} numberOfLines={1}>
-            {meta.tagline}
-          </Text>
+    <View style={styles.container}>
+      {/* ═══ Full Bleed Background Image ═══ */}
+      <Image source={meta.cover} style={styles.fullBleedImage} resizeMode="cover" />
+
+      {/* ═══ Dark Gradient Overlay ═══ */}
+      <LinearGradient
+        colors={['rgba(6, 12, 20, 0.35)', 'rgba(6, 12, 20, 0.65)', 'rgba(6, 12, 20, 0.95)']}
+        locations={[0, 0.45, 0.95]}
+        style={styles.gradientOverlay}
+      />
+
+      {/* ═══ Top Section: Game Title & Status ═══ */}
+      <View style={styles.topRow}>
+        <View style={styles.titleBadge}>
+          <Text style={styles.titleText}>{meta.title}</Text>
         </View>
-        <View style={[styles.badge, { backgroundColor: meta.badgeBg, borderColor: meta.borderColor }]}>
-          <Text style={[styles.badgeText, { color: meta.badgeText }]}>
-            {invite.status === 'pending'
-              ? 'Invited'
-              : invite.status === 'active'
-              ? 'Live'
-              : invite.status === 'finished'
-              ? 'Over'
-              : invite.status}
-          </Text>
+
+        <View style={[styles.statusBadge, { backgroundColor: statusBg }]}>
+          <Text style={styles.statusText}>{statusLabel}</Text>
         </View>
       </View>
 
-      {/* Body Info */}
-      <View style={styles.bodyBox}>
-        {invite.status === 'pending' && (
-          <View>
-            {isGuest ? (
-              <Text style={styles.bodyText}>You were challenged to a duel! Accept to enter the arena.</Text>
-            ) : isHost ? (
-              <View style={styles.row}>
-                <Clock size={13} color="#F59E0B" />
-                <Text style={styles.bodyTextMuted}>Waiting for ally to accept…</Text>
-              </View>
+      {/* ═══ Bottom Section: Short Invite Message & Buttons ═══ */}
+      <View style={styles.bottomSection}>
+        <View style={styles.messageBox}>
+          {isPending ? (
+            isGuest ? (
+              <Text style={styles.messageText}>Challenged you to play!</Text>
             ) : (
-              <Text style={styles.bodyTextMuted}>A duel was initiated.</Text>
-            )}
-          </View>
-        )}
+              <Text style={styles.messageTextMuted}>Waiting for opponent to accept...</Text>
+            )
+          ) : isActive ? (
+            <Text style={styles.messageTextActive}>Duel is underway!</Text>
+          ) : isFinished ? (
+            <Text style={styles.messageTextMuted}>Match concluded.</Text>
+          ) : (
+            <Text style={styles.messageTextItalic}>Invite expired or declined.</Text>
+          )}
+        </View>
 
-        {invite.status === 'active' && (
-          <View style={styles.row}>
-            <Sparkles size={13} color="#34D399" />
-            <Text style={styles.bodyTextSuccess}>Duel underway! Rejoin anytime.</Text>
-          </View>
-        )}
+        {/* Action Buttons (No Icons) */}
+        <View style={styles.actions}>
+          {isPending && (
+            <>
+              {isGuest ? (
+                <View style={styles.rowButtons}>
+                  <Pressable
+                    disabled={submitting}
+                    onPress={handleAccept}
+                    style={({ pressed }) => [
+                      styles.primaryBtn,
+                      { opacity: pressed || submitting ? 0.75 : 1 },
+                    ]}
+                  >
+                    <Text style={styles.primaryBtnText}>Accept</Text>
+                  </Pressable>
 
-        {invite.status === 'finished' && (
-          <View style={styles.row}>
-            <Trophy size={13} color="#FBBF24" />
-            <Text style={styles.bodyTextMuted}>Match completed. Recorded on leaderboard.</Text>
-          </View>
-        )}
+                  <Pressable
+                    disabled={submitting}
+                    onPress={handleDecline}
+                    style={({ pressed }) => [
+                      styles.secondaryBtn,
+                      { opacity: pressed || submitting ? 0.75 : 1 },
+                    ]}
+                  >
+                    <Text style={styles.secondaryBtnText}>Decline</Text>
+                  </Pressable>
+                </View>
+              ) : isHost ? (
+                <View style={styles.rowButtons}>
+                  <Pressable
+                    onPress={() => openGamePortal(invite.sessionId)}
+                    style={({ pressed }) => [
+                      styles.primaryBtn,
+                      { opacity: pressed ? 0.75 : 1 },
+                    ]}
+                  >
+                    <Text style={styles.primaryBtnText}>Enter Room</Text>
+                  </Pressable>
 
-        {invite.status === 'declined' && (
-          <Text style={styles.bodyTextItalic}>Challenge was declined.</Text>
-        )}
+                  <Pressable
+                    disabled={submitting}
+                    onPress={handleCancel}
+                    style={({ pressed }) => [
+                      styles.secondaryBtn,
+                      { opacity: pressed || submitting ? 0.75 : 1 },
+                    ]}
+                  >
+                    <Text style={styles.secondaryBtnText}>Cancel</Text>
+                  </Pressable>
+                </View>
+              ) : null}
+            </>
+          )}
 
-        {invite.status === 'expired' && (
-          <Text style={styles.bodyTextItalic}>Challenge has expired.</Text>
-        )}
+          {isActive && (
+            <Pressable
+              onPress={() => openGamePortal(invite.sessionId)}
+              style={({ pressed }) => [
+                styles.primaryBtnFull,
+                { opacity: pressed ? 0.75 : 1 },
+              ]}
+            >
+              <Text style={styles.primaryBtnText}>Resume</Text>
+            </Pressable>
+          )}
+
+          {(isFinished || isDeclined || isExpired) && (
+            <Pressable
+              onPress={() => openGamePortal(invite.sessionId)}
+              style={({ pressed }) => [
+                styles.secondaryBtnFull,
+                { opacity: pressed ? 0.75 : 1 },
+              ]}
+            >
+              <Text style={styles.secondaryBtnText}>Open Arena</Text>
+            </Pressable>
+          )}
+        </View>
       </View>
-
-      {/* Action Buttons */}
-      <View style={styles.actions}>
-        {invite.status === 'pending' && (
-          <>
-            {isGuest && (
-              <>
-                <Pressable
-                  disabled={submitting}
-                  onPress={handleAccept}
-                  style={({ pressed }) => [
-                    styles.primaryBtn,
-                    { backgroundColor: '#059669', opacity: pressed || submitting ? 0.75 : 1 },
-                  ]}
-                >
-                  {submitting ? (
-                    <ActivityIndicator size="small" color="#FFFFFF" />
-                  ) : (
-                    <>
-                      <Check size={14} color="#FFFFFF" />
-                      <Text style={styles.primaryBtnText}>Accept & Play</Text>
-                    </>
-                  )}
-                </Pressable>
-
-                <Pressable
-                  disabled={submitting}
-                  onPress={handleDecline}
-                  style={({ pressed }) => [
-                    styles.secondaryBtn,
-                    { opacity: pressed || submitting ? 0.75 : 1 },
-                  ]}
-                >
-                  <X size={14} color="#9CA3AF" />
-                </Pressable>
-              </>
-            )}
-
-            {isHost && (
-              <>
-                <Pressable
-                  onPress={() => openGamePortal(invite.sessionId)}
-                  style={({ pressed }) => [
-                    styles.primaryBtn,
-                    { backgroundColor: '#D97706', opacity: pressed ? 0.75 : 1 },
-                  ]}
-                >
-                  <ExternalLink size={14} color="#FFFFFF" />
-                  <Text style={styles.primaryBtnText}>Enter Room</Text>
-                </Pressable>
-
-                <Pressable
-                  disabled={submitting}
-                  onPress={handleCancel}
-                  style={({ pressed }) => [
-                    styles.secondaryBtn,
-                    { opacity: pressed || submitting ? 0.75 : 1 },
-                  ]}
-                >
-                  <X size={14} color="#9CA3AF" />
-                </Pressable>
-              </>
-            )}
-          </>
-        )}
-
-        {invite.status === 'active' && (
-          <Pressable
-            onPress={() => openGamePortal(invite.sessionId)}
-            style={({ pressed }) => [
-              styles.primaryBtnFull,
-              { backgroundColor: '#059669', opacity: pressed ? 0.75 : 1 },
-            ]}
-          >
-            <ExternalLink size={14} color="#FFFFFF" />
-            <Text style={styles.primaryBtnText}>Resume Duel</Text>
-          </Pressable>
-        )}
-
-        {invite.status === 'finished' && (
-          <Pressable
-            onPress={() => openGamePortal(invite.sessionId)}
-            style={({ pressed }) => [
-              styles.primaryBtnFull,
-              { backgroundColor: '#374151', opacity: pressed ? 0.75 : 1 },
-            ]}
-          >
-            <Trophy size={14} color="#FBBF24" />
-            <Text style={styles.primaryBtnText}>Open Game Arena</Text>
-          </Pressable>
-        )}
-
-        {(invite.status === 'declined' || invite.status === 'expired') && (
-          <Pressable
-            onPress={() => openGamePortal(invite.sessionId)}
-            style={({ pressed }) => [
-              styles.primaryBtnFull,
-              { backgroundColor: 'rgba(55, 65, 81, 0.4)', opacity: pressed ? 0.75 : 1 },
-            ]}
-          >
-            <ExternalLink size={14} color="#9CA3AF" />
-            <Text style={[styles.primaryBtnText, { color: '#9CA3AF' }]}>Visit Arena</Text>
-          </Pressable>
-        )}
-      </View>
-    </LinearGradient>
+    </View>
   );
 };
 
 const styles = StyleSheet.create({
   container: {
-    width: 250,
-    borderRadius: 16,
+    width: 240,
+    height: 240,
+    borderRadius: 22,
     padding: 12,
+    justifyContent: 'space-between',
+    overflow: 'hidden',
+    position: 'relative',
     borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.16)',
     shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 6,
-    elevation: 4,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.5,
+    shadowRadius: 10,
+    elevation: 8,
   },
-  header: {
+  fullBleedImage: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    width: '100%',
+    height: '100%',
+  },
+  gradientOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
+  topRow: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: 8,
-    marginBottom: 8,
+    justifyContent: 'space-between',
+    zIndex: 10,
   },
-  iconWrapper: {
-    width: 32,
-    height: 32,
+  titleBadge: {
+    backgroundColor: 'rgba(0, 0, 0, 0.75)',
     borderRadius: 10,
-    backgroundColor: 'rgba(0, 0, 0, 0.4)',
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  headerText: {
-    flex: 1,
-  },
-  title: {
-    fontSize: 13,
-    fontWeight: '700',
-    color: '#F9FAFB',
-  },
-  tagline: {
-    fontSize: 10,
-    color: '#9CA3AF',
-    marginTop: 1,
-  },
-  badge: {
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 8,
+    paddingHorizontal: 9,
+    paddingVertical: 4,
     borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.1)',
   },
-  badgeText: {
-    fontSize: 9,
+  titleText: {
+    color: '#FFFFFF',
+    fontSize: 11,
     fontWeight: '700',
+  },
+  statusBadge: {
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  statusText: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    fontWeight: '800',
     textTransform: 'uppercase',
   },
-  bodyBox: {
-    backgroundColor: 'rgba(0, 0, 0, 0.3)',
-    borderRadius: 10,
-    padding: 8,
-    marginBottom: 10,
+  bottomSection: {
+    zIndex: 10,
+    gap: 8,
   },
-  row: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
+  messageBox: {
+    paddingHorizontal: 2,
   },
-  bodyText: {
+  messageText: {
+    color: '#FFFFFF',
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 16,
+    textShadowColor: 'rgba(0, 0, 0, 0.9)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  messageTextMuted: {
+    color: '#E2E8F0',
+    fontSize: 12,
+    fontWeight: '500',
+    lineHeight: 16,
+    textShadowColor: 'rgba(0, 0, 0, 0.9)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  messageTextActive: {
+    color: '#38C185',
+    fontSize: 12,
+    fontWeight: '700',
+    lineHeight: 16,
+    textShadowColor: 'rgba(0, 0, 0, 0.9)',
+    textShadowOffset: { width: 0, height: 1 },
+    textShadowRadius: 3,
+  },
+  messageTextItalic: {
+    color: '#94A3B8',
     fontSize: 11,
-    color: '#E5E7EB',
-    lineHeight: 15,
-  },
-  bodyTextMuted: {
-    fontSize: 11,
-    color: '#9CA3AF',
-    lineHeight: 15,
-  },
-  bodyTextSuccess: {
-    fontSize: 11,
-    color: '#6EE7B7',
-    fontWeight: '600',
-  },
-  bodyTextItalic: {
-    fontSize: 11,
-    color: '#6B7280',
     fontStyle: 'italic',
+    lineHeight: 15,
   },
   actions: {
+    width: '100%',
+  },
+  rowButtons: {
     flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
+    gap: 8,
   },
   primaryBtn: {
     flex: 1,
-    flexDirection: 'row',
+    backgroundColor: '#38C185',
+    borderRadius: 10,
+    paddingVertical: 8,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 7,
-    paddingHorizontal: 10,
-    borderRadius: 10,
-    gap: 5,
   },
   primaryBtnFull: {
     width: '100%',
-    flexDirection: 'row',
+    backgroundColor: '#38C185',
+    borderRadius: 10,
+    paddingVertical: 8,
     alignItems: 'center',
     justifyContent: 'center',
-    paddingVertical: 7,
-    paddingHorizontal: 10,
-    borderRadius: 10,
-    gap: 5,
   },
   primaryBtnText: {
+    color: '#05180f',
     fontSize: 12,
-    fontWeight: '700',
-    color: '#FFFFFF',
+    fontWeight: '800',
   },
   secondaryBtn: {
-    backgroundColor: 'rgba(31, 41, 55, 0.7)',
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
     borderWidth: 1,
-    borderColor: 'rgba(255, 255, 255, 0.1)',
+    borderColor: 'rgba(255, 255, 255, 0.2)',
     borderRadius: 10,
-    paddingVertical: 7,
-    paddingHorizontal: 10,
+    paddingVertical: 8,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  secondaryBtnFull: {
+    width: '100%',
+    backgroundColor: 'rgba(0, 0, 0, 0.45)',
+    borderWidth: 1,
+    borderColor: 'rgba(255, 255, 255, 0.2)',
+    borderRadius: 10,
+    paddingVertical: 8,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  secondaryBtnText: {
+    color: '#E2E8F0',
+    fontSize: 12,
+    fontWeight: '600',
   },
 });

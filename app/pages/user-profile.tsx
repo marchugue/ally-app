@@ -24,7 +24,10 @@ import {
   GraduationCap,
   BookOpen,
   Layers,
+  Flag,
 } from "lucide-react-native";
+import { ReportModal } from "@/components/ReportModal";
+import { reportUser } from "@/lib/api/moderation";
 import { UserAvatar, resolveImageUri } from "@/components/UserAvatar";
 import { AnonymousAvatar } from "@/components/AnonymousAvatar";
 import { getDeterministicAnonymousAvatar } from "@/constants/matchOptions";
@@ -86,6 +89,14 @@ export default function UserProfileScreen() {
   const [actionLoading, setActionLoading] = useState(false);
   const [relationModalOpen, setRelationModalOpen] = useState(false);
   const [relationModalKind, setRelationModalKind] = useState<"followers" | "following" | "allies">("allies");
+  const [reportModalVisible, setReportModalVisible] = useState(false);
+
+  const handleReportUser = async (violationId: string, details?: string) => {
+    if (!viewedUserId || !accessToken) return;
+    await reportUser(viewedUserId, violationId, accessToken, {
+      notes: details,
+    });
+  };
 
   // Load Profile & Relationship Details
   const loadData = useCallback(async () => {
@@ -284,8 +295,17 @@ export default function UserProfileScreen() {
           contentContainerStyle={{ paddingBottom: 40 }}
           ListHeaderComponent={
             <View>
-              {/* ── Top Header with Back Button ── */}
-              <View style={{ paddingHorizontal: 16, paddingTop: 10, paddingBottom: 4 }}>
+              {/* ── Top Header with Back Button & Report ── */}
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  paddingHorizontal: 16,
+                  paddingTop: 10,
+                  paddingBottom: 4,
+                }}
+              >
                 <Pressable
                   onPress={() => router.back()}
                   hitSlop={10}
@@ -300,6 +320,23 @@ export default function UserProfileScreen() {
                 >
                   <ChevronLeft size={22} color="#111827" />
                 </Pressable>
+
+                {!isOwnProfile && (
+                  <Pressable
+                    onPress={() => setReportModalVisible(true)}
+                    hitSlop={10}
+                    style={{
+                      width: 36,
+                      height: 36,
+                      borderRadius: 18,
+                      backgroundColor: "#FEE2E2",
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Flag size={18} color="#DC2626" />
+                  </Pressable>
+                )}
               </View>
 
               {/* ── Avatar + Stats Header ── */}
@@ -830,6 +867,22 @@ export default function UserProfileScreen() {
           userId={profile.id}
           initialKind={relationModalKind}
           userName={profile.username || undefined}
+        />
+      )}
+
+      {viewedUserId && !isOwnProfile && (
+        <ReportModal
+          visible={reportModalVisible}
+          onClose={() => setReportModalVisible(false)}
+          onSubmitReport={handleReportUser}
+          targetType="user"
+          targetName={
+            isIdentityRevealed
+              ? (profile?.full_name || (profile?.username ? `@${profile.username}` : undefined))
+              : isUnrevealedMatch
+              ? (profile?.full_name || paramAuthorName || "Anonymous Ally")
+              : "Anonymous Peer"
+          }
         />
       )}
     </SafeAreaView>

@@ -50,6 +50,7 @@ import {
   deletePost,
 } from "@/lib/api/feed";
 import { reportUser } from "@/lib/api/moderation";
+import { ReportModal } from "@/components/ReportModal";
 import type { Comment } from "@/types/feed";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
@@ -145,8 +146,18 @@ export default function MediaPreviewScreen() {
 
   // Modals state
   const [showSettingsModal, setShowSettingsModal] = useState(false);
+  const [showReportModal, setShowReportModal] = useState(false);
   const [showCommentModal, setShowCommentModal] = useState(false);
   const [isCaptionExpanded, setIsCaptionExpanded] = useState(false);
+
+  const handleReportPost = async (violationId: string, details?: string) => {
+    const targetUserId = authorId;
+    if (!targetUserId || !accessToken) return;
+    await reportUser(targetUserId, violationId, accessToken, {
+      postId: postId || undefined,
+      notes: details,
+    });
+  };
 
   // Comments state
   const [comments, setComments] = useState<Comment[]>([]);
@@ -619,7 +630,7 @@ export default function MediaPreviewScreen() {
             <Pressable
               onPress={() => {
                 setShowSettingsModal(false);
-                Alert.alert("Report", "Thank you. We will review this post.");
+                setShowReportModal(true);
               }}
               style={styles.sheetRow}
             >
@@ -640,6 +651,15 @@ export default function MediaPreviewScreen() {
           </Pressable>
         </Pressable>
       </Modal>
+
+      {/* Report Post Modal using Community Standards Taxonomy */}
+      <ReportModal
+        visible={showReportModal}
+        onClose={() => setShowReportModal(false)}
+        onSubmitReport={handleReportPost}
+        targetType="post"
+        previewText={caption || (hasMedia ? "[Image post]" : "")}
+      />
 
       {/* ── 2. Comment Modal (Same UI as Post Settings, with Height) ────────── */}
       <Modal

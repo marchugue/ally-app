@@ -15,7 +15,15 @@ import {
   getCachedConversations,
   setCachedConversations,
   primeChatCacheFromConversation,
+  getMemoryChat,
 } from "@/lib/chatCache";
+import Animated, {
+  LinearTransition,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
+} from "react-native-reanimated";
 import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
 import { router, useFocusEffect } from "expo-router";
 import { Search, X, MessageCircle, Trash2, Drama } from "lucide-react-native";
@@ -142,6 +150,7 @@ interface SwipeableRowProps {
   onOpen: (item: Conversation, info: ReturnType<typeof getParticipantInfo>) => void;
   disabled: boolean;
   isNavigatingThis: boolean;
+  isMovingUp?: boolean;
 }
 
 const SwipeableRow = React.memo(function SwipeableRow({
@@ -156,6 +165,7 @@ const SwipeableRow = React.memo(function SwipeableRow({
   onOpen,
   disabled,
   isNavigatingThis,
+  isMovingUp = false,
 }: SwipeableRowProps) {
   const swipeRef = useRef<any>(null);
 
@@ -166,8 +176,35 @@ const SwipeableRow = React.memo(function SwipeableRow({
     };
   }, [item.id, swipeableRefs]);
 
+  const scale = useSharedValue(1);
+
+  useEffect(() => {
+    if (isMovingUp) {
+      scale.value = withTiming(0.97, { duration: 160 }, () => {
+        scale.value = withSpring(1, { damping: 18, stiffness: 160 });
+      });
+    } else {
+      scale.value = withSpring(1);
+    }
+  }, [isMovingUp, scale]);
+
+  const animatedStyle = useAnimatedStyle(() => ({
+    transform: [{ scale: scale.value }],
+  }));
+
   return (
-    <ReanimatedSwipeable
+    <Animated.View
+      layout={LinearTransition.springify().damping(22).stiffness(180)}
+      style={[
+        {
+          zIndex: isMovingUp ? 1 : 10,
+          elevation: isMovingUp ? 1 : 3,
+          backgroundColor: "#FFFFFF",
+        },
+        animatedStyle,
+      ]}
+    >
+      <ReanimatedSwipeable
       ref={swipeRef}
       friction={2}
       overshootRight={false}
@@ -360,6 +397,7 @@ const SwipeableRow = React.memo(function SwipeableRow({
         </View>
       </Pressable>
     </ReanimatedSwipeable>
+  </Animated.View>
   );
 });
 
@@ -386,6 +424,36 @@ export default function MessagesScreen() {
   const swipeableRefs = useRef<Map<string, any>>(new Map());
 
   const [visibleCount, setVisibleCount] = useState(PAGE_SIZE);
+
+  // Position exchange animation tracking
+  const prevIndicesRef = useRef<Map<string, number>>(new Map());
+  const [movingUpId, setMovingUpId] = useState<string | null>(null);
+
+  // Screen focus & conversation mode tracking
+  const isScreenFocusedRef = useRef(true);
+  const wasInConversationRef = useRef(false);
+  const openedConvIdRef = useRef<string | null>(null);
+  const pendingSortedConvsRef = useRef<Conversation[] | null>(null);
+
+  useEffect(() => {
+    const currentIndices = new Map<string, number>();
+    let detectedMovingUp: string | null = null;
+    conversations.forEach((conv, index) => {
+      currentIndices.set(conv.id, index);
+      const prev = prevIndicesRef.current.get(conv.id);
+      if (prev !== undefined && prev > index && index === 0) {
+        detectedMovingUp = conv.id;
+      }
+    });
+
+    if (detectedMovingUp) {
+      setMovingUpId(detectedMovingUp);
+      const timer = setTimeout(() => setMovingUpId(null), 600);
+      prevIndicesRef.current = currentIndices;
+      return () => clearTimeout(timer);
+    }
+    prevIndicesRef.current = currentIndices;
+  }, [conversations]);
 
   // Sync app icon badge count to total unread messages across conversations
   const totalUnreadCount = useMemo(() => {
@@ -438,6 +506,14 @@ export default function MessagesScreen() {
         }
       });
       const finalConvs = Array.from(deduped.values());
+
+      // If user is currently in conversation panel mode (/pages/conversation),
+      // defer re-sorting so animation triggers smoothly when they press back to chatlist!
+      if (!isScreenFocusedRef.current && wasInConversationRef.current) {
+        pendingSortedConvsRef.current = finalConvs;
+        return;
+      }
+
       setConversations(finalConvs);
       if (user?.id) {
         void setCachedConversations(user.id, finalConvs);
@@ -467,14 +543,90 @@ export default function MessagesScreen() {
   }, [loadConversations, refreshOnlineUsers, user?.id]);
 
   // Re-fetch when navigating back to the Messages tab to instantly reflect read status changes,
-  // and immediately reset navigation lock so items are pressable again!
+  // and trigger reorder animation if returning from conversation panel
   useFocusEffect(
     useCallback(() => {
+      isScreenFocusedRef.current = true;
       isNavigatingRef.current = false;
       setNavigatingId(null);
-      void loadConversations(true);
-      void refreshOnlineUsers();
-    }, [loadConversations, refreshOnlineUsers])
+
+      const fromConv = wasInConversationRef.current;
+      const openedId = openedConvIdRef.current;
+      wasInConversationRef.current = false;
+      openedConvIdRef.current = null;
+
+      if (fromConv) {
+        // Returned from conversation panel mode!
+        // Check if memory cache for the opened chat has a newer message (e.g. sent by user)
+        if (openedId && user?.id) {
+          const cachedChat = getMemoryChat(openedId, user.id);
+          if (cachedChat && cachedChat.messages && cachedChat.messages.length > 0) {
+            const lastMsg = cachedChat.messages[cachedChat.messages.length - 1];
+            setConversations((prev) => {
+              const idx = prev.findIndex((c) => c.id === openedId);
+              if (idx !== -1) {
+                const currentLast = getLastMessage(prev[idx]);
+                const cachedTime = new Date(lastMsg.created_at).getTime();
+                const currentTime = currentLast ? new Date(currentLast.created_at).getTime() : 0;
+                if (cachedTime > currentTime) {
+                  const updated = [...prev];
+                  updated[idx] = {
+                    ...updated[idx],
+                    messages: [...(updated[idx].messages || []), lastMsg],
+                    updated_at: lastMsg.created_at,
+                  };
+                  return updated;
+                }
+              }
+              return prev;
+            });
+          }
+        }
+
+        // Trigger the reorder animation after a short view-settlement delay (80ms)
+        const timer = setTimeout(() => {
+          if (pendingSortedConvsRef.current) {
+            const targetConvs = pendingSortedConvsRef.current;
+            pendingSortedConvsRef.current = null;
+            setConversations(targetConvs);
+          } else {
+            setConversations((prev) => {
+              const sorted = [...prev].sort((a, b) => {
+                const aTime = getLastMessage(a)?.created_at || a.updated_at;
+                const bTime = getLastMessage(b)?.created_at || b.updated_at;
+                return new Date(bTime).getTime() - new Date(aTime).getTime();
+              });
+              return sorted;
+            });
+          }
+          void refreshOnlineUsers();
+        }, 80);
+
+        // Background sync after animation completes
+        const syncTimer = setTimeout(() => {
+          void loadConversations(true);
+        }, 700);
+
+        return () => {
+          clearTimeout(timer);
+          clearTimeout(syncTimer);
+          isScreenFocusedRef.current = false;
+        };
+      } else {
+        // User switched tabs (not returning from conversation)
+        // Messages are already arranged if cached
+        if (pendingSortedConvsRef.current) {
+          setConversations(pendingSortedConvsRef.current);
+          pendingSortedConvsRef.current = null;
+        }
+        void loadConversations(true);
+        void refreshOnlineUsers();
+
+        return () => {
+          isScreenFocusedRef.current = false;
+        };
+      }
+    }, [loadConversations, refreshOnlineUsers, user?.id])
   );
 
   // Real-time update on socket message
@@ -485,21 +637,49 @@ export default function MessagesScreen() {
     if (!socket) return;
 
     // Optimistically merge an incoming message into the local conversations list
-    // so the last-message preview and unread badge update instantly without a
-    // round-trip to the server. Falls back to a full reload only when the
-    // conversation isn't already known locally.
+    // so the last-message preview and unread badge update instantly.
     const onMessageNew = (payload: any) => {
       const incomingConvId: string = payload?.conversationId ?? payload?.message?.conversation_id ?? "";
       const incomingMsg = payload?.message;
       if (!incomingConvId || !incomingMsg) {
-        // Unknown payload shape — fall back to a full reload
-        void loadConversations(true);
+        if (isScreenFocusedRef.current) {
+          void loadConversations(true);
+        }
         return;
       }
+
+      // If user is currently in conversation panel mode (/pages/conversation)
+      if (!isScreenFocusedRef.current && wasInConversationRef.current) {
+        setConversations((prev) => {
+          const idx = prev.findIndex((c) => c.id === incomingConvId);
+          if (idx === -1) {
+            return prev;
+          }
+          // Update message in-place without re-ordering yet so previous position is kept on screen
+          const updatedWithoutSort = [...prev];
+          updatedWithoutSort[idx] = {
+            ...updatedWithoutSort[idx],
+            messages: [...(updatedWithoutSort[idx].messages ?? []), incomingMsg],
+            updated_at: incomingMsg.created_at ?? updatedWithoutSort[idx].updated_at,
+          };
+
+          // Compute what sorted array should be when returning to chat list
+          const sorted = [...updatedWithoutSort].sort((a, b) => {
+            const aTime = getLastMessage(a)?.created_at || a.updated_at;
+            const bTime = getLastMessage(b)?.created_at || b.updated_at;
+            return new Date(bTime).getTime() - new Date(aTime).getTime();
+          });
+          pendingSortedConvsRef.current = sorted;
+
+          return updatedWithoutSort;
+        });
+        return;
+      }
+
+      // Normal case: user is directly looking at the Messages tab (focused)
       setConversations((prev) => {
         const idx = prev.findIndex((c) => c.id === incomingConvId);
         if (idx === -1) {
-          // New conversation not yet in list — reload to fetch it
           void loadConversations(true);
           return prev;
         }
@@ -509,7 +689,7 @@ export default function MessagesScreen() {
           messages: [...(updated[idx].messages ?? []), incomingMsg],
           updated_at: incomingMsg.created_at ?? updated[idx].updated_at,
         };
-        // Re-sort: most recent first
+        // Re-sort: most recent first -> triggers movingUpId animation
         updated.sort((a, b) => {
           const aTime = getLastMessage(a)?.created_at || a.updated_at;
           const bTime = getLastMessage(b)?.created_at || b.updated_at;
@@ -627,6 +807,8 @@ export default function MessagesScreen() {
       if (isNavigatingRef.current) return;
       isNavigatingRef.current = true;
       setNavigatingId(item.id);
+      wasInConversationRef.current = true;
+      openedConvIdRef.current = item.id;
 
       // Prime chat cache with whatever messages this conversation already has
       if (item.messages && item.messages.length > 0) {
@@ -674,10 +856,11 @@ export default function MessagesScreen() {
           onOpen={handleOpenConversation}
           disabled={isNavigating}
           isNavigatingThis={navigatingId === item.id}
+          isMovingUp={movingUpId === item.id}
         />
       );
     },
-    [user?.id, checkIsOnline, swipeableRefs, handleOpenConversation, isNavigating, navigatingId]
+    [user?.id, checkIsOnline, swipeableRefs, handleOpenConversation, isNavigating, navigatingId, movingUpId]
   );
 
 
@@ -851,7 +1034,7 @@ export default function MessagesScreen() {
       <FlatList
         style={{ flex: 1 }}
         data={paginatedConversations}
-        keyExtractor={(item, index) => (item.id ? `${item.id}-${index}` : String(index))}
+        keyExtractor={(item) => item.id}
         refreshControl={
           <RefreshControl
             refreshing={refreshing}
@@ -869,7 +1052,7 @@ export default function MessagesScreen() {
         initialNumToRender={PAGE_SIZE}
         maxToRenderPerBatch={10}
         windowSize={7}
-        removeClippedSubviews
+        removeClippedSubviews={false}
         renderItem={renderConversationItem}
 
         ListEmptyComponent={

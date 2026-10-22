@@ -34,6 +34,7 @@ import {
   ArrowLeft,
   MoreVertical,
   Shield,
+  ShieldAlert,
   ShieldCheck,
   Flag,
   Ban,
@@ -47,6 +48,8 @@ import {
   Share2,
   Send,
   Trash2,
+  Bell,
+  BellOff,
 } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth } from "@/lib/auth/AuthContext";
@@ -72,7 +75,15 @@ import {
 } from "@/lib/pushNotifications";
 import { getProfilesBatch } from "@/lib/api/profiles";
 import { usePresence } from "@/context/PresenceContext";
-import { blockUser, reportUser } from "@/lib/api/moderation";
+import {
+  blockUser,
+  reportUser,
+  restrictUser,
+  isUserRestricted,
+  muteUser,
+  unmuteUser,
+  isUserMuted,
+} from "@/lib/api/moderation";
 import { endMatch as apiEndMatch } from "@/lib/api/matchmaking";
 import { stageName, resolveStageForStreak } from "@/constants/matchOptions";
 import { getSocket } from "@/lib/socket";
@@ -520,8 +531,13 @@ export default function ConversationScreen() {
   // Overflow menu
   const [showOverflow, setShowOverflow] = useState(false);
   const [showBlockConfirm, setShowBlockConfirm] = useState(false);
+  const [showRestrictConfirm, setShowRestrictConfirm] = useState(false);
+  const [isRestricted, setIsRestricted] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+  const [muteLoading, setMuteLoading] = useState(false);
   const [showReportConfirm, setShowReportConfirm] = useState(false);
   const [showReportModal, setShowReportModal] = useState(false);
+  const [reportingMessage, setReportingMessage] = useState<Message | null>(null);
   const [showDeleteConvConfirm, setShowDeleteConvConfirm] = useState(false);
   // Web-mirror image viewer state
   const [viewingImageMessage, setViewingImageMessage] = useState<Message | null>(null);
@@ -1397,6 +1413,50 @@ export default function ConversationScreen() {
     }
   }, []);
 
+  // ── Restrict / Mute checks ───────────────────────────────────────────
+  useEffect(() => {
+    const targetId = partnerUserId || (otherProfile?.id && otherProfile.id !== "anonymous" ? otherProfile.id : null);
+    if (!targetId || !accessToken) return;
+    isUserRestricted(targetId, accessToken)
+      .then((res) => setIsRestricted(res.restrictedByMe))
+      .catch(() => {});
+    isUserMuted(targetId, accessToken)
+      .then((res) => setIsMuted(res.muted))
+      .catch(() => {});
+  }, [partnerUserId, otherProfile?.id, accessToken]);
+
+  const handleRestrict = useCallback(async () => {
+    const targetId = partnerUserId || (otherProfile?.id && otherProfile.id !== "anonymous" ? otherProfile.id : null);
+    if (!targetId || !accessToken) return;
+    setShowRestrictConfirm(false);
+    try {
+      await restrictUser(targetId, accessToken);
+      setIsRestricted(true);
+      router.push("/pages/restricted-users" as any);
+    } catch (err) {
+      console.warn("Failed to restrict user", err);
+    }
+  }, [partnerUserId, otherProfile, accessToken]);
+
+  const handleToggleMute = useCallback(async () => {
+    const targetId = partnerUserId || (otherProfile?.id && otherProfile.id !== "anonymous" ? otherProfile.id : null);
+    if (!targetId || !accessToken || muteLoading) return;
+    setMuteLoading(true);
+    try {
+      if (isMuted) {
+        await unmuteUser(targetId, accessToken);
+        setIsMuted(false);
+      } else {
+        await muteUser(targetId, accessToken);
+        setIsMuted(true);
+      }
+    } catch (err) {
+      console.warn("Failed to toggle mute", err);
+    } finally {
+      setMuteLoading(false);
+    }
+  }, [partnerUserId, otherProfile, accessToken, isMuted, muteLoading]);
+
   // ── Block / Report ────────────────────────────────────────────────────
   const handleBlock = useCallback(async () => {
     const targetId = partnerUserId || (otherProfile?.id && otherProfile.id !== "anonymous" ? otherProfile.id : null);
@@ -1410,17 +1470,17 @@ export default function ConversationScreen() {
     }
   }, [partnerUserId, otherProfile, accessToken, handleExit]);
 
-  const handleReportSubmit = useCallback(async (reason: string, details?: string) => {
+  const handleReportSubmit = useCallback(async (violationId: string, details?: string) => {
     const targetId = partnerUserId || (otherProfile?.id && otherProfile.id !== "anonymous" ? otherProfile.id : null);
     if (!targetId || !accessToken) {
       throw new Error("Unable to identify user to report");
     }
-    const fullReason = details ? `${reason} - ${details}` : reason;
-    await reportUser(targetId, fullReason, accessToken, {
+    await reportUser(targetId, violationId, accessToken, {
       conversationId: conversationId || undefined,
+      messageId: reportingMessage?.id || undefined,
       notes: details,
     });
-  }, [partnerUserId, otherProfile, accessToken, conversationId]);
+  }, [partnerUserId, otherProfile, accessToken, conversationId, reportingMessage]);
 
   const handleEndMatch = useCallback(async () => {
     const id = matchInfo?.matchId || matchInfo?.id || conversationId;
@@ -2206,9 +2266,11 @@ export default function ConversationScreen() {
                   <TouchableOpacity
                     activeOpacity={0.6}
                     onPress={() => {
+                      const msg = selectedMessage;
                       setShowReactions(false);
                       setSelectedMessage(null);
                       setSelectedLayout(null);
+                      setReportingMessage(msg);
                       setShowReportModal(true);
                     }}
                     style={{
@@ -2365,7 +2427,24 @@ export default function ConversationScreen() {
               label={isAnonymous ? "Report match" : "Report user"}
               onPress={() => {
                 setShowOverflow(false);
+                setReportingMessage(null);
                 setShowReportModal(true);
+              }}
+            />
+            <OverflowRow
+              icon={isMuted ? BellOff : Bell}
+              label={isMuted ? "Unmute notifications" : "Mute notifications"}
+              onPress={() => {
+                setShowOverflow(false);
+                handleToggleMute();
+              }}
+            />
+            <OverflowRow
+              icon={ShieldAlert}
+              label={isAnonymous ? "Restrict match" : "Restrict user"}
+              onPress={() => {
+                setShowOverflow(false);
+                setShowRestrictConfirm(true);
               }}
             />
             <OverflowRow
@@ -2382,6 +2461,15 @@ export default function ConversationScreen() {
       </Modal>
 
       {/* ── Confirm modals ───────────────────────────────────────────────── */}
+      <ConfirmModal
+        visible={showRestrictConfirm}
+        title="Restrict this user?"
+        description="Neither of you will see each other's online presence. You will be taken to your restricted users page."
+        confirmLabel="Restrict"
+        onConfirm={handleRestrict}
+        onCancel={() => setShowRestrictConfirm(false)}
+      />
+
       <ConfirmModal
         visible={showBlockConfirm}
         title="Block this user?"
@@ -2410,9 +2498,13 @@ export default function ConversationScreen() {
 
       <ReportModal
         visible={showReportModal}
-        onClose={() => setShowReportModal(false)}
+        onClose={() => {
+          setShowReportModal(false);
+          setReportingMessage(null);
+        }}
         onSubmitReport={handleReportSubmit}
-        targetType="user"
+        targetType={reportingMessage ? "message" : "user"}
+        previewText={reportingMessage?.content || (reportingMessage?.image_url ? "[Image message]" : "")}
       />
 
       <ConfirmModal

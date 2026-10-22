@@ -228,7 +228,15 @@ export function ChatBubble({
   const hasImage = images.length > 0;
   const isImageOnly = hasImage && !message.content?.trim();
   const isEmojiOnly = !hasImage && isOnlyEmoji(message.content);
-  const isGameInvite = Boolean(message.game_invite);
+  const isGameInvite = Boolean(message.game_invite || (message.content && message.content.includes('Game invite:')));
+  const effectiveGameInvite = message.game_invite || (message.content && message.content.includes('Game invite:') ? {
+    sessionId: '',
+    gameId: (message.content.includes('2048') || message.content.includes('Merge') ? 'merge' : message.content.includes('Clue') ? 'clue' : 'ttt') as 'merge' | 'ttt' | 'clue',
+    status: 'pending' as const,
+    hostId: message.sender_id,
+    guestId: '',
+    expiresAt: null,
+  } : null);
   const hasReply = !!message.replied_message;
   const hasReactions = message.reactions && message.reactions.length > 0;
   const bubbleRef = useRef<View>(null);
@@ -613,11 +621,11 @@ export function ChatBubble({
         )}
 
         {/* Game Invite Card */}
-        {isGameInvite && message.game_invite && (
+        {isGameInvite && effectiveGameInvite && (
           <GameInviteCard
-            invite={message.game_invite}
+            invite={effectiveGameInvite}
             isMine={isMine}
-            currentUserId={isMine ? message.sender_id : (message.game_invite.guestId || "")}
+            currentUserId={isMine ? message.sender_id : (effectiveGameInvite.guestId || "")}
           />
         )}
 

@@ -4,6 +4,8 @@ export interface ReportViolation {
   id: string;
   label: string;
   description: string;
+  /** When true the reporter must describe the issue in free text before submitting. */
+  requiresDetails?: boolean;
 }
 
 export interface ReportCategory {
@@ -127,8 +129,76 @@ export const COMMUNITY_STANDARDS: ReportCategory[] = [
       {
         id: "other-unspecified",
         label: "Other issue",
-        description: "A concern that doesn't match the listed categories.",
+        description: "A concern that doesn't match the listed categories. Please describe what happened.",
+        requiresDetails: true,
       },
     ],
   },
 ];
+
+const SCAMS_CATEGORY: ReportCategory = {
+  id: "scams-fraud",
+  label: "Scams & Fraud",
+  description: "Attempts to trick you out of money, items, or personal details.",
+  violations: [
+    {
+      id: "scam-victim",
+      label: "I got scammed",
+      description: "This person scammed me out of money, items, or information.",
+    },
+    {
+      id: "scam-money-request",
+      label: "Asked for money or payment",
+      description: "Pressuring for money, gift cards, or advance payment.",
+    },
+    {
+      id: "scam-phishing",
+      label: "Phishing or suspicious link",
+      description: "Links or requests meant to steal passwords or personal details.",
+    },
+    {
+      id: "scam-fake-sale",
+      label: "Fake item or service",
+      description: "Selling items or services that are not real or never delivered.",
+    },
+  ],
+};
+
+const ACCOUNT_SECURITY_CATEGORY: ReportCategory = {
+  id: "account-security",
+  label: "Hacked or Fake Account",
+  description: "Accounts that appear compromised or are pretending to be someone else.",
+  violations: [
+    {
+      id: "account-hacked-mine",
+      label: "My account got hacked",
+      description: "Someone else gained access to my account.",
+    },
+    {
+      id: "account-hacked-theirs",
+      label: "This account looks hacked",
+      description: "Behavior suddenly changed or is sending suspicious messages.",
+    },
+    {
+      id: "account-fake",
+      label: "Fake or duplicate account",
+      description: "An account that is fake, duplicated, or created to deceive.",
+    },
+  ],
+};
+
+export type ReportTargetType = "post" | "message" | "user" | "comment";
+
+/**
+ * Returns the standards to show for a given kind of report.
+ * - post / comment: base standards
+ * - message: base standards + scams
+ * - user: base standards + scams + hacked/fake account
+ */
+export function getCommunityStandards(target: ReportTargetType = "post"): ReportCategory[] {
+  const other = COMMUNITY_STANDARDS[COMMUNITY_STANDARDS.length - 1];
+  const base = COMMUNITY_STANDARDS.slice(0, -1);
+  if (target === "post" || target === "comment") return COMMUNITY_STANDARDS;
+  if (target === "message") return [...base, SCAMS_CATEGORY, other];
+  return [...base, SCAMS_CATEGORY, ACCOUNT_SECURITY_CATEGORY, other];
+}

@@ -17,7 +17,7 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://ally-jisbackend-production.up.railway.app",
+        "EXPO_PUBLIC_API_URL": "https://api.ally-jis.com",
         "APK_FILENAME": "ally-jis-app-v1.0.apk"
       }
     },
@@ -27,7 +27,7 @@
         "buildType": "apk"
       },
       "env": {
-        "EXPO_PUBLIC_API_URL": "https://ally-jisbackend-production.up.railway.app",
+        "EXPO_PUBLIC_API_URL": "https://api.ally-jis.com",
         "APK_FILENAME": "ally-jis-app-v1.0.apk"
       }
     }

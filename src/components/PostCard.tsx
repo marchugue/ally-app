@@ -72,10 +72,12 @@ export function PostCard({
   const [deleting, setDeleting] = useState(false);
   const [isContentExpanded, setIsContentExpanded] = useState(false);
 
-  const handleReportSubmit = async (reason: string, details?: string) => {
+  const handleReportSubmit = async (violationId: string, details?: string) => {
     if (!accessToken || !post.author_id) return;
-    const fullReason = details ? `${reason} - ${details}` : reason;
-    await reportUser(post.author_id, fullReason, accessToken);
+    await reportUser(post.author_id, violationId, accessToken, {
+      postId: post.id,
+      notes: details,
+    });
   };
 
   const hasMedia = post.media && post.media.length > 0;
@@ -592,6 +594,7 @@ export function PostCard({
         onClose={() => setReportVisible(false)}
         onSubmitReport={handleReportSubmit}
         targetType="post"
+        previewText={post.content || (hasMedia ? "[Image post]" : "")}
       />
     </View>
   );

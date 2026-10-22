@@ -45,6 +45,7 @@ import {
   Pencil,
   RotateCw,
   Shield,
+  ShieldAlert,
   ShieldCheck,
   Smartphone,
   Sun,
@@ -399,6 +400,13 @@ export default function SettingsScreen() {
           icon={Ban}
           title="Blocked Users"
           onPress={() => router.push("/pages/blocked-users" as any)}
+        />
+
+        {/* Restricted Users */}
+        <SettingCard
+          icon={ShieldAlert}
+          title="Restricted Users"
+          onPress={() => router.push("/pages/restricted-users" as any)}
         />
 
         {/* Privacy Policy */}
