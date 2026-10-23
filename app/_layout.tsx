@@ -94,11 +94,25 @@ function RootLayoutNav() {
 
     const onPendingPage = segments[0] === "pages" && segments[1] === "pending-approval";
     const onRegisterPage = segments[0] === "pages" && segments[1] === "register";
+    const onIdUploadPages =
+      segments[0] === "pages" &&
+      (segments[1] === "id-upload" ||
+        segments[1] === "id-scan-front" ||
+        segments[1] === "id-scan-back" ||
+        segments[1] === "id-upload-success");
 
     // ── 1. Device has session ──
     if (user) {
       // Mark onboarding as completed in storage so onboarding is never shown again
       AsyncStorage.setItem("onboarding_done", "1").catch(() => {});
+
+      const emailType = user.user_metadata?.email_type;
+      const isExternal = emailType === "external";
+      const isApproved = Boolean(user.user_metadata?.is_approved);
+      const hasStudentId = Boolean(
+        user.user_metadata?.student_id_url ||
+        (user as any).student_id_url
+      );
 
       // Authenticated but profile incomplete (Steps 2-4 not yet done)
       const hasAcademicMetadata = Boolean(
@@ -108,12 +122,20 @@ function RootLayoutNav() {
       const isComplete = Boolean(
         user.user_metadata?.onboarding_complete === true ||
         user.user_metadata?.onboarding_complete === "true" ||
-        user.user_metadata?.username ||
         hasAcademicMetadata
       );
       const needsOnboarding = !isComplete;
+
+      // External user who has not uploaded their student ID yet
+      if (isExternal && !isApproved && !hasStudentId) {
+        if (!onIdUploadPages && !onRegisterPage) {
+          router.replace("/pages/id-upload" as any);
+        }
+        return;
+      }
+
       if (needsOnboarding) {
-        if (!onRegisterPage) {
+        if (!onRegisterPage && !onIdUploadPages) {
           router.replace({
             pathname: "/pages/register" as any,
             params: { startStep: "2" },
@@ -122,13 +144,10 @@ function RootLayoutNav() {
         return;
       }
 
-      // Profile complete but non-CHMSU pending admin approval
-      const isPendingApproval = Boolean(
-        user.user_metadata?.email_type === "external" &&
-        !user.user_metadata?.is_approved
-      );
+      // Profile complete but external pending admin approval
+      const isPendingApproval = isExternal && !isApproved;
       if (isPendingApproval) {
-        if (!onPendingPage) {
+        if (!onPendingPage && !onIdUploadPages && !onRegisterPage) {
           router.replace("/pages/pending-approval" as any);
         }
         return;

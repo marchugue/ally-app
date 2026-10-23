@@ -21,6 +21,10 @@ export default function SelectEmailScreen() {
   const insets = useSafeAreaInsets();
   const [selectedType, setSelectedType] = useState<"chmsu" | "external">("chmsu");
 
+  useEffect(() => {
+    router.replace("/pages/register" as any);
+  }, []);
+
   const handleBack = () => {
     // If user came from onboarding or login
     if (router.canGoBack()) {

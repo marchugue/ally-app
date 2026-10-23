@@ -45,6 +45,12 @@ export function checkUsernameAvailable(username: string, excludeId?: string): Pr
   return apiRequest<{ available: boolean }>(`/profiles/check-username?${query}`);
 }
 
+export function checkEmailAvailable(email: string, excludeId?: string): Promise<{ available: boolean; message?: string }> {
+  const query = new URLSearchParams({ email });
+  if (excludeId) query.set("excludeId", excludeId);
+  return apiRequest<{ available: boolean; message?: string }>(`/profiles/check-email?${query}`);
+}
+
 export interface ProfileFilterParams {
   excludeId?: string;
   search?: string;

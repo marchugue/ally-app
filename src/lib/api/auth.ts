@@ -10,6 +10,22 @@ export function Register(payload: RegisterPayload): Promise<RegisterResponse> {
   return apiRequest<RegisterResponse>("/auth/register", { method: "POST", body: payload });
 }
 
+export function oauthGoogle(payload: { accessToken?: string; refreshToken?: string; code?: string }): Promise<AuthSession> {
+  return apiRequest<AuthSession>("/auth/oauth/google", {
+    method: "POST",
+    body: payload,
+  });
+}
+
+export function checkEmailAvailable(
+  email: string,
+  excludeId?: string
+): Promise<{ available: boolean; message?: string }> {
+  const query = new URLSearchParams({ email });
+  if (excludeId) query.set("excludeId", excludeId);
+  return apiRequest<{ available: boolean; message?: string }>(`/auth/check-email?${query}`);
+}
+
 export function logout(accessToken: string): Promise<void> {
   return apiRequest<void>("/auth/logout", { method: "POST", accessToken, noContent: true });
 }

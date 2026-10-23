@@ -73,7 +73,7 @@ export default function LandingPage() {
         {/* CTA Section */}
         <View style={styles.ctaSection}>
           <Pressable
-            onPress={() => router.push("/pages/select-email" as any)}
+            onPress={() => router.push("/pages/register" as any)}
             onPressIn={() => setPressed(true)}
             onPressOut={() => setPressed(false)}
             style={[styles.getStartedBtn, pressed && styles.getStartedBtnPressed]}

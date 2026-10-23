@@ -1,5 +1,6 @@
 import { createContext, useContext, useEffect, useState, useRef, ReactNode } from "react";
-import { AppState, type AppStateStatus } from "react-native";
+import { AppState, Platform, type AppStateStatus } from "react-native";
+import { requireOptionalNativeModule } from "expo-modules-core";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as authApi from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/apiError";
@@ -16,6 +17,42 @@ import {
   removePersistedItem,
 } from "./tokenStorage";
 
+// Gracefully handle expo-web-browser native module availability.
+// In development builds or environments where expo-web-browser hasn't been compiled
+// into the native binary yet, accessing require("expo-web-browser") triggers Metro to
+// evaluate requireNativeModule('ExpoWebBrowser'), which throws an unhandled fatal error.
+// Using requireOptionalNativeModule('ExpoWebBrowser') allows checking availability first
+// without throwing.
+function isExpoWebBrowserAvailable(): boolean {
+  if (Platform.OS === "web") {
+    return true;
+  }
+  try {
+    return requireOptionalNativeModule("ExpoWebBrowser") != null;
+  } catch {
+    return false;
+  }
+}
+
+function getWebBrowser(): typeof import("expo-web-browser") | null {
+  if (!isExpoWebBrowserAvailable()) {
+    return null;
+  }
+  try {
+    return require("expo-web-browser");
+  } catch {
+    return null;
+  }
+}
+
+if (isExpoWebBrowserAvailable()) {
+  try {
+    getWebBrowser()?.maybeCompleteAuthSession?.();
+  } catch {
+    // Ignored if native module is absent in current build
+  }
+}
+
 interface AuthContextValue {
   user: AuthUser | null;
   accessToken: string | null;
@@ -23,6 +60,8 @@ interface AuthContextValue {
   isLoading: boolean;
   /** Signs in and returns the resolved AuthSession so callers can check user_metadata. */
   signIn: (email: string, password: string) => Promise<AuthSession>;
+  /** Initiates Google OAuth in-app browser session and exchanges token/code with backend. */
+  signInWithGoogle: () => Promise<AuthSession>;
   /** Register returns { userId, email } so the caller can navigate to OTP screen. */
   signUp: (payload: RegisterPayload) => Promise<RegisterResponse>;
   signOut: () => Promise<void>;
@@ -289,6 +328,57 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }
 
+  async function signInWithGoogle(): Promise<AuthSession> {
+    const webBrowser = getWebBrowser();
+    if (!webBrowser || typeof webBrowser.openAuthSessionAsync !== "function") {
+      throw new Error(
+        "Google Sign-In is unavailable in this build because the native 'expo-web-browser' module is not compiled into your installed development client. Please rebuild your app (npx expo run:android or eas build) to enable Google Sign-In."
+      );
+    }
+
+    const returnUrl = "https://ally-jis.com/confirm";
+    const supabaseOAuthUrl = `https://bbktizewwzdgohkvvzxs.supabase.co/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(returnUrl)}`;
+
+    const result = await webBrowser.openAuthSessionAsync(supabaseOAuthUrl, returnUrl);
+
+    if (result.type !== "success" || !result.url) {
+      throw new Error("Google Sign-In was cancelled or incomplete.");
+    }
+
+    const urlStr = result.url;
+    const hash = urlStr.includes("#") ? urlStr.substring(urlStr.indexOf("#") + 1) : "";
+    const query = urlStr.includes("?") ? urlStr.substring(urlStr.indexOf("?") + 1).split("#")[0] : "";
+    const hashParams = new URLSearchParams(hash);
+    const queryParams = new URLSearchParams(query);
+
+    const errorDesc =
+      hashParams.get("error_description") ||
+      queryParams.get("error_description") ||
+      hashParams.get("error") ||
+      queryParams.get("error");
+
+    if (errorDesc) {
+      throw new Error(decodeURIComponent(errorDesc).replace(/\+/g, " "));
+    }
+
+    const oAuthAccessToken = hashParams.get("access_token") || queryParams.get("access_token");
+    const oAuthRefreshToken = hashParams.get("refresh_token") || queryParams.get("refresh_token");
+    const code = queryParams.get("code") || hashParams.get("code");
+
+    if (!oAuthAccessToken && !code) {
+      throw new Error("No authorization token or code received from Google.");
+    }
+
+    const session = await authApi.oauthGoogle({
+      accessToken: oAuthAccessToken || undefined,
+      refreshToken: oAuthRefreshToken || undefined,
+      code: code || undefined,
+    });
+
+    await applySession(session);
+    return session;
+  }
+
   async function signUp(payload: RegisterPayload): Promise<RegisterResponse> {
     return authApi.Register(payload);
   }
@@ -352,6 +442,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         accessToken,
         isLoading,
         signIn,
+        signInWithGoogle,
         signOut,
         deleteAccount,
         signUp,

@@ -55,7 +55,7 @@ function cleanUri(val: unknown): string {
 export default function IdUploadSuccessScreen() {
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams();
-  const { signUp } = useAuth();
+  const { user, signUp, refreshSession } = useAuth();
 
   // Extract clean string URIs
   const initialFront = cleanUri(params.frontUri || params.studentIdFrontUri);
@@ -147,7 +147,46 @@ export default function IdUploadSuccessScreen() {
     setRegisterError("");
 
     try {
-      // Create the account now that IDs are captured
+      // If user is ALREADY authenticated (e.g. from Google OAuth), upload directly & bypass OTP!
+      if (user) {
+        if (frontUri) {
+          try {
+            await uploadStudentIdFile(user.id, frontUri, "front");
+          } catch (e) {
+            console.warn("[IdUploadSuccess] front upload error:", e);
+          }
+        }
+        if (backUri) {
+          try {
+            await uploadStudentIdFile(user.id, backUri, "back");
+          } catch (e) {
+            console.warn("[IdUploadSuccess] back upload error:", e);
+          }
+        }
+
+        const updatedSession = await refreshSession();
+        const activeUser = updatedSession?.user || user;
+
+        const hasAcademicMetadata = Boolean(
+          (activeUser?.user_metadata?.course || activeUser?.user_metadata?.department) &&
+          activeUser?.user_metadata?.year_level
+        );
+        const needsOnboard = Boolean(
+          !activeUser?.user_metadata?.onboarding_complete &&
+          !hasAcademicMetadata
+        );
+        if (needsOnboard) {
+          router.replace({
+            pathname: "/pages/register" as any,
+            params: { startStep: "2" },
+          });
+        } else {
+          router.replace("/pages/pending-approval" as any);
+        }
+        return;
+      }
+
+      // Create the account now that IDs are captured (unauthenticated email/pass registration)
       const result = await signUp({
         email,
         password,

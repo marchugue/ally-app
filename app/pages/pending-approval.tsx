@@ -33,6 +33,9 @@ export default function PendingApprovalPage() {
 
   const status: string = (user?.user_metadata?.student_verification_status as string) ?? 'pending';
   const isRejected = status === 'rejected';
+  const hasStudentId = Boolean(
+    user?.user_metadata?.student_id_url || (user as any)?.student_id_url
+  );
 
   const checkStatus = async () => {
     if (isCheckingRef.current || !accessToken) return;
@@ -113,13 +116,24 @@ export default function PendingApprovalPage() {
         </View>
 
         {/* Bottom spacer */}
-        <View style={{ flex: 2, minHeight: 60 }} />
+        <View style={{ flex: 2, minHeight: 40 }} />
 
-        {/* Action Area: Exactly ONE button (Sign out) & Support Link */}
+        {/* Action Area: Upload ID (if missing or rejected) + Sign out & Support Link */}
         <View style={styles.bottomArea}>
+          {(!hasStudentId || isRejected) && (
+            <Button
+              label={!hasStudentId ? "Upload Student ID Now" : "Re-upload Student ID"}
+              variant="primary"
+              pill
+              size="lg"
+              onPress={() => router.push("/pages/id-upload" as any)}
+              className="w-full"
+            />
+          )}
+
           <Button
             label="Sign out"
-            variant="primary"
+            variant={!hasStudentId || isRejected ? "secondary" : "primary"}
             pill
             size="lg"
             onPress={handleSignOut}

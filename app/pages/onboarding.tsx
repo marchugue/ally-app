@@ -105,7 +105,7 @@ export default function OnboardingScreen() {
 
   const handleGetStarted = async () => {
     await markOnboardingDone();
-    router.replace("/pages/select-email" as any);
+    router.replace("/pages/register" as any);
   };
 
   // Translation: Slide 0 is at 0, Slide 1 is at -SCREEN_WIDTH, Slide 2 is at -SCREEN_WIDTH * 2

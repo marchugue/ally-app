@@ -20,13 +20,14 @@ import PasswordInput from "@/components/buttons/password";
 import AlertMessage from "@/components/AlertMessage";
 import LoadingOverlay from "@/components/LoadingOverlay";
 import { Button } from "@/components/Button";
+import GoogleButton, { OrDivider } from "@/components/GoogleButton";
 
 const BRAND_GREEN = "#1A6B3C";
 const BRAND_GREEN_DARK = "#155a33";
 
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
-  const { signIn, user, isLoading } = useAuth();
+  const { signIn, signInWithGoogle, user, isLoading } = useAuth();
 
   useEffect(() => {
     if (!isLoading && user) {
@@ -39,6 +40,7 @@ export default function LoginScreen() {
   const [touchedEmail, setTouchedEmail] = useState(false);
   const [touchedPassword, setTouchedPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [googleLoading, setGoogleLoading] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const emailRef = useRef<TextInput>(null);
@@ -116,6 +118,50 @@ export default function LoginScreen() {
       }
     } finally {
       setIsSubmitting(false);
+    }
+  }
+
+  async function handleGoogleLogin() {
+    if (googleLoading || isSubmitting) return;
+    setErrorMessage(null);
+    setGoogleLoading(true);
+
+    try {
+      const session = await signInWithGoogle();
+      const emailType = session.user?.user_metadata?.email_type;
+      const isChmsu = emailType === "chmsu";
+      const isApproved = session.user?.user_metadata?.is_approved;
+      const needsOnboard = !session.user?.user_metadata?.onboarding_complete;
+      const hasStudentId = Boolean(
+        session.user?.user_metadata?.student_id_url ||
+        (session.user as any)?.student_id_url
+      );
+
+      if (isChmsu) {
+        if (needsOnboard) {
+          router.replace({ pathname: "/pages/register" as any, params: { startStep: "2" } });
+        } else {
+          router.replace("/(tabs)");
+        }
+      } else {
+        // External email
+        if (!hasStudentId && !isApproved) {
+          router.replace("/pages/id-upload" as any);
+        } else if (needsOnboard) {
+          router.replace({ pathname: "/pages/register" as any, params: { startStep: "2" } });
+        } else if (!isApproved) {
+          router.replace("/pages/pending-approval" as any);
+        } else {
+          router.replace("/(tabs)");
+        }
+      }
+    } catch (err: any) {
+      const msg = err?.message || "Google authentication failed. Please try again.";
+      if (!msg.toLowerCase().includes("cancelled")) {
+        setErrorMessage(msg);
+      }
+    } finally {
+      setGoogleLoading(false);
     }
   }
 
@@ -212,13 +258,22 @@ export default function LoginScreen() {
               className="w-full"
             />
           </View>
+
+          {/* ── Google OAuth with Horizontal Divider ── */}
+          <OrDivider text="or" />
+
+          <GoogleButton
+            onPress={handleGoogleLogin}
+            loading={googleLoading}
+            disabled={isSubmitting || googleLoading}
+          />
         </View>
 
         {/* ── Footer: Centered Sign Up Link ── */}
         <View style={styles.footerContainer}>
           <Text style={styles.footerPrompt}>Don't have an account? </Text>
           <Pressable
-            onPress={() => router.push("/pages/select-email" as any)}
+            onPress={() => router.push("/pages/register" as any)}
             hitSlop={8}
           >
             <Text style={styles.footerLink}>Sign up</Text>
