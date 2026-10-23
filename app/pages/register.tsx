@@ -50,7 +50,7 @@ import {
   clearMobileRegisterCache,
 } from "@/lib/registerCache";
 import { updateMyProfile, checkUsernameAvailable } from "@/lib/api/profiles";
-import { getPresetAvatars, PresetAvatarRow } from "@/lib/api/media";
+import { getPresetAvatars, PresetAvatarRow, uploadStudentIdFile } from "@/lib/api/media";
 import { UserAvatar } from "@/components/UserAvatar";
 import { Button } from "@/components/Button";
 import { KeyboardHugView } from "@/components/KeyboardHugView";
@@ -315,12 +315,10 @@ export default function RegisterScreen() {
 
   // Restore cached verification process and form data on mount
   useEffect(() => {
-    if (params.startStep) return;
-
     getMobileRegisterCache().then(async (cached) => {
       if (!cached) return;
 
-      if (cached.showOtpView && cached.registeredUserId) {
+      if (cached.showOtpView && cached.registeredUserId && !params.startStep) {
         try {
           const status = await authApi.getOtpStatus(cached.registeredUserId);
           if (status.verified) {
@@ -338,8 +336,26 @@ export default function RegisterScreen() {
         } catch {}
       } else {
         if (cached.emailType && !params.emailType) setEmailType(cached.emailType);
-        if (cached.step && cached.step >= 1 && !params.startStep) setStep(cached.step);
-        if (cached.form) setForm((prev) => ({ ...prev, ...cached.form }));
+        if (params.startStep) {
+          const s = Number(params.startStep);
+          if (s >= 2 && s <= 4) setStep(s);
+        } else if (cached.step && cached.step >= 1) {
+          setStep(cached.step);
+        }
+        if (cached.form) {
+          setForm((prev) => ({
+            ...prev,
+            username: prev.username || cached.form?.username || "",
+            email: prev.email || cached.form?.email || "",
+            department: prev.department || cached.form?.department || "",
+            course: prev.course || cached.form?.course || "",
+            yearLevel: prev.yearLevel || cached.form?.yearLevel || "",
+            bio: prev.bio || cached.form?.bio || "",
+            avatar: prev.avatar && prev.avatar !== "😊" ? prev.avatar : (cached.form?.avatar || "😊"),
+            interests: prev.interests.length > 0 ? prev.interests : (cached.form?.interests || []),
+            organizations: prev.organizations.length > 0 ? prev.organizations : (cached.form?.organizations || []),
+          }));
+        }
         if (cached.studentIdFrontUri && !params.studentIdFrontUri) setStudentIdUri(cached.studentIdFrontUri);
         if (cached.studentIdBackUri && !params.studentIdBackUri) setStudentIdBackUri(cached.studentIdBackUri);
         if (cached.avatarTab) setAvatarTab(cached.avatarTab);
@@ -347,6 +363,31 @@ export default function RegisterScreen() {
       }
     }).catch(() => {});
   }, []);
+
+  // If user is already authenticated (e.g. Google OAuth) and onboarding is incomplete, ensure step is at least 2 and sync cached ID
+  useEffect(() => {
+    if (user) {
+      setStep((prev) => (prev === 1 ? 2 : prev));
+      setAcademicSubStep("username");
+
+      if (!user.user_metadata?.student_id_url) {
+        getMobileRegisterCache().then((cached) => {
+          const front = studentIdUri || cached?.studentIdFrontUri;
+          const back = studentIdBackUri || cached?.studentIdBackUri;
+          if (front) {
+            uploadStudentIdFile(user.id, front, "front").catch((e) =>
+              console.warn("[register.tsx] Auto-upload cached front ID error:", e)
+            );
+          }
+          if (back) {
+            uploadStudentIdFile(user.id, back, "back").catch((e) =>
+              console.warn("[register.tsx] Auto-upload cached back ID error:", e)
+            );
+          }
+        });
+      }
+    }
+  }, [user]);
 
   // Persist form & verification state to cache
   useEffect(() => {
@@ -562,6 +603,11 @@ export default function RegisterScreen() {
       const needsOnboarding = !session.user?.user_metadata?.onboarding_complete;
       const hasStudentId = Boolean(session.user?.user_metadata?.student_id_url);
 
+      const cached = await getMobileRegisterCache();
+      const effectiveFront = studentIdUri || cached?.studentIdFrontUri || null;
+      const effectiveBack = studentIdBackUri || cached?.studentIdBackUri || null;
+      const hasCachedId = Boolean(effectiveFront);
+
       if (isChmsu) {
         if (needsOnboarding) {
           setStep(2);
@@ -570,7 +616,32 @@ export default function RegisterScreen() {
           router.replace("/(tabs)");
         }
       } else {
-        if (!hasStudentId) {
+        if (hasCachedId && session.user?.id) {
+          if (!hasStudentId && effectiveFront) {
+            uploadStudentIdFile(session.user.id, effectiveFront, "front").catch((e) =>
+              console.warn("[register.tsx] Auto-upload front ID warning:", e)
+            );
+          }
+          if (effectiveBack) {
+            uploadStudentIdFile(session.user.id, effectiveBack, "back").catch((e) =>
+              console.warn("[register.tsx] Auto-upload back ID warning:", e)
+            );
+          }
+          await saveMobileRegisterCache({
+            step: 2,
+            studentIdFrontUri: effectiveFront,
+            studentIdBackUri: effectiveBack,
+          });
+
+          if (needsOnboarding) {
+            setStep(2);
+            setAcademicSubStep("username");
+          } else if (!session.user?.user_metadata?.is_approved) {
+            router.replace("/pages/pending-approval" as any);
+          } else {
+            router.replace("/(tabs)");
+          }
+        } else if (!hasStudentId) {
           router.replace({
             pathname: "/pages/id-upload" as any,
             params: { emailType: "external" },
