@@ -348,14 +348,19 @@ export function useMatchmaking(): UseMatchmakingResult {
       const res = await apiAcceptMatch(pendingMatch.id, accessToken);
       const matchData: any = (res as any)?.match || res;
       if (matchData && matchData.status === "chatting" && matchData.conversation_id) {
+        if (consumedMatchesRef.current.has(matchData.conversation_id)) {
+          return;
+        }
+        consumedMatchesRef.current.add(matchData.conversation_id);
         roomReadyRef.current = matchData.conversation_id;
+        pendingMatchIdRef.current = null;
         clearCountdown();
         setWaitingForPartner(false);
         setPhase("accepted");
         setRoomReady({
           matchId: matchData.id,
           conversationId: matchData.conversation_id,
-          identity: matchData.identity || identity || undefined,
+          identity: matchData.identity || identityRef.current || undefined,
         });
         return;
       }
@@ -366,12 +371,13 @@ export function useMatchmaking(): UseMatchmakingResult {
     } finally {
       setLoading(false);
     }
-  }, [accessToken, pendingMatch, identity, clearCountdown]);
+  }, [accessToken, pendingMatch, clearCountdown]);
 
   const decline = useCallback(async () => {
     if (!accessToken || !pendingMatch) return;
     setLoading(true);
     clearCountdown();
+    pendingMatchIdRef.current = null;
     try {
       await apiDeclineMatch(pendingMatch.id, accessToken);
       setPendingMatch(null);
@@ -408,6 +414,7 @@ export function useMatchmaking(): UseMatchmakingResult {
     setWaitingForPartner(false);
     setPendingMatch(null);
     setRoomReady(null);
+    pendingMatchIdRef.current = null;
     roomReadyRef.current = null;
   }, [clearCountdown]);
 

@@ -197,8 +197,12 @@ const SwipeableRow = React.memo(function SwipeableRow({
       layout={LinearTransition.springify().damping(22).stiffness(180)}
       style={[
         {
-          zIndex: isMovingUp ? 1 : 10,
-          elevation: isMovingUp ? 1 : 3,
+          zIndex: isMovingUp ? 1 : 0,
+          elevation: 0,
+          shadowColor: "transparent",
+          shadowOffset: { width: 0, height: 0 },
+          shadowOpacity: 0,
+          shadowRadius: 0,
           backgroundColor: "#FFFFFF",
         },
         animatedStyle,
@@ -875,7 +879,7 @@ export default function MessagesScreen() {
 
   return (
     <View className="flex-1 bg-surface">
-      <ScreenHeader title="Messages" hideAccent />
+      <ScreenHeader title="Messages" hideAccent hideDivider />
 
       {/* Delete Confirmation Modal */}
       <Modal

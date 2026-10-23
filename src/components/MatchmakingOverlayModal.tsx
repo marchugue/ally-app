@@ -19,7 +19,7 @@ import {
 } from "lucide-react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { useMatchmaking, UseMatchmakingResult } from "@/hooks/useMatchmaking";
+import { type UseMatchmakingResult } from "@/hooks/useMatchmaking";
 import { AnonymousAvatar } from "@/components/AnonymousAvatar";
 import { ANIMAL_KEYS } from "@/constants/matchOptions";
 
@@ -329,18 +329,18 @@ interface MatchmakingOverlayModalProps {
   visible: boolean;
   onClose: () => void;
   onMatchAccepted?: (alias: string) => void;
-  matchmaking?: UseMatchmakingResult;
+  matchmaking: UseMatchmakingResult;
 }
 
 export function MatchmakingOverlayModal({
   visible,
   onClose,
   onMatchAccepted,
-  matchmaking: externalMM,
+  matchmaking: mm,
 }: MatchmakingOverlayModalProps) {
   const insets = useSafeAreaInsets();
-  const internalMM = useMatchmaking();
-  const mm = externalMM || internalMM;
+
+  if (!visible) return null;
 
   // Visual stage choreography (Litmatch style matching web):
   // 'searching' → 3-slot horizontal carousel cycling Left -> Center -> Right!

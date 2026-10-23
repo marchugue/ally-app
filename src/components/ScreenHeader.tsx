@@ -8,9 +8,10 @@ interface ScreenHeaderProps {
   subtitle?: string;
   right?: React.ReactNode;
   hideAccent?: boolean;
+  hideDivider?: boolean;
 }
 
-export function ScreenHeader({ right }: ScreenHeaderProps) {
+export function ScreenHeader({ right, hideDivider = false }: ScreenHeaderProps) {
   const { insets, isSmallScreen, scaleClamped } = useResponsive();
 
   const topPadding = Math.max(insets.top + 8, 16);
@@ -24,8 +25,8 @@ export function ScreenHeader({ right }: ScreenHeaderProps) {
         paddingBottom: 12,
         paddingHorizontal: horizontalPadding,
         backgroundColor: "#FFFFFF",
-        borderBottomWidth: 1,
-        borderBottomColor: "#F0EDE8",
+        borderBottomWidth: hideDivider ? 0 : 1,
+        borderBottomColor: hideDivider ? "transparent" : "#F0EDE8",
         flexDirection: "row",
         alignItems: "center",
         justifyContent: "space-between",
