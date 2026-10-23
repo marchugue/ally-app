@@ -12,7 +12,7 @@ import {
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { avatarColorFor, getAvatarEmoji } from "@/constants/matchOptions";
-import { CrittersAvatar } from "@/components/CrittersAvatar";
+import { AnonymousAvatar } from "@/components/AnonymousAvatar";
 import { revealSeenKey } from "@/lib/avatarReveal";
 
 export interface AvatarRevealCeremonyProps {
@@ -45,8 +45,10 @@ export function AvatarRevealCeremony({
 
   const cardScaleAnim = useRef(new Animated.Value(0.85)).current;
   const cardOpacityAnim = useRef(new Animated.Value(0)).current;
-  const maskSplitAnim = useRef(new Animated.Value(0)).current;
-  const photoBlurAnim = useRef(new Animated.Value(1)).current;
+  const anonOpacityAnim = useRef(new Animated.Value(1)).current;
+  const anonScaleAnim = useRef(new Animated.Value(1)).current;
+  const photoOpacityAnim = useRef(new Animated.Value(0)).current;
+  const photoScaleAnim = useRef(new Animated.Value(0.92)).current;
   const badgeSpringAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -78,22 +80,34 @@ export function AvatarRevealCeremony({
         }),
       ]).start();
 
-      // Mask crack / peel away
+      // Anonymous avatar smoothly dissolves away while real photo emerges
       setTimeout(() => {
-        Animated.timing(maskSplitAnim, {
-          toValue: 1,
-          duration: 800,
-          useNativeDriver: true,
-        }).start();
+        Animated.parallel([
+          Animated.timing(anonOpacityAnim, {
+            toValue: 0,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+          Animated.timing(anonScaleAnim, {
+            toValue: 1.08,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+          Animated.timing(photoOpacityAnim, {
+            toValue: 1,
+            duration: 800,
+            useNativeDriver: true,
+          }),
+          Animated.spring(photoScaleAnim, {
+            toValue: 1,
+            friction: 7,
+            tension: 40,
+            useNativeDriver: true,
+          }),
+        ]).start();
+      }, 550);
 
-        Animated.timing(photoBlurAnim, {
-          toValue: 0,
-          duration: 900,
-          useNativeDriver: true,
-        }).start();
-      }, 500);
-
-      // Keepsake badge pops in
+      // Keepsake badge pops in with AnonymousAvatar
       setTimeout(() => {
         Animated.spring(badgeSpringAnim, {
           toValue: 1,
@@ -107,7 +121,7 @@ export function AvatarRevealCeremony({
     return () => {
       isMounted = false;
     };
-  }, [matchId, isRevealed, cardOpacityAnim, cardScaleAnim, maskSplitAnim, photoBlurAnim, badgeSpringAnim]);
+  }, [matchId, isRevealed, cardOpacityAnim, cardScaleAnim, anonOpacityAnim, anonScaleAnim, photoOpacityAnim, photoScaleAnim, badgeSpringAnim]);
 
   const handleDismiss = async () => {
     if (matchId) {
@@ -151,11 +165,16 @@ export function AvatarRevealCeremony({
 
           {/* Hero Avatar Reveal Stage */}
           <View style={styles.avatarStage}>
-            {/* Real photo */}
-            <View
+            {/* Real photo (revealed underneath) */}
+            <Animated.View
               style={[
                 styles.photoCircle,
-                { borderColor: accent, backgroundColor: `${accent}30` },
+                {
+                  borderColor: accent,
+                  backgroundColor: `${accent}30`,
+                  opacity: photoOpacityAnim,
+                  transform: [{ scale: photoScaleAnim }],
+                },
               ]}
             >
               {avatarUrl ? (
@@ -180,72 +199,27 @@ export function AvatarRevealCeremony({
                   </Text>
                 </View>
               )}
-            </View>
+            </Animated.View>
 
-            {/* Cracking Animal Mask (Splits outward) */}
+            {/* Anonymous Avatar (Smoothly reveals to real photo, replacing animal crack) */}
             <Animated.View
               pointerEvents="none"
               style={[
-                styles.maskHalfLeft,
+                styles.anonAvatarLayer,
                 {
-                  opacity: maskSplitAnim.interpolate({
-                    inputRange: [0, 0.9, 1],
-                    outputRange: [1, 0.2, 0],
-                  }),
-                  transform: [
-                    {
-                      translateX: maskSplitAnim.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [0, -80],
-                      }),
-                    },
-                    {
-                      rotate: maskSplitAnim.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: ["0deg", "-25deg"],
-                      }),
-                    },
-                  ],
+                  opacity: anonOpacityAnim,
+                  transform: [{ scale: anonScaleAnim }],
                 },
               ]}
             >
-              <View style={[styles.maskContent, { backgroundColor: accent }]}>
-                <CrittersAvatar avatarKey={avatarKey} size={110} customBg={accent} />
-              </View>
+              <AnonymousAvatar
+                avatarKey={avatarKey}
+                size={136}
+                borderWidth={3.5}
+              />
             </Animated.View>
 
-            <Animated.View
-              pointerEvents="none"
-              style={[
-                styles.maskHalfRight,
-                {
-                  opacity: maskSplitAnim.interpolate({
-                    inputRange: [0, 0.9, 1],
-                    outputRange: [1, 0.2, 0],
-                  }),
-                  transform: [
-                    {
-                      translateX: maskSplitAnim.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: [0, 80],
-                      }),
-                    },
-                    {
-                      rotate: maskSplitAnim.interpolate({
-                        inputRange: [0, 1],
-                        outputRange: ["0deg", "25deg"],
-                      }),
-                    },
-                  ],
-                },
-              ]}
-            >
-              <View style={[styles.maskContent, { backgroundColor: accent }]}>
-                <CrittersAvatar avatarKey={avatarKey} size={110} customBg={accent} />
-              </View>
-            </Animated.View>
-
-            {/* Keepsake corner badge */}
+            {/* Keepsake corner badge (Uses AnonymousAvatar instead of animal) */}
             <Animated.View
               style={[
                 styles.keepsakeBadge,
@@ -254,7 +228,7 @@ export function AvatarRevealCeremony({
                 },
               ]}
             >
-              <CrittersAvatar avatarKey={avatarKey} size={28} customBg={accent} />
+              <AnonymousAvatar avatarKey={avatarKey} size={36} borderWidth={0} />
             </Animated.View>
           </View>
 
@@ -349,30 +323,13 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     color: "#FFFFFF",
   },
-  maskHalfLeft: {
+  anonAvatarLayer: {
     position: "absolute",
-    width: 136,
-    height: 136,
-    borderRadius: 68,
-    overflow: "hidden",
-  },
-  maskHalfRight: {
-    position: "absolute",
-    width: 136,
-    height: 136,
-    borderRadius: 68,
-    overflow: "hidden",
-  },
-  maskContent: {
     width: 136,
     height: 136,
     borderRadius: 68,
     alignItems: "center",
     justifyContent: "center",
-  },
-  maskImage: {
-    width: 90,
-    height: 90,
   },
   keepsakeBadge: {
     position: "absolute",
