@@ -260,14 +260,30 @@ export default function DiscoverScreen() {
   // Auto-navigate to conversation room ONLY when a match is freshly connected
   useEffect(() => {
     if (matchmaking.roomReady?.conversationId) {
-      const conversationId = matchmaking.roomReady.conversationId;
+      const room = matchmaking.roomReady;
+      const conversationId = room.conversationId;
+      const partnerAlias = room.identity?.partnerAlias || "Campus Ally";
+      const partnerAvatar = room.identity?.partnerAvatar || "fox";
+
       matchmaking.clearRoomReady();
+      matchmaking.resetPhase();
       setShowMatchOverlay(false);
       setToast({ message: "✨ Match Connected! Chatting with your anonymous ally.", type: "success" });
-      router.push({
-        pathname: "/pages/conversation" as any,
-        params: { conversationId, id: conversationId },
-      });
+
+      const navTimer = setTimeout(() => {
+        router.push({
+          pathname: "/pages/conversation" as any,
+          params: {
+            conversationId,
+            id: conversationId,
+            prefillName: partnerAlias,
+            prefillAvatar: partnerAvatar,
+            isAnonymous: "true",
+          },
+        });
+      }, 120);
+
+      return () => clearTimeout(navTimer);
     }
   }, [matchmaking.roomReady]);
 

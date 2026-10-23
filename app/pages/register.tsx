@@ -14,6 +14,7 @@ import {
   ActivityIndicator,
   BackHandler,
   StyleSheet,
+  Alert,
 } from "react-native";
 import { router, useLocalSearchParams } from "expo-router";
 import {
@@ -29,7 +30,9 @@ import {
   FileCheck,
   AlertCircle,
   Search,
+  Camera,
 } from "lucide-react-native";
+import * as ImagePicker from "expo-image-picker";
 import {
   validateUsername,
   validateEmail,
@@ -50,8 +53,9 @@ import {
   clearMobileRegisterCache,
 } from "@/lib/registerCache";
 import { updateMyProfile, checkUsernameAvailable } from "@/lib/api/profiles";
-import { getPresetAvatars, PresetAvatarRow, uploadStudentIdFile } from "@/lib/api/media";
-import { UserAvatar } from "@/components/UserAvatar";
+import { uploadStudentIdFile, uploadUserAvatar } from "@/lib/api/media";
+import { AnonymousAvatar } from "@/components/AnonymousAvatar";
+import { ANIMAL_KEYS } from "@/constants/matchOptions";
 import { Button } from "@/components/Button";
 import { KeyboardHugView } from "@/components/KeyboardHugView";
 import { useKeyboard } from "@/hooks/useKeyboard";
@@ -64,41 +68,28 @@ import GoogleButton, { OrDivider } from "@/components/GoogleButton";
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const GREEN = "#1A6B3C";
 
-// ── Lookup Data ──────────────────────────────────────────────────────────────
+// ── Lookup Data Matching Web ──────────────────────────────────────────────────
 
-const AVATAR_OPTIONS = [
-  "😊", "😎", "🤓", "🤔", "😴", "🥳", "👽", "👻",
-  "🤖", "👾", "🦊", "🐱", "🐶", "🐼", "🐸", "🦉",
-  "🦄", "🦖", "🐙", "🐡",
+const DEPARTMENTS = [
+  "College of Computer Studies",
+  "College of Education",
+  "College of Industrial Technology",
+  "College of Engineering",
 ];
 
-const DEPARTMENTS: Record<string, string[]> = {
-  "College of Engineering": [
-    "BS Civil Engineering",
-    "BS Electrical Engineering",
-    "BS Mechanical Engineering",
+const COURSES_BY_DEPT: Record<string, string[]> = {
+  "College of Computer Studies": ["Information Technology", "Information System"],
+  "College of Education": ["Technical Vocational Teacher Education"],
+  "College of Industrial Technology": [
+    "Automotive",
+    "Architectural Drafting",
+    "Computer Technology",
+    "Culinary",
+    "Electrical",
+    "Electronics",
+    "Mechanical Technology",
   ],
-  "College of Arts and Sciences": [
-    "BS Biology",
-    "BS Mathematics",
-    "AB English",
-    "AB Communication",
-  ],
-  "College of Business and Management": [
-    "BS Accountancy",
-    "BS Business Administration",
-    "BS Entrepreneurship",
-  ],
-  "College of Education": [
-    "Bachelor of Elementary Education",
-    "Bachelor of Secondary Education",
-  ],
-  "College of Nursing": ["BS Nursing"],
-  "College of Computer Studies": [
-    "BS Computer Science",
-    "BS Information Technology",
-    "BS Information Systems",
-  ],
+  "College of Engineering": ["Computer Engineering", "Electronics Engineering"],
 };
 
 const YEAR_LEVELS = ["1st Year", "2nd Year", "3rd Year", "4th Year"];
@@ -112,16 +103,34 @@ const INTERESTS_BY_CATEGORY: Record<string, string[]> = {
 };
 
 const ORGANIZATIONS = [
-  "Supreme Student Government",
-  "Computer Science Society",
-  "Engineering Society",
-  "Nursing Students Association",
-  "Business Management Society",
-  "Red Cross Youth",
-  "ROTC",
-  "University Chorale",
-  "Dance Troupe",
-  "Environmental Club",
+  "Artisan's Society",
+  "Adventist Ministry College and University Students' Excelsior",
+  "Automotive Technology Society",
+  "CHMSU-A Kabanda",
+  "CHMSU-Alijis Performing Arts",
+  "Circle of Peer Facilitators",
+  "Computer Technology Society",
+  "CHMSU Alijis Vocals",
+  "CHMSU Python Esports Club",
+  "CHMSU University Student Government",
+  "CHMSUans Red Cross Youth Council",
+  "D' Culinarianz",
+  "D' Machinist",
+  "Electronics and Communication Technology Society",
+  "Future Technical Educators' Society",
+  "Information Systems Society",
+  "Information Technology Society",
+  "Institute of Computer Engineers of the Philippines, Student Edition CHMSU Alijis",
+  "Institute of Electronics Engineers of the Philippines-Negros Occidental Student Chapter CHMSU-Alijis",
+  "Integrated Institute of Electrical Student Society",
+  "Junior Safety Officer of Negros Occidental",
+  "New Life Apostolic Campus Ministries",
+  "Research Enthusiasts CHMSU-Alijis",
+  "Philippine Institute of Cyber Security Professionals' Junior - CHMSU-A",
+  "United Seniors Organization",
+  "Unsullied Frisbee Club",
+  "The Technopacer",
+  "Youth Movers' Movement",
 ];
 
 const TERMS_TEXT = `Welcome to Ally-jis!
@@ -227,9 +236,8 @@ export default function RegisterScreen() {
   const passwordInputRef = useRef<TextInput>(null);
   const confirmPasswordInputRef = useRef<TextInput>(null);
 
-  const [presetAvatars, setPresetAvatars] = useState<PresetAvatarRow[]>([]);
-  const [isLoadingPresets, setIsLoadingPresets] = useState(false);
   const [avatarTab, setAvatarTab] = useState<"presets" | "emojis">("presets");
+  const [customAvatarUri, setCustomAvatarUri] = useState<string | null>(null);
 
   const [form, setForm] = useState<FormData>({
     username: "",
@@ -241,9 +249,36 @@ export default function RegisterScreen() {
     yearLevel: "",
     organizations: [],
     interests: [],
-    avatar: "😊",
+    avatar: "fox",
     bio: "",
   });
+
+  const pickCustomPhoto = async () => {
+    try {
+      const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+      if (status !== "granted") {
+        Alert.alert(
+          "Permission Required",
+          "Please allow access to your photo library to choose a profile picture."
+        );
+        return;
+      }
+      const result = await ImagePicker.launchImageLibraryAsync({
+        mediaTypes: ["images"],
+        allowsEditing: true,
+        aspect: [1, 1],
+        quality: 0.85,
+      });
+
+      if (!result.canceled && result.assets && result.assets.length > 0) {
+        const uri = result.assets[0].uri;
+        setCustomAvatarUri(uri);
+        setForm((prev) => ({ ...prev, avatar: uri }));
+      }
+    } catch (err) {
+      console.warn("[pickCustomPhoto] Error:", err);
+    }
+  };
 
   const [registeredUserId, setRegisteredUserId] = useState<string | null>(null);
   const pendingUserIdRef = useRef<string | null>(null);
@@ -306,7 +341,7 @@ export default function RegisterScreen() {
         course: prev.course || (meta.course as string) || "",
         yearLevel: prev.yearLevel || (meta.year_level as string) || "",
         bio: prev.bio || (meta.bio as string) || "",
-        avatar: prev.avatar && prev.avatar !== "😊" ? prev.avatar : ((meta.avatar_url as string) || prev.avatar || "😊"),
+        avatar: prev.avatar && prev.avatar !== "😊" && prev.avatar !== "fox" ? prev.avatar : ((meta.avatar_url as string) || prev.avatar || "fox"),
         interests: prev.interests.length > 0 ? prev.interests : (Array.isArray(meta.interests) ? (meta.interests as string[]) : []),
         organizations: prev.organizations.length > 0 ? prev.organizations : (Array.isArray(meta.organizations) ? (meta.organizations as string[]) : []),
       }));
@@ -351,7 +386,7 @@ export default function RegisterScreen() {
             course: prev.course || cached.form?.course || "",
             yearLevel: prev.yearLevel || cached.form?.yearLevel || "",
             bio: prev.bio || cached.form?.bio || "",
-            avatar: prev.avatar && prev.avatar !== "😊" ? prev.avatar : (cached.form?.avatar || "😊"),
+            avatar: prev.avatar && prev.avatar !== "😊" && prev.avatar !== "fox" ? prev.avatar : (cached.form?.avatar || "fox"),
             interests: prev.interests.length > 0 ? prev.interests : (cached.form?.interests || []),
             organizations: prev.organizations.length > 0 ? prev.organizations : (cached.form?.organizations || []),
           }));
@@ -415,31 +450,6 @@ export default function RegisterScreen() {
     agreedToTerms,
     isDone,
   ]);
-
-  // Load preset avatars
-  useEffect(() => {
-    let isMounted = true;
-    setIsLoadingPresets(true);
-    getPresetAvatars()
-      .then((res) => {
-        if (isMounted) {
-          if (res?.avatars && res.avatars.length > 0) {
-            setPresetAvatars(res.avatars);
-          } else {
-            setAvatarTab("emojis");
-          }
-        }
-      })
-      .catch((err) => {
-        if (isMounted) setAvatarTab("emojis");
-      })
-      .finally(() => {
-        if (isMounted) setIsLoadingPresets(false);
-      });
-    return () => {
-      isMounted = false;
-    };
-  }, []);
 
   // Unified Back Navigation mirroring web sub-step history
   const handleBack = () => {
@@ -540,7 +550,7 @@ export default function RegisterScreen() {
 
   const set = (key: keyof FormData, val: any) => setForm(prev => ({ ...prev, [key]: val }));
 
-  const availableCourses = form.department ? DEPARTMENTS[form.department] || [] : [];
+  const availableCourses = form.department ? COURSES_BY_DEPT[form.department] || [] : [];
 
   // Matching campus organizations suggestions
   const matchingOrgs = useMemo(() => {
@@ -853,11 +863,32 @@ export default function RegisterScreen() {
           ""
         ).toLowerCase();
 
+        let finalAvatarUrl = form.avatar || "fox";
+
+        // Upload custom photo if selected
+        if (customAvatarUri) {
+          try {
+            const uploadRes = await uploadUserAvatar(
+              {
+                uri: customAvatarUri,
+                name: `avatar_${Date.now()}.jpg`,
+                type: "image/jpeg",
+              },
+              accessToken
+            );
+            if (uploadRes?.url) {
+              finalAvatarUrl = uploadRes.url;
+            }
+          } catch (uploadErr) {
+            console.warn("[handleSubmit] Custom avatar upload failed:", uploadErr);
+          }
+        }
+
         await updateMyProfile(
           {
             username: finalUsername,
             bio: form.bio,
-            avatar_url: form.avatar,
+            avatar_url: finalAvatarUrl,
             department: form.department,
             course: form.course,
             year_level: form.yearLevel,
@@ -871,7 +902,7 @@ export default function RegisterScreen() {
           onboarding_complete: true,
           username: finalUsername,
           bio: form.bio,
-          avatar_url: form.avatar,
+          avatar_url: finalAvatarUrl,
           department: form.department,
           course: form.course,
           year_level: form.yearLevel,
@@ -935,8 +966,8 @@ export default function RegisterScreen() {
       };
     }
     return {
-      title: "Profile & Bio",
-      subtitle: "Personalize your avatar and write a short intro for your peers.",
+      title: "Your Profile",
+      subtitle: "Review how fellow CHMSU students will see you",
     };
   };
 
@@ -1231,27 +1262,29 @@ export default function RegisterScreen() {
               {/* Options in the Center */}
               <View style={styles.centeredArea}>
                 <ScrollView
+                  style={{ width: "100%" }}
                   showsVerticalScrollIndicator={false}
                   contentContainerStyle={styles.centeredScrollContent}
                 >
-                  {Object.keys(DEPARTMENTS).map((dept) => {
-                    const isSelected = form.department === dept;
-                    return (
-                      <Pressable
-                        key={dept}
-                        onPress={() => {
-                          setForm((prev) => ({ ...prev, department: dept, course: "" }));
-                          setErrors((prev) => ({ ...prev, department: undefined }));
-                        }}
-                        style={[styles.optionCard, isSelected && styles.optionCardSelected]}
-                      >
-                        <Text style={[styles.optionCardText, isSelected && styles.optionCardTextSelected]}>
-                          {dept}
-                        </Text>
-                        {isSelected && <Check size={18} color="#1A6B3C" />}
-                      </Pressable>
-                    );
-                  })}
+                  <View style={styles.optionsWrap}>
+                    {DEPARTMENTS.map((dept) => {
+                      const isSelected = form.department === dept;
+                      return (
+                        <Pressable
+                          key={dept}
+                          onPress={() => {
+                            setForm((prev) => ({ ...prev, department: dept, course: "" }));
+                            setErrors((prev) => ({ ...prev, department: undefined, course: undefined }));
+                          }}
+                          style={[styles.pillOptionCard, isSelected && styles.pillOptionCardSelected]}
+                        >
+                          <Text style={[styles.pillOptionText, isSelected && styles.pillOptionTextSelected]}>
+                            {dept}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
+                  </View>
                 </ScrollView>
               </View>
 
@@ -1284,27 +1317,37 @@ export default function RegisterScreen() {
               {/* Options in the Center */}
               <View style={styles.centeredArea}>
                 <ScrollView
+                  style={{ width: "100%" }}
                   showsVerticalScrollIndicator={false}
                   contentContainerStyle={styles.centeredScrollContent}
                 >
-                  {availableCourses.map((crs) => {
-                    const isSelected = form.course === crs;
-                    return (
-                      <Pressable
-                        key={crs}
-                        onPress={() => {
-                          setForm((prev) => ({ ...prev, course: crs }));
-                          setErrors((prev) => ({ ...prev, course: undefined }));
-                        }}
-                        style={[styles.optionCard, isSelected && styles.optionCardSelected]}
-                      >
-                        <Text style={[styles.optionCardText, isSelected && styles.optionCardTextSelected]}>
-                          {crs}
+                  <View style={styles.optionsWrap}>
+                    {availableCourses.length === 0 ? (
+                      <View style={styles.emptyCourseBox}>
+                        <Text style={styles.emptyCourseText}>
+                          No degree programs listed. Please go back and select your department.
                         </Text>
-                        {isSelected && <Check size={18} color="#1A6B3C" />}
-                      </Pressable>
-                    );
-                  })}
+                      </View>
+                    ) : (
+                      availableCourses.map((crs) => {
+                        const isSelected = form.course === crs;
+                        return (
+                          <Pressable
+                            key={crs}
+                            onPress={() => {
+                              setForm((prev) => ({ ...prev, course: crs }));
+                              setErrors((prev) => ({ ...prev, course: undefined }));
+                            }}
+                            style={[styles.pillOptionCard, isSelected && styles.pillOptionCardSelected]}
+                          >
+                            <Text style={[styles.pillOptionText, isSelected && styles.pillOptionTextSelected]}>
+                              {crs}
+                            </Text>
+                          </Pressable>
+                        );
+                      })
+                    )}
+                  </View>
                 </ScrollView>
               </View>
 
@@ -1336,40 +1379,44 @@ export default function RegisterScreen() {
 
               {/* Options in the Center */}
               <View style={styles.centeredArea}>
-                <View style={{ gap: 10, width: "100%", maxWidth: 440 }}>
-                  {YEAR_LEVELS.map((yr) => {
-                    const isSelected = !isCustomYear && form.yearLevel === yr;
-                    return (
-                      <Pressable
-                        key={yr}
-                        onPress={() => {
-                          setIsCustomYear(false);
-                          setForm((prev) => ({ ...prev, yearLevel: yr }));
-                          setErrors((prev) => ({ ...prev, yearLevel: undefined }));
-                        }}
-                        style={[styles.optionCard, isSelected && styles.optionCardSelected]}
-                      >
-                        <Text style={[styles.optionCardText, isSelected && styles.optionCardTextSelected]}>
-                          {yr}
-                        </Text>
-                        {isSelected && <Check size={18} color="#1A6B3C" />}
-                      </Pressable>
-                    );
-                  })}
+                <ScrollView
+                  style={{ width: "100%" }}
+                  showsVerticalScrollIndicator={false}
+                  contentContainerStyle={styles.centeredScrollContent}
+                >
+                  <View style={styles.optionsWrap}>
+                    {YEAR_LEVELS.map((yr) => {
+                      const isSelected = !isCustomYear && form.yearLevel === yr;
+                      return (
+                        <Pressable
+                          key={yr}
+                          onPress={() => {
+                            setIsCustomYear(false);
+                            setForm((prev) => ({ ...prev, yearLevel: yr }));
+                            setErrors((prev) => ({ ...prev, yearLevel: undefined }));
+                          }}
+                          style={[styles.pillOptionCard, isSelected && styles.pillOptionCardSelected]}
+                        >
+                          <Text style={[styles.pillOptionText, isSelected && styles.pillOptionTextSelected]}>
+                            {yr}
+                          </Text>
+                        </Pressable>
+                      );
+                    })}
 
-                  <Pressable
-                    onPress={() => {
-                      setIsCustomYear(true);
-                      setForm((prev) => ({ ...prev, yearLevel: customYearInput || "" }));
-                    }}
-                    style={[styles.optionCard, isCustomYear && styles.optionCardSelected]}
-                  >
-                    <Text style={[styles.optionCardText, isCustomYear && styles.optionCardTextSelected]}>
-                      Others
-                    </Text>
-                    {isCustomYear && <Check size={18} color="#1A6B3C" />}
-                  </Pressable>
-                </View>
+                    <Pressable
+                      onPress={() => {
+                        setIsCustomYear(true);
+                        setForm((prev) => ({ ...prev, yearLevel: customYearInput || "" }));
+                      }}
+                      style={[styles.pillOptionCard, isCustomYear && styles.pillOptionCardSelected]}
+                    >
+                      <Text style={[styles.pillOptionText, isCustomYear && styles.pillOptionTextSelected]}>
+                        Others
+                      </Text>
+                    </Pressable>
+                  </View>
+                </ScrollView>
               </View>
 
               {/* Input for Others sticking to Continue Button on the Bottom */}
@@ -1677,7 +1724,7 @@ export default function RegisterScreen() {
           )}
 
           {/* ═════════════════════════════════════════════════════════════════
-                STEP 4: PROFILE & BIO (Button always sticks to bottom on keyboard)
+                STEP 4: PROFILE & COMPLETE REGISTRATION (Mirrors Web)
              ═════════════════════════════════════════════════════════════════ */}
           {step === 4 && (
             <View style={styles.stepContainer}>
@@ -1691,162 +1738,157 @@ export default function RegisterScreen() {
                 ) : null}
               </View>
 
-              {/* Middle Scrollable Section: Avatar, Preview, Terms */}
+              {/* Scrollable Content: Avatar on Top, DiceBear Critters, Upload Label, Bio, Terms */}
               <ScrollView
                 showsVerticalScrollIndicator={false}
-                style={{ flex: 1 }}
-                contentContainerStyle={{ paddingHorizontal: 4, paddingBottom: 16 }}
+                style={{ flex: 1, width: "100%" }}
+                contentContainerStyle={{ paddingHorizontal: 4, paddingBottom: 16, alignItems: "center" }}
                 keyboardShouldPersistTaps="handled"
               >
-                {/* Avatar Selection Tabs */}
-                <View style={styles.avatarTabRow}>
-                  <Text style={labelStyle}>Select Avatar</Text>
-                  <View style={styles.avatarTogglePill}>
-                    <Pressable
-                      onPress={() => setAvatarTab("presets")}
-                      style={[styles.avatarSubTab, avatarTab === "presets" && styles.avatarSubTabActive]}
-                    >
-                      <Text style={[styles.avatarSubTabText, avatarTab === "presets" && styles.avatarSubTabTextActive]}>
-                        Presets
-                      </Text>
-                    </Pressable>
-                    <Pressable
-                      onPress={() => setAvatarTab("emojis")}
-                      style={[styles.avatarSubTab, avatarTab === "emojis" && styles.avatarSubTabActive]}
-                    >
-                      <Text style={[styles.avatarSubTabText, avatarTab === "emojis" && styles.avatarSubTabTextActive]}>
-                        Emojis
-                      </Text>
-                    </Pressable>
+                {/* 1. Top: Avatar Circle */}
+                <View style={styles.profileTopSection}>
+                  <View style={styles.mainAvatarContainer}>
+                    {customAvatarUri ? (
+                      <Image
+                        source={{ uri: customAvatarUri }}
+                        style={styles.mainAvatarImage}
+                        resizeMode="cover"
+                      />
+                    ) : (
+                      <AnonymousAvatar
+                        avatarKey={form.avatar || "fox"}
+                        size={112}
+                        borderWidth={4}
+                      />
+                    )}
                   </View>
+
+                  {/* Username below Avatar */}
+                  <Text style={styles.profileHandleText}>
+                    {form.username ? `@${form.username}` : "@username"}
+                  </Text>
+
+                  {/* Course and Year below Username */}
+                  <Text style={styles.profileCourseText}>
+                    {form.course || "Degree Program"}
+                    {form.yearLevel ? ` · ${form.yearLevel}` : ""}
+                  </Text>
                 </View>
 
-                {avatarTab === "presets" ? (
-                  isLoadingPresets ? (
-                    <View style={styles.avatarLoadingRow}>
-                      <ActivityIndicator size="small" color="#1A6B3C" />
-                      <Text style={{ fontSize: 12, color: "#6B7280" }}>Loading presets...</Text>
-                    </View>
-                  ) : presetAvatars.length === 0 ? (
-                    <View style={styles.emptyAvatarBox}>
-                      <Text style={{ fontSize: 12, color: "#6B7280" }}>No preset avatars found.</Text>
-                      <TouchableOpacity onPress={() => setAvatarTab("emojis")}>
-                        <Text style={{ fontSize: 12, color: "#1A6B3C", fontWeight: "700", marginTop: 4 }}>
-                          Choose an Emoji instead
-                        </Text>
-                      </TouchableOpacity>
-                    </View>
-                  ) : (
-                    <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 18 }}>
-                      <View style={{ flexDirection: "row", gap: 12, paddingVertical: 4 }}>
-                        {presetAvatars.map((preset) => (
-                          <Pressable
-                            key={preset.id}
-                            onPress={() => set("avatar", preset.url)}
-                            style={[
-                              styles.presetAvatarBtn,
-                              form.avatar === preset.url && styles.presetAvatarBtnSelected,
-                            ]}
-                          >
-                            <Image source={{ uri: preset.url }} style={{ width: 56, height: 56 }} resizeMode="cover" />
-                          </Pressable>
-                        ))}
-                      </View>
-                    </ScrollView>
-                  )
-                ) : (
-                  <ScrollView horizontal showsHorizontalScrollIndicator={false} style={{ marginBottom: 18 }}>
-                    <View style={{ flexDirection: "row", gap: 10, paddingVertical: 4 }}>
-                      {AVATAR_OPTIONS.map((opt) => (
+                {/* 2. Choose anonymous avatar (DiceBear critters grid) */}
+                <View style={styles.crittersSection}>
+                  <Text style={styles.crittersSectionLabel}>
+                    Choose anonymous avatar
+                  </Text>
+                  <View style={styles.crittersGrid}>
+                    {ANIMAL_KEYS.map((animal) => {
+                      const isSelected = !customAvatarUri && form.avatar === animal;
+                      return (
                         <Pressable
-                          key={opt}
-                          onPress={() => set("avatar", opt)}
+                          key={animal}
+                          onPress={() => {
+                            setForm((prev) => ({ ...prev, avatar: animal }));
+                            setCustomAvatarUri(null);
+                          }}
                           style={[
-                            styles.emojiAvatarBtn,
-                            form.avatar === opt && styles.emojiAvatarBtnSelected,
+                            styles.critterBtn,
+                            isSelected && styles.critterBtnSelected,
                           ]}
+                          accessibilityLabel={animal}
                         >
-                          <Text style={{ fontSize: 26 }}>{opt}</Text>
+                          <AnonymousAvatar avatarKey={animal} size={46} borderWidth={1.5} />
                         </Pressable>
-                      ))}
-                    </View>
-                  </ScrollView>
-                )}
-
-                {/* Profile Preview Card */}
-                <View style={styles.profilePreviewCard}>
-                  <Text style={styles.profilePreviewLabel}>PROFILE PREVIEW</Text>
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-                    <UserAvatar avatar={form.avatar} size="lg" />
-                    <View style={{ flex: 1 }}>
-                      <Text style={{ fontSize: 15, fontWeight: "700", color: "#111827" }}>
-                        {form.username ? `@${form.username}` : "@your_username"}
-                      </Text>
-                      <Text style={{ fontSize: 12, color: "#6B7280", marginTop: 1 }}>
-                        {form.course || "Your Course"} · {form.yearLevel || "Year"}
-                      </Text>
-                      {form.bio ? (
-                        <Text numberOfLines={2} style={{ fontSize: 12, color: "#6B7280", marginTop: 4 }}>
-                          {form.bio}
-                        </Text>
-                      ) : null}
-                    </View>
+                      );
+                    })}
                   </View>
                 </View>
 
-                {/* Terms and Privacy Agreement */}
-                <View style={[styles.termsBox, termsError ? styles.termsBoxError : null]}>
-                  <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 12 }}>
+                {/* 3. Upload photo simple label */}
+                <View style={styles.uploadPhotoSection}>
+                  <Pressable
+                    onPress={pickCustomPhoto}
+                    style={styles.uploadPhotoBtn}
+                    hitSlop={8}
+                  >
+                    <Camera size={15} color="#1A6B3C" />
+                    <Text style={styles.uploadPhotoText}>Upload photo</Text>
+                  </Pressable>
+                  {customAvatarUri && (
                     <Pressable
                       onPress={() => {
-                        if (!agreedToTerms) setActiveModal("terms");
-                        else {
-                          setAgreedToTerms(false);
-                          setTermsError("");
-                        }
+                        setCustomAvatarUri(null);
+                        setForm((prev) => ({ ...prev, avatar: "fox" }));
                       }}
-                      style={[styles.checkbox, agreedToTerms && styles.checkboxActive]}
+                      hitSlop={8}
+                      style={{ marginTop: 4 }}
                     >
-                      {agreedToTerms && <Check size={11} color="#fff" />}
+                      <Text style={styles.removePhotoText}>Remove custom photo</Text>
                     </Pressable>
-                    <Text style={{ flex: 1, fontSize: 13, color: "#374151", lineHeight: 20 }}>
-                      I agree to the{" "}
-                      <Text onPress={() => setActiveModal("terms")} style={styles.termsLink}>
-                        Terms & Conditions
-                      </Text>{" "}
-                      and{" "}
-                      <Text onPress={() => setActiveModal("privacy")} style={styles.termsLink}>
-                        Privacy Policy
-                      </Text>
-                      .
-                    </Text>
-                  </View>
-                  {termsError ? <Text style={styles.errorText}>{termsError}</Text> : null}
+                  )}
                 </View>
-              </ScrollView>
 
-              {/* Bottom: Bio Input and Complete Profile Button stick together */}
-              <View style={[styles.bottomStickArea, { paddingBottom: isKeyboardVisible ? 10 : Math.max(insets.bottom + 12, 16) }]}>
-                <View style={{ marginBottom: 12 }}>
-                  <View style={{ flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                    <Text style={labelStyle}>
-                      Bio <Text style={{ color: "#9CA3AF", fontWeight: "400" }}>(optional)</Text>
+                {/* 4. Bio Textarea */}
+                <View style={styles.bioSection}>
+                  <View style={styles.bioLabelRow}>
+                    <Text style={styles.bioLabel}>
+                      Bio <Text style={styles.optionalText}>(optional)</Text>
                     </Text>
-                    <Text style={{ fontSize: 11, color: "#9CA3AF" }}>{form.bio.length}/250</Text>
+                    <Text style={styles.bioCounter}>{form.bio.length}/250</Text>
                   </View>
                   <TextInput
                     value={form.bio}
                     onChangeText={(v) => set("bio", v.slice(0, 250))}
-                    placeholder="Tell your future friends a bit about yourself!"
+                    placeholder="Share a short intro about yourself, hobbies, or campus goals..."
                     placeholderTextColor="#9CA3AF"
                     multiline
                     numberOfLines={3}
+                    maxLength={250}
                     style={styles.bioTextInput}
                   />
                 </View>
 
+                {/* 5. Terms & Policy Paragraph + Single Checkbox */}
+                <View style={styles.termsAgreementSection}>
+                  <Text style={styles.termsParagraphText}>
+                    By completing registration, you agree to our{" "}
+                    <Text
+                      onPress={() => setActiveModal("terms")}
+                      style={styles.termsLink}
+                    >
+                      Terms & Conditions
+                    </Text>{" "}
+                    and{" "}
+                    <Text
+                      onPress={() => setActiveModal("privacy")}
+                      style={styles.termsLink}
+                    >
+                      Campus Privacy Policy
+                    </Text>
+                    . Ally-jis is strictly exclusive to CHMSU students and requires authentic student identities and respectful peer conduct across all campus features.
+                  </Text>
+
+                  <Pressable
+                    onPress={() => {
+                      setAgreedToTerms((prev) => !prev);
+                      setTermsError("");
+                    }}
+                    style={styles.termsCheckboxRow}
+                  >
+                    <View style={[styles.checkbox, agreedToTerms && styles.checkboxActive]}>
+                      {agreedToTerms && <Check size={12} color="#FFFFFF" />}
+                    </View>
+                    <Text style={styles.termsCheckboxLabel}>
+                      I agree to the Terms & Conditions and Privacy Policy
+                    </Text>
+                  </Pressable>
+                  {termsError ? <Text style={styles.errorText}>{termsError}</Text> : null}
+                </View>
+              </ScrollView>
+
+              {/* Complete Registration Button */}
+              <View style={[styles.bottomStickArea, { paddingBottom: isKeyboardVisible ? 10 : Math.max(insets.bottom + 12, 16) }]}>
                 <Button
-                  label={isSubmitting ? "Processing…" : "Complete Profile"}
+                  label={isSubmitting ? "Finalizing Profile..." : "Complete Registration"}
                   variant="primary"
                   pill
                   size="lg"
@@ -1982,6 +2024,7 @@ const styles = StyleSheet.create({
   },
   centeredArea: {
     flex: 1,
+    width: "100%",
     justifyContent: "center",
     alignItems: "center",
     paddingVertical: 10,
@@ -1989,10 +2032,14 @@ const styles = StyleSheet.create({
   centeredScrollContent: {
     flexGrow: 1,
     justifyContent: "center",
-    gap: 10,
+    alignItems: "center",
+    width: "100%",
+    paddingVertical: 10,
+  },
+  optionsWrap: {
     width: "100%",
     maxWidth: 440,
-    paddingVertical: 10,
+    gap: 12,
   },
   bottomStickArea: {
     width: "100%",
@@ -2071,41 +2118,54 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     color: "#111827",
   },
-  // Option Cards (Dept, Course, Year)
-  optionCard: {
+  // Pill Option Cards (Dept, Course, Year)
+  pillOptionCard: {
     width: "100%",
-    paddingVertical: 14,
-    paddingHorizontal: 18,
-    borderRadius: 24,
-    borderWidth: 1.5,
+    paddingVertical: 16,
+    paddingHorizontal: 20,
+    borderRadius: 9999,
+    borderWidth: 2,
     borderColor: "#E5E7EB",
     backgroundColor: "#FFFFFF",
-    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
+    justifyContent: "center",
   },
-  optionCardSelected: {
+  pillOptionCardSelected: {
     borderColor: "#1A6B3C",
-    backgroundColor: "#1A6B3C10",
+    backgroundColor: "#1A6B3C12",
   },
-  optionCardText: {
+  pillOptionText: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#374151",
-    flex: 1,
+    color: "#1F2937",
     textAlign: "center",
   },
-  optionCardTextSelected: {
+  pillOptionTextSelected: {
     color: "#1A6B3C",
     fontWeight: "700",
   },
-  customInputStyle: {
-    backgroundColor: "#FFFFFF",
+  emptyCourseBox: {
+    padding: 24,
+    borderRadius: 20,
     borderWidth: 1.5,
-    borderColor: "#E2DED7",
-    borderRadius: 24,
-    paddingHorizontal: 18,
-    paddingVertical: 12,
+    borderStyle: "dashed",
+    borderColor: "#E5E7EB",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  emptyCourseText: {
+    fontSize: 13,
+    color: "#6B7280",
+    textAlign: "center",
+  },
+  customInputStyle: {
+    width: "100%",
+    backgroundColor: "#FFFFFF",
+    borderWidth: 2,
+    borderColor: "#E5E7EB",
+    borderRadius: 9999,
+    paddingHorizontal: 20,
+    paddingVertical: 14,
     fontSize: 14,
     color: "#111827",
   },
@@ -2264,106 +2324,152 @@ const styles = StyleSheet.create({
     fontWeight: "700",
     fontSize: 13,
   },
-  // Step 4 Profile
-  avatarTabRow: {
-    flexDirection: "row",
+  // Step 4 Profile Styles
+  profileTopSection: {
     alignItems: "center",
-    justifyContent: "space-between",
-    marginBottom: 12,
-  },
-  avatarTogglePill: {
-    flexDirection: "row",
-    backgroundColor: "#EDE8E1",
-    borderRadius: 12,
-    padding: 3,
-  },
-  avatarSubTab: {
-    paddingHorizontal: 12,
-    paddingVertical: 5,
-    borderRadius: 9,
-  },
-  avatarSubTabActive: {
-    backgroundColor: "#FFFFFF",
-  },
-  avatarSubTabText: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: "#6B7280",
-  },
-  avatarSubTabTextActive: {
-    color: "#1A6B3C",
-  },
-  avatarLoadingRow: {
-    height: 60,
-    alignItems: "center",
-    justifyContent: "center",
-    flexDirection: "row",
-    gap: 8,
-    marginBottom: 18,
-  },
-  emptyAvatarBox: {
-    backgroundColor: "#F9F8F6",
-    borderRadius: 16,
-    padding: 16,
-    alignItems: "center",
-    marginBottom: 18,
-    borderWidth: 1,
-    borderColor: "#E5E1D8",
-  },
-  presetAvatarBtn: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 2,
-    borderColor: "#E2DED7",
-    backgroundColor: "#FFFFFF",
-    overflow: "hidden",
-  },
-  presetAvatarBtnSelected: {
-    borderColor: "#1A6B3C",
-    transform: [{ scale: 1.08 }],
-  },
-  emojiAvatarBtn: {
-    width: 52,
-    height: 52,
-    borderRadius: 26,
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1.5,
-    borderColor: "#E2DED7",
-    backgroundColor: "#FFFFFF",
-  },
-  emojiAvatarBtnSelected: {
-    borderColor: "#1A6B3C",
-    backgroundColor: "#1A6B3C15",
-    transform: [{ scale: 1.08 }],
-  },
-  profilePreviewCard: {
-    backgroundColor: "#F7F4EF",
-    borderRadius: 20,
-    padding: 16,
     marginBottom: 16,
   },
-  profilePreviewLabel: {
-    fontSize: 11,
-    fontWeight: "700",
-    color: "#1A6B3C",
-    marginBottom: 10,
-    letterSpacing: 0.5,
-  },
-  termsBox: {
-    borderRadius: 18,
-    padding: 14,
-    borderWidth: 1.5,
-    borderColor: "#E2DED7",
-    backgroundColor: "#FFFFFF",
+  mainAvatarContainer: {
+    width: 112,
+    height: 112,
+    borderRadius: 56,
+    alignItems: "center",
+    justifyContent: "center",
     marginBottom: 8,
   },
-  termsBoxError: {
-    borderColor: "#FECACA",
-    backgroundColor: "#FEF2F2",
+  mainAvatarImage: {
+    width: 112,
+    height: 112,
+    borderRadius: 56,
+    borderWidth: 4,
+    borderColor: "#1A6B3C",
+  },
+  profileHandleText: {
+    fontSize: 22,
+    fontWeight: "800",
+    color: "#111827",
+    textAlign: "center",
+  },
+  profileCourseText: {
+    fontSize: 13,
+    color: "#6B7280",
+    textAlign: "center",
+    marginTop: 2,
+  },
+  crittersSection: {
+    width: "100%",
+    alignItems: "center",
+    marginBottom: 14,
+  },
+  crittersSectionLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#4B5563",
+    letterSpacing: 0.8,
+    textTransform: "uppercase",
+    textAlign: "center",
+    marginBottom: 12,
+  },
+  crittersGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "center",
+    gap: 10,
+    maxWidth: 320,
+  },
+  critterBtn: {
+    padding: 2,
+    borderRadius: 9999,
+    borderWidth: 2,
+    borderColor: "transparent",
+  },
+  critterBtnSelected: {
+    borderColor: "#1A6B3C",
+    transform: [{ scale: 1.08 }],
+  },
+  uploadPhotoSection: {
+    alignItems: "center",
+    marginBottom: 18,
+  },
+  uploadPhotoBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+  },
+  uploadPhotoText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#1A6B3C",
+  },
+  removePhotoText: {
+    fontSize: 11,
+    color: "#EF4444",
+    fontWeight: "500",
+  },
+  bioSection: {
+    width: "100%",
+    marginBottom: 16,
+  },
+  bioLabelRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 6,
+  },
+  bioLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#4B5563",
+    letterSpacing: 0.5,
+  },
+  optionalText: {
+    fontWeight: "400",
+    color: "#9CA3AF",
+  },
+  bioCounter: {
+    fontSize: 11,
+    color: "#9CA3AF",
+  },
+  bioTextInput: {
+    width: "100%",
+    borderWidth: 1.5,
+    borderColor: "#E5E7EB",
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+    fontSize: 13,
+    color: "#111827",
+    backgroundColor: "#FFFFFF",
+    minHeight: 70,
+    textAlignVertical: "top",
+  },
+  termsAgreementSection: {
+    width: "100%",
+    paddingTop: 14,
+    borderTopWidth: 1,
+    borderTopColor: "#F3F4F6",
+    gap: 10,
+  },
+  termsParagraphText: {
+    fontSize: 12,
+    color: "#6B7280",
+    lineHeight: 18,
+    textAlign: "center",
+  },
+  termsCheckboxRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 10,
+    justifyContent: "center",
+    paddingVertical: 4,
+  },
+  termsCheckboxLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#374151",
+    flex: 1,
   },
   checkbox: {
     width: 20,
@@ -2388,17 +2494,6 @@ const styles = StyleSheet.create({
     color: "#EF4444",
     fontSize: 11,
     marginTop: 8,
-  },
-  bioTextInput: {
-    backgroundColor: "#FFFFFF",
-    borderWidth: 1.5,
-    borderColor: "#E2DED7",
-    borderRadius: 16,
-    padding: 12,
-    fontSize: 13,
-    color: "#111827",
-    textAlignVertical: "top",
-    minHeight: 70,
   },
   // Done Screen
   doneContainer: {

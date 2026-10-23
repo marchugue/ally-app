@@ -35,6 +35,7 @@ import {
   Check,
   ChevronRight,
   CircleHelp,
+  Clock,
   ExternalLink,
   Eye,
   EyeOff,
@@ -42,6 +43,8 @@ import {
   History,
   Key,
   Lock,
+  MessageSquare,
+  Moon,
   Pencil,
   RotateCw,
   Shield,
@@ -387,6 +390,14 @@ export default function SettingsScreen() {
           onValueChange={(val) => handleUpdatePreference({ show_online_status: val })}
         />
 
+        {/* Last Active Timestamp */}
+        <SettingToggleCard
+          icon={Clock}
+          title="Last Active Timestamp"
+          value={preferences.show_last_active}
+          onValueChange={(val) => handleUpdatePreference({ show_last_active: val })}
+        />
+
         {/* Read Receipts */}
         <SettingToggleCard
           icon={UserCheck}
@@ -427,12 +438,20 @@ export default function SettingsScreen() {
           onValueChange={handleToggleDarkMode}
         />
 
-        {/* Notifications */}
+        {/* Notifications / Direct Chat */}
         <SettingToggleCard
           icon={Bell}
-          title="Notifications"
+          title="Direct Chat Messages"
           value={preferences.notify_chat_messages}
           onValueChange={(val) => handleUpdatePreference({ notify_chat_messages: val })}
+        />
+
+        {/* Match & Ally Requests */}
+        <SettingToggleCard
+          icon={Bell}
+          title="Match & Ally Requests"
+          value={preferences.notify_match_requests}
+          onValueChange={(val) => handleUpdatePreference({ notify_match_requests: val })}
         />
 
         {/* Streak Reminders */}
@@ -443,6 +462,14 @@ export default function SettingsScreen() {
           onValueChange={(val) => handleUpdatePreference({ notify_streak_reminders: val })}
         />
 
+        {/* Feed & Confession Alerts */}
+        <SettingToggleCard
+          icon={MessageSquare}
+          title="Feed & Confession Alerts"
+          value={preferences.notify_confessions}
+          onValueChange={(val) => handleUpdatePreference({ notify_confessions: val })}
+        />
+
         {/* In-App Sounds */}
         <SettingToggleCard
           icon={Volume2}
@@ -450,6 +477,112 @@ export default function SettingsScreen() {
           value={preferences.notify_sound_enabled}
           onValueChange={(val) => handleUpdatePreference({ notify_sound_enabled: val })}
         />
+
+        {/* Quiet Hours (Do Not Disturb) */}
+        <SettingToggleCard
+          icon={Moon}
+          title="Quiet Hours (Do Not Disturb)"
+          value={preferences.quiet_hours_enabled}
+          onValueChange={(val) => handleUpdatePreference({ quiet_hours_enabled: val })}
+        />
+
+        {/* Quiet Hours Time Configuration */}
+        {preferences.quiet_hours_enabled && (
+          <View
+            style={{
+              backgroundColor: "#FFFFFF",
+              borderRadius: 20,
+              padding: 16,
+              marginBottom: 10,
+              borderWidth: 1,
+              borderColor: "#F0F2F5",
+              shadowColor: "#000",
+              shadowOffset: { width: 0, height: 1 },
+              shadowOpacity: 0.03,
+              shadowRadius: 5,
+              elevation: 1,
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 13,
+                fontFamily: "PlusJakartaSans-Bold",
+                color: "#374151",
+                marginBottom: 10,
+              }}
+            >
+              Quiet Hours Schedule
+            </Text>
+            <View style={{ flexDirection: "row", gap: 10 }}>
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => {
+                  setActivePicker({
+                    title: "Quiet Hours Start",
+                    description: "Select when quiet hours start.",
+                    options: [
+                      { value: "20:00", label: "8:00 PM" },
+                      { value: "21:00", label: "9:00 PM" },
+                      { value: "22:00", label: "10:00 PM (Default)" },
+                      { value: "23:00", label: "11:00 PM" },
+                      { value: "00:00", label: "12:00 AM (Midnight)" },
+                    ],
+                    selectedValue: preferences.quiet_hours_start || "22:00",
+                    onSelect: (val) => handleUpdatePreference({ quiet_hours_start: val }),
+                  });
+                }}
+                style={{
+                  flex: 1,
+                  backgroundColor: "#F9F8F6",
+                  borderRadius: 14,
+                  padding: 12,
+                  borderWidth: 1,
+                  borderColor: "#EAE7E1",
+                }}
+              >
+                <Text style={{ fontSize: 11, fontFamily: "PlusJakartaSans-Bold", color: "#6B7280" }}>
+                  Starts at
+                </Text>
+                <Text style={{ fontSize: 14, fontFamily: "PlusJakartaSans-Bold", color: "#1A6B3C", marginTop: 2 }}>
+                  {preferences.quiet_hours_start || "22:00"}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                activeOpacity={0.7}
+                onPress={() => {
+                  setActivePicker({
+                    title: "Quiet Hours End",
+                    description: "Select when quiet hours end.",
+                    options: [
+                      { value: "06:00", label: "6:00 AM" },
+                      { value: "07:00", label: "7:00 AM (Default)" },
+                      { value: "08:00", label: "8:00 AM" },
+                      { value: "09:00", label: "9:00 AM" },
+                    ],
+                    selectedValue: preferences.quiet_hours_end || "07:00",
+                    onSelect: (val) => handleUpdatePreference({ quiet_hours_end: val }),
+                  });
+                }}
+                style={{
+                  flex: 1,
+                  backgroundColor: "#F9F8F6",
+                  borderRadius: 14,
+                  padding: 12,
+                  borderWidth: 1,
+                  borderColor: "#EAE7E1",
+                }}
+              >
+                <Text style={{ fontSize: 11, fontFamily: "PlusJakartaSans-Bold", color: "#6B7280" }}>
+                  Ends at
+                </Text>
+                <Text style={{ fontSize: 14, fontFamily: "PlusJakartaSans-Bold", color: "#1A6B3C", marginTop: 2 }}>
+                  {preferences.quiet_hours_end || "07:00"}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
 
         {/* ── 4. SUPPORT ── */}
         <SectionTitle title="Support" />

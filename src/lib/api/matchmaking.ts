@@ -90,8 +90,8 @@ export function leaveMatchmakingQueue(
 export function acceptMatch(
   matchId: string,
   accessToken: string
-): Promise<{ success: boolean; match?: MatchRow }> {
-  return apiRequest<{ success: boolean; match?: MatchRow }>(
+): Promise<(MatchRow & { identity?: MatchIdentityView; success?: boolean; match?: MatchRow })> {
+  return apiRequest<MatchRow & { identity?: MatchIdentityView; success?: boolean; match?: MatchRow }>(
     `/match/${matchId}/accept`,
     {
       method: "POST",

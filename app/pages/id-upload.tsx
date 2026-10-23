@@ -12,7 +12,8 @@ import {
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ArrowLeft, Lock, Camera } from "lucide-react-native";
-import { IdUploadIllustration } from "@/components/OnboardingIllustrations";
+import { useAuth } from "@/lib/auth/AuthContext";
+import { getMobileRegisterCache } from "@/lib/registerCache";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const GREEN = "#1A6B3C";
@@ -34,10 +35,39 @@ function cleanUri(val: unknown): string {
 export default function IdUploadScreen() {
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams();
+  const { user } = useAuth();
 
   // Keep frontUri tracked across navigation
   const parsedFrontUri = cleanUri(params.frontUri || params.studentIdFrontUri);
   const [frontUri, setFrontUri] = useState<string | null>(parsedFrontUri || null);
+
+  // If user is already authenticated with Google and has a cached/server ID, proceed straight to Step 2!
+  useEffect(() => {
+    if (!user) return;
+    getMobileRegisterCache().then((cached) => {
+      const hasId = Boolean(
+        user.user_metadata?.student_id_url ||
+        (user as any)?.student_id_url ||
+        cached?.studentIdFrontUri ||
+        parsedFrontUri
+      );
+      const isComplete = Boolean(
+        user.user_metadata?.onboarding_complete === true ||
+        user.user_metadata?.onboarding_complete === "true" ||
+        ((user.user_metadata?.course || user.user_metadata?.department) && user.user_metadata?.year_level)
+      );
+      if (hasId && !isComplete) {
+        router.replace({
+          pathname: "/pages/register" as any,
+          params: {
+            startStep: "2",
+            studentIdFrontUri: cached?.studentIdFrontUri || parsedFrontUri || undefined,
+            studentIdBackUri: cached?.studentIdBackUri || undefined,
+          },
+        });
+      }
+    });
+  }, [user, parsedFrontUri]);
 
   // Step is "back" if params.step === "back" or frontUri was passed back from id-scan-front
   const isBackStep = Boolean(
@@ -142,11 +172,6 @@ export default function IdUploadScreen() {
       </View>
 
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
-        {/* Illustration */}
-        <View style={styles.illustrationWrapper}>
-          <IdUploadIllustration size={160} />
-        </View>
-
         {/* Title */}
         <Text style={styles.title}>
           {isBackStep ? "Scan Back of ID" : "Scan Front ID or COR"}
@@ -232,10 +257,10 @@ const styles = StyleSheet.create({
   },
   scrollContent: {
     paddingHorizontal: 22,
+    paddingTop: 16,
     paddingBottom: 24,
     alignItems: "center",
   },
-  illustrationWrapper: { alignItems: "center", marginTop: 8, marginBottom: 16 },
   stepBadge: {
     backgroundColor: "#F0FDF4",
     paddingHorizontal: 12,

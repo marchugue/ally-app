@@ -73,7 +73,16 @@ export function useMatchmaking(): UseMatchmakingResult {
     identity?: MatchIdentityView;
   } | null>(null);
 
+  const roomReadyRef = useRef<string | null>(null);
+  const pendingMatchIdRef = useRef<string | null>(null);
+  const consumedMatchesRef = useRef<Set<string>>(new Set());
   const countdownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  const phaseRef = useRef<MatchPhase>(phase);
+  phaseRef.current = phase;
+
+  const identityRef = useRef<MatchIdentityView | null>(identity);
+  identityRef.current = identity;
 
   const clearCountdown = useCallback(() => {
     if (countdownTimerRef.current) {
@@ -119,9 +128,39 @@ export function useMatchmaking(): UseMatchmakingResult {
 
       const pending = matches.find((m) => m.status === "pending") || null;
       setPendingMatch(pending);
+      if (pending?.id) {
+        pendingMatchIdRef.current = pending.id;
+      }
 
       if (status.identity) {
         setIdentity(status.identity);
+      }
+
+      // Check if our active pending match has transitioned to chatting state with a valid conversationId
+      const pendingId = pendingMatchIdRef.current;
+      if (pendingId) {
+        const readyChatMatch = matches.find(
+          (m) =>
+            m.status === "chatting" &&
+            m.conversation_id &&
+            m.id === pendingId &&
+            !consumedMatchesRef.current.has(m.conversation_id)
+        );
+
+        if (readyChatMatch && readyChatMatch.conversation_id) {
+          consumedMatchesRef.current.add(readyChatMatch.conversation_id);
+          roomReadyRef.current = readyChatMatch.conversation_id;
+          pendingMatchIdRef.current = null;
+          clearCountdown();
+          setWaitingForPartner(false);
+          setPhase("accepted");
+          setRoomReady({
+            matchId: readyChatMatch.id,
+            conversationId: readyChatMatch.conversation_id,
+            identity: status.identity || identityRef.current || undefined,
+          });
+          return;
+        }
       }
 
       if (status.queueEntry && status.queueEntry.status === "searching") {
@@ -136,17 +175,29 @@ export function useMatchmaking(): UseMatchmakingResult {
           );
           startCountdown(remainingSecs || 30);
         }
-      } else if (phase === "searching" && !status.queueEntry) {
+      } else if (phaseRef.current === "searching" && !status.queueEntry) {
         // queue ended
       }
     } catch (err: any) {
       console.warn("Failed to load matchmaking status:", err);
     }
-  }, [accessToken, phase, startCountdown]);
+  }, [accessToken, startCountdown, clearCountdown]);
 
   useEffect(() => {
     refreshStatus();
   }, [accessToken, refreshStatus]);
+
+  // Active fast polling while waiting for partner or in pending phase
+  useEffect(() => {
+    if (!accessToken) return;
+    if (!waitingForPartner && phase !== "pending") return;
+
+    const pollInterval = setInterval(() => {
+      void refreshStatus();
+    }, 1500);
+
+    return () => clearInterval(pollInterval);
+  }, [accessToken, waitingForPartner, phase, refreshStatus]);
 
   // Socket.IO lifecycle listener
   useEffect(() => {
@@ -185,6 +236,15 @@ export function useMatchmaking(): UseMatchmakingResult {
 
     const onRoomReady = (payload: any) => {
       console.log("⚡ [Matchmaking] room_ready:", payload);
+      if (payload?.conversationId) {
+        if (consumedMatchesRef.current.has(payload.conversationId)) {
+          console.log("⚡ [Matchmaking] room_ready already consumed:", payload.conversationId);
+          return;
+        }
+        consumedMatchesRef.current.add(payload.conversationId);
+        roomReadyRef.current = payload.conversationId;
+      }
+      pendingMatchIdRef.current = null;
       clearCountdown();
       setWaitingForPartner(false);
       setPhase("accepted");
@@ -283,8 +343,22 @@ export function useMatchmaking(): UseMatchmakingResult {
   const accept = useCallback(async () => {
     if (!accessToken || !pendingMatch) return;
     setLoading(true);
+    setError(null);
     try {
-      await apiAcceptMatch(pendingMatch.id, accessToken);
+      const res = await apiAcceptMatch(pendingMatch.id, accessToken);
+      const matchData: any = (res as any)?.match || res;
+      if (matchData && matchData.status === "chatting" && matchData.conversation_id) {
+        roomReadyRef.current = matchData.conversation_id;
+        clearCountdown();
+        setWaitingForPartner(false);
+        setPhase("accepted");
+        setRoomReady({
+          matchId: matchData.id,
+          conversationId: matchData.conversation_id,
+          identity: matchData.identity || identity || undefined,
+        });
+        return;
+      }
       setWaitingForPartner(true);
     } catch (err: any) {
       console.warn("acceptMatch error:", err);
@@ -292,7 +366,7 @@ export function useMatchmaking(): UseMatchmakingResult {
     } finally {
       setLoading(false);
     }
-  }, [accessToken, pendingMatch]);
+  }, [accessToken, pendingMatch, identity, clearCountdown]);
 
   const decline = useCallback(async () => {
     if (!accessToken || !pendingMatch) return;
@@ -323,13 +397,18 @@ export function useMatchmaking(): UseMatchmakingResult {
     [accessToken, pendingMatch, activeMatches, refreshStatus]
   );
 
-  const clearRoomReady = useCallback(() => setRoomReady(null), []);
+  const clearRoomReady = useCallback(() => {
+    setRoomReady(null);
+  }, []);
+
   const resetPhase = useCallback(() => {
     clearCountdown();
     setPhase("idle");
     setEndedReason(null);
     setWaitingForPartner(false);
     setPendingMatch(null);
+    setRoomReady(null);
+    roomReadyRef.current = null;
   }, [clearCountdown]);
 
   return {

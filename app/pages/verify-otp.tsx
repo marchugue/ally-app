@@ -15,7 +15,6 @@ import {
   Dimensions,
   Clipboard,
   BackHandler,
-  KeyboardAvoidingView,
   Platform,
 } from 'react-native';
 
@@ -30,6 +29,8 @@ import {
 import { useAuth } from '@/lib/auth/AuthContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button } from '@/components/Button';
+import { KeyboardHugView } from '@/components/KeyboardHugView';
+import { useKeyboard } from '@/hooks/useKeyboard';
 
 const OTP_LENGTH = 6;
 const RESEND_COOLDOWN = 60;
@@ -58,6 +59,7 @@ export default function VerifyOtpPage() {
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams<{ userId: string; email: string }>();
   const { completeLogin } = useAuth();
+  const { isKeyboardVisible } = useKeyboard();
 
   const [userId, setUserId] = useState(params.userId ?? '');
   const [email, setEmail] = useState(params.email ?? '');
@@ -264,7 +266,7 @@ export default function VerifyOtpPage() {
   const canResend = !isResending && cooldown === 0 && resendCount < resendLimit;
 
   return (
-    <View style={[styles.root, { paddingTop: Math.max(insets.top, 12), paddingBottom: Math.max(insets.bottom, 16) }]}>
+    <View style={[styles.root, { paddingTop: Math.max(insets.top, 12) }]}>
       {/* Top Bar with Back Button */}
       <View style={styles.topBar}>
         <TouchableOpacity
@@ -277,104 +279,110 @@ export default function VerifyOtpPage() {
         </TouchableOpacity>
       </View>
 
-      <KeyboardAvoidingView
-        style={{ flex: 1 }}
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <ScrollView
-          contentContainerStyle={styles.scrollContent}
-          keyboardShouldPersistTaps="handled"
-          showsVerticalScrollIndicator={false}
-        >
-          {/* Title & Subtitle */}
-          <View style={styles.headerContent}>
-            <Text style={styles.title}>We just sent a 6-digit code</Text>
-            <Text style={styles.subtitle}>Enter the 6-digit code we sent to</Text>
-            <View style={styles.emailRow}>
-              <Text style={styles.emailHighlight}>{email}</Text>
-              <TouchableOpacity
-                onPress={handleEditEmail}
-                hitSlop={12}
-                accessibilityLabel="Edit email"
-                style={styles.editPenBtn}
-              >
-                <Pencil size={15} color={GREEN} />
-              </TouchableOpacity>
-            </View>
-          </View>
-
-          {/* OTP boxes (blended to white screen, no container) */}
-          <View style={styles.otpRow}>
-            {digits.map((d, i) => (
-              <TextInput
-                key={i}
-                ref={(el) => { inputsRef.current[i] = el; }}
-                style={[
-                  styles.otpBox,
-                  d ? styles.otpBoxFilled : null,
-                  error ? styles.otpBoxError : null,
-                ]}
-                value={d}
-                onChangeText={(v) => handleDigitChange(i, v)}
-                onKeyPress={({ nativeEvent }) => handleKeyPress(i, nativeEvent.key)}
-                keyboardType="number-pad"
-                maxLength={6}
-                textAlign="center"
-                editable={!isVerifying}
-                selectTextOnFocus
-                caretHidden
-              />
-            ))}
-          </View>
-
-          {error ? (
-            <View style={styles.errorBanner}>
-              <AlertCircle size={14} color="#DC2626" style={{ marginRight: 6 }} />
-              <Text style={styles.errorBannerText}>{error}</Text>
-            </View>
-          ) : null}
-        </ScrollView>
-
-        {/* Bottom Area: Verify button + Didn't receive the code? + Resend with 00:00 timer */}
-        <View style={styles.bottomSection}>
-          <Button
-            label={isVerifying ? "Verifying…" : "Verify"}
-            variant="primary"
-            pill
-            size="lg"
-            loading={isVerifying}
-            disabled={!canVerify || isVerifying}
-            onPress={() => submitCode(fullCode)}
-            className="w-full"
-          />
-
-          <View style={styles.resendArea}>
-            {resendCount >= resendLimit ? (
-              <Text style={styles.resendLimitText}>Maximum resends reached. Contact support.</Text>
-            ) : (
-              <View style={styles.resendInner}>
-                <Text style={styles.didntReceiveText}>
-                  Didn&apos;t receive the code?
-                </Text>
+      <KeyboardHugView style={{ flex: 1 }}>
+        <View style={{ flex: 1, width: '100%', maxWidth: 620, alignSelf: 'center' }}>
+          <ScrollView
+            contentContainerStyle={styles.scrollContent}
+            keyboardShouldPersistTaps="handled"
+            showsVerticalScrollIndicator={false}
+          >
+            {/* Title & Subtitle */}
+            <View style={styles.headerContent}>
+              <Text style={styles.title}>We just sent a 6-digit code</Text>
+              <Text style={styles.subtitle}>Enter the 6-digit code we sent to</Text>
+              <View style={styles.emailRow}>
+                <Text style={styles.emailHighlight}>{email}</Text>
                 <TouchableOpacity
-                  onPress={handleResend}
-                  disabled={!canResend}
-                  style={styles.resendBtnTouch}
+                  onPress={handleEditEmail}
+                  hitSlop={12}
+                  accessibilityLabel="Edit email"
+                  style={styles.editPenBtn}
                 >
-                  <Text
-                    style={[
-                      styles.resendText,
-                      !canResend && styles.resendTextDisabled,
-                    ]}
-                  >
-                    Resend ({formatTimer(cooldown)})
-                  </Text>
+                  <Pencil size={15} color={GREEN} />
                 </TouchableOpacity>
               </View>
-            )}
+            </View>
+
+            {/* OTP boxes (blended to white screen, no container) */}
+            <View style={styles.otpRow}>
+              {digits.map((d, i) => (
+                <TextInput
+                  key={i}
+                  ref={(el) => { inputsRef.current[i] = el; }}
+                  style={[
+                    styles.otpBox,
+                    d ? styles.otpBoxFilled : null,
+                    error ? styles.otpBoxError : null,
+                  ]}
+                  value={d}
+                  onChangeText={(v) => handleDigitChange(i, v)}
+                  onKeyPress={({ nativeEvent }) => handleKeyPress(i, nativeEvent.key)}
+                  keyboardType="number-pad"
+                  maxLength={6}
+                  textAlign="center"
+                  editable={!isVerifying}
+                  selectTextOnFocus
+                  caretHidden
+                />
+              ))}
+            </View>
+
+            {error ? (
+              <View style={styles.errorBanner}>
+                <AlertCircle size={14} color="#DC2626" style={{ marginRight: 6 }} />
+                <Text style={styles.errorBannerText}>{error}</Text>
+              </View>
+            ) : null}
+          </ScrollView>
+
+          {/* Bottom Area: Verify button + Didn't receive the code? + Resend with 00:00 timer */}
+          <View
+            style={[
+              styles.bottomSection,
+              {
+                paddingBottom: isKeyboardVisible ? 10 : Math.max(insets.bottom + 12, 16),
+              },
+            ]}
+          >
+            <Button
+              label={isVerifying ? "Verifying…" : "Verify"}
+              variant="primary"
+              pill
+              size="lg"
+              loading={isVerifying}
+              disabled={!canVerify || isVerifying}
+              onPress={() => submitCode(fullCode)}
+              className="w-full"
+            />
+
+            <View style={styles.resendArea}>
+              {resendCount >= resendLimit ? (
+                <Text style={styles.resendLimitText}>Maximum resends reached. Contact support.</Text>
+              ) : (
+                <View style={styles.resendInner}>
+                  <Text style={styles.didntReceiveText}>
+                    Didn&apos;t receive the code?
+                  </Text>
+                  <TouchableOpacity
+                    onPress={handleResend}
+                    disabled={!canResend}
+                    style={styles.resendBtnTouch}
+                  >
+                    <Text
+                      style={[
+                        styles.resendText,
+                        !canResend && styles.resendTextDisabled,
+                      ]}
+                    >
+                      Resend ({formatTimer(cooldown)})
+                    </Text>
+                  </TouchableOpacity>
+                </View>
+              )}
+            </View>
           </View>
         </View>
-      </KeyboardAvoidingView>
+      </KeyboardHugView>
     </View>
   );
 }
@@ -407,6 +415,7 @@ const styles = StyleSheet.create({
     paddingTop: 16,
     paddingBottom: 24,
     alignItems: 'center',
+    flexGrow: 1,
   },
   headerContent: {
     alignItems: 'center',
@@ -488,7 +497,6 @@ const styles = StyleSheet.create({
   bottomSection: {
     paddingHorizontal: 24,
     paddingTop: 12,
-    paddingBottom: 8,
     backgroundColor: '#FFFFFF',
   },
   resendArea: {

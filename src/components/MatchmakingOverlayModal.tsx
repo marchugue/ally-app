@@ -9,9 +9,9 @@ import {
   Easing,
   Alert,
   StyleSheet,
+  Dimensions,
 } from "react-native";
 import {
-  ArrowLeft,
   X,
   Sparkles,
   RotateCw,
@@ -19,59 +19,52 @@ import {
 } from "lucide-react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { router } from "expo-router";
 import { useMatchmaking, UseMatchmakingResult } from "@/hooks/useMatchmaking";
 import { AnonymousAvatar } from "@/components/AnonymousAvatar";
-import { avatarColorFor } from "@/constants/matchOptions";
+import { ANIMAL_KEYS } from "@/constants/matchOptions";
 
-// ─── Anonymous Mascot Pool with Solid Background Colors ──────────────────────
-const AVATAR_POOL = [
-  { key: "fox", emoji: "🦊", bgColor: "#E05A47" },    // Vibrant Terracotta
-  { key: "wolf", emoji: "🐺", bgColor: "#7C3AED" },   // Rich Violet
-  { key: "panda", emoji: "🐼", bgColor: "#D97706" },  // Warm Amber
-  { key: "owl", emoji: "🦉", bgColor: "#059669" },    // Emerald Green
-  { key: "otter", emoji: "🦦", bgColor: "#0891B2" },  // Deep Cyan
-  { key: "falcon", emoji: "🦅", bgColor: "#DB2777" }, // Hot Magenta
-];
+const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
-const NUM_AVATARS = AVATAR_POOL.length;
-const TRAVEL_MIN = -170; // Left boundary (offscreen / fade-in)
-const TRAVEL_MAX = 170;  // Right boundary (offscreen / fade-out)
-const TOTAL_SPAN = TRAVEL_MAX - TRAVEL_MIN; // 340px
-const CYCLE_DURATION = 9000; // 9 seconds to glide smoothly across
-
-// ─── Telemetry Status Messages (Random Text While Searching) ─────────────────
+// ─── Telemetry Status Messages (Exact Mirror from Web) ───────────────────────
 const TELEMETRY_MESSAGES = [
-  "Calibrating CHMSU campus frequency locator…",
-  "Scanning active student allies on Alijis campus…",
-  "Analyzing course compatibility & curriculum year…",
-  "Harmonizing mutual interests and tech stack…",
+  "Scanning active student souls on Alijis campus…",
+  "Harmonizing mutual interests & curriculum year…",
+  "Analyzing course compatibility & vibe synergy…",
+  "Filtering campus vibes and shared passions…",
   "Locking onto an anonymous peer session…",
-  "Matching communication styles & availability…",
-  "Seeking campus allies nearby…",
 ];
 
-// ─── Twinkling Starfield (Animotion B06 & CR28 Celestial Stars) ──────────────
-const STAR_COORDS = [
-  { id: 1, top: 0.08, left: 0.12, size: 2.5, color: "#FCD34D" },
-  { id: 2, top: 0.16, left: 0.84, size: 2, color: "#6EE7B7" },
-  { id: 3, top: 0.23, left: 0.26, size: 3, color: "#FFFFFF" },
-  { id: 4, top: 0.29, left: 0.74, size: 2, color: "#FDE68A" },
-  { id: 5, top: 0.38, left: 0.09, size: 2.5, color: "#FFFFFF" },
-  { id: 6, top: 0.44, left: 0.92, size: 2, color: "#A7F3D0" },
-  { id: 7, top: 0.62, left: 0.15, size: 3, color: "#FCD34D" },
-  { id: 8, top: 0.71, left: 0.85, size: 2.5, color: "#FFFFFF" },
-  { id: 9, top: 0.81, left: 0.22, size: 2, color: "#6EE7B7" },
-  { id: 10, top: 0.88, left: 0.76, size: 2.5, color: "#FDE68A" },
-  { id: 11, top: 0.52, left: 0.87, size: 2, color: "#FFFFFF" },
-  { id: 12, top: 0.76, left: 0.38, size: 2, color: "#FCD34D" },
+// ─── Celestial Starfield Coordinates (Exact Match with Web) ──────────────────
+const STARFIELD_STARS = [
+  { id: 1, top: 0.07, left: 0.11, size: 2, color: "#E8A838" },
+  { id: 2, top: 0.14, left: 0.86, size: 2.5, color: "#56E39F" },
+  { id: 3, top: 0.21, left: 0.26, size: 1.5, color: "#FFFFFF" },
+  { id: 4, top: 0.26, left: 0.74, size: 2, color: "#FCD34D" },
+  { id: 5, top: 0.34, left: 0.07, size: 2, color: "#FFFFFF" },
+  { id: 6, top: 0.39, left: 0.93, size: 1.5, color: "#6EE7B7" },
+  { id: 7, top: 0.64, left: 0.13, size: 2.5, color: "#E8A838" },
+  { id: 8, top: 0.73, left: 0.84, size: 2, color: "#FFFFFF" },
+  { id: 9, top: 0.84, left: 0.22, size: 1.5, color: "#56E39F" },
+  { id: 10, top: 0.89, left: 0.69, size: 2, color: "#FCD34D" },
+  { id: 11, top: 0.09, left: 0.46, size: 1.5, color: "#FFFFFF" },
+  { id: 12, top: 0.58, left: 0.79, size: 2, color: "#6EE7B7" },
+  { id: 13, top: 0.79, left: 0.38, size: 1.5, color: "#E8A838" },
+  { id: 14, top: 0.47, left: 0.16, size: 2, color: "#FFFFFF" },
+  { id: 15, top: 0.31, left: 0.89, size: 2.5, color: "#56E39F" },
+  { id: 16, top: 0.04, left: 0.64, size: 2, color: "#FCD34D" },
+  { id: 17, top: 0.93, left: 0.09, size: 1.5, color: "#FFFFFF" },
+  { id: 18, top: 0.87, left: 0.91, size: 2, color: "#E8A838" },
+  { id: 19, top: 0.52, left: 0.83, size: 1.5, color: "#FFFFFF" },
+  { id: 20, top: 0.18, left: 0.05, size: 2, color: "#56E39F" },
 ];
 
-const CONSTELLATIONS = [
-  { id: "c1", top: 0.12, left: 0.22, size: 13, color: "#FCD34D" },
-  { id: "c2", top: 0.19, left: 0.78, size: 14, color: "#6EE7B7" },
-  { id: "c3", top: 0.69, left: 0.1, size: 12, color: "#A7F3D0" },
-  { id: "c4", top: 0.8, left: 0.88, size: 14, color: "#FDE68A" },
+const SPARKLE_CONSTELLATIONS = [
+  { id: "s1", top: 0.12, left: 0.18, size: 12, color: "#FCD34D" },
+  { id: "s2", top: 0.16, left: 0.81, size: 14, color: "#6EE7B7" },
+  { id: "s3", top: 0.70, left: 0.10, size: 12, color: "#A7F3D0" },
+  { id: "s4", top: 0.81, left: 0.87, size: 14, color: "#FDE68A" },
+  { id: "s5", top: 0.44, left: 0.95, size: 12, color: "#FFFFFF" },
+  { id: "s6", top: 0.03, left: 0.35, size: 12, color: "#FCD34D" },
 ];
 
 function CelestialStarfield() {
@@ -82,13 +75,13 @@ function CelestialStarfield() {
       Animated.sequence([
         Animated.timing(twinkleAnim, {
           toValue: 0.95,
-          duration: 2400,
+          duration: 2200,
           easing: Easing.inOut(Easing.ease),
           useNativeDriver: true,
         }),
         Animated.timing(twinkleAnim, {
           toValue: 0.35,
-          duration: 2400,
+          duration: 2200,
           easing: Easing.inOut(Easing.ease),
           useNativeDriver: true,
         }),
@@ -100,7 +93,7 @@ function CelestialStarfield() {
 
   return (
     <View style={StyleSheet.absoluteFill} pointerEvents="none">
-      {STAR_COORDS.map((star) => (
+      {STARFIELD_STARS.map((star) => (
         <Animated.View
           key={star.id}
           style={{
@@ -114,13 +107,13 @@ function CelestialStarfield() {
             opacity: twinkleAnim,
             shadowColor: star.color,
             shadowOffset: { width: 0, height: 0 },
-            shadowOpacity: 0.9,
+            shadowOpacity: 0.8,
             shadowRadius: 4,
           }}
         />
       ))}
 
-      {CONSTELLATIONS.map((c) => (
+      {SPARKLE_CONSTELLATIONS.map((c) => (
         <Animated.Text
           key={c.id}
           style={{
@@ -139,134 +132,195 @@ function CelestialStarfield() {
   );
 }
 
-// ─── Fisheye Left-to-Right Conveyor Component ────────────────────────────────
-// Each avatar flows in ONE direction from left to right.
-// Center avatar is large (fisheye scale 1.4x).
-// Sides shrink down (0.7x).
-// Items disappear at the right edge and appear at the left edge seamlessly.
-function FisheyeConveyor() {
-  // Array of independent Animated.Value coordinates for each avatar
-  const posAnims = useRef(
-    AVATAR_POOL.map((_, i) => {
-      const initialX = TRAVEL_MIN + (i / NUM_AVATARS) * TOTAL_SPAN;
-      return new Animated.Value(initialX);
-    })
-  ).current;
+// ─── Shockwave Burst Rings on Match Detected ──────────────────────────────────
+function ShockwaveRings() {
+  const ring1 = useRef(new Animated.Value(0)).current;
+  const ring2 = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    const runningAnimations: Animated.CompositeAnimation[] = [];
+    const loop1 = Animated.loop(
+      Animated.sequence([
+        Animated.timing(ring1, {
+          toValue: 1,
+          duration: 1000,
+          easing: Easing.out(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(ring1, {
+          toValue: 0,
+          duration: 0,
+          useNativeDriver: true,
+        }),
+      ])
+    );
+    const loop2 = Animated.loop(
+      Animated.sequence([
+        Animated.delay(180),
+        Animated.timing(ring2, {
+          toValue: 1,
+          duration: 1000,
+          easing: Easing.out(Easing.ease),
+          useNativeDriver: true,
+        }),
+        Animated.timing(ring2, {
+          toValue: 0,
+          duration: 0,
+          useNativeDriver: true,
+        }),
+      ])
+    );
 
-    AVATAR_POOL.forEach((_, i) => {
-      const animVal = posAnims[i];
-      const initialX = TRAVEL_MIN + (i / NUM_AVATARS) * TOTAL_SPAN;
-      const remainingDistance = TRAVEL_MAX - initialX;
-      const firstLegDuration = CYCLE_DURATION * (remainingDistance / TOTAL_SPAN);
-
-      // First leg: travel from initial position to right boundary
-      const firstLeg = Animated.timing(animVal, {
-        toValue: TRAVEL_MAX,
-        duration: Math.max(100, firstLegDuration),
-        easing: Easing.linear,
-        useNativeDriver: true,
-      });
-
-      // Subsequent continuous loop: reset to TRAVEL_MIN and glide to TRAVEL_MAX
-      const loopLeg = Animated.loop(
-        Animated.sequence([
-          Animated.timing(animVal, {
-            toValue: TRAVEL_MIN,
-            duration: 0,
-            useNativeDriver: true,
-          }),
-          Animated.timing(animVal, {
-            toValue: TRAVEL_MAX,
-            duration: CYCLE_DURATION,
-            easing: Easing.linear,
-            useNativeDriver: true,
-          }),
-        ])
-      );
-
-      const sequence = Animated.sequence([firstLeg, loopLeg]);
-      sequence.start();
-      runningAnimations.push(sequence);
-    });
-
+    loop1.start();
+    loop2.start();
     return () => {
-      runningAnimations.forEach((anim) => anim.stop());
+      loop1.stop();
+      loop2.stop();
     };
-  }, [posAnims]);
+  }, [ring1, ring2]);
+
+  const scale1 = ring1.interpolate({ inputRange: [0, 1], outputRange: [1, 1.55] });
+  const opacity1 = ring1.interpolate({ inputRange: [0, 0.7, 1], outputRange: [0.85, 0.35, 0] });
+
+  const scale2 = ring2.interpolate({ inputRange: [0, 1], outputRange: [1, 1.8] });
+  const opacity2 = ring2.interpolate({ inputRange: [0, 0.7, 1], outputRange: [0.75, 0.25, 0] });
 
   return (
-    <View style={styles.conveyorStage}>
-      {AVATAR_POOL.map((item, index) => {
-        const xAnim = posAnims[index];
-
-        // Fisheye scale: Center (x=0) expands to 1.42x, edges shrink to 0.72x
-        const scale = xAnim.interpolate({
-          inputRange: [-160, -80, 0, 80, 160],
-          outputRange: [0.72, 1.05, 1.42, 1.05, 0.72],
-          extrapolate: "clamp",
-        });
-
-        // Opacity: Invisible at outer boundaries (-170 and +170), full in center
-        const opacity = xAnim.interpolate({
-          inputRange: [-170, -135, -40, 0, 40, 135, 170],
-          outputRange: [0, 0.65, 0.98, 1, 0.98, 0.65, 0],
-          extrapolate: "clamp",
-        });
-
-        // Subtle 3D vertical depth arc
-        const translateY = xAnim.interpolate({
-          inputRange: [-160, 0, 160],
-          outputRange: [4, -4, 4],
-          extrapolate: "clamp",
-        });
-
-        return (
-          <Animated.View
-            key={item.key}
-            style={[
-              styles.avatarNode,
-              {
-                opacity,
-                transform: [{ translateX: xAnim }, { translateY }, { scale }],
-              },
-            ]}
-          >
-            {/* Solid, colorful circle avatar (no green border) */}
-            <View
-              style={[
-                styles.solidAvatarCircle,
-                {
-                  backgroundColor: item.bgColor,
-                },
-              ]}
-            >
-              <Text style={styles.avatarEmoji}>{item.emoji}</Text>
-            </View>
-          </Animated.View>
-        );
-      })}
+    <View style={StyleSheet.absoluteFill} pointerEvents="none">
+      <Animated.View
+        style={[
+          styles.shockwaveRing,
+          { borderColor: "#34D399", transform: [{ scale: scale1 }], opacity: opacity1 },
+        ]}
+      />
+      <Animated.View
+        style={[
+          styles.shockwaveRing,
+          { borderColor: "#FCD34D", transform: [{ scale: scale2 }], opacity: opacity2 },
+        ]}
+      />
     </View>
   );
 }
 
-// ─── Matching Title with Animated Dots ───────────────────────────────────────
-function MatchingTitle() {
-  const [dots, setDots] = useState("");
+// ─── Acoustic Frequency Equalizer Waveform ────────────────────────────────────
+function EqualizerWaveform({ paused }: { paused?: boolean }) {
+  const barAnims = useRef(
+    [0, 1, 2, 3, 4, 5, 6].map(() => new Animated.Value(8))
+  ).current;
 
   useEffect(() => {
-    const interval = setInterval(() => {
-      setDots((prev) => (prev.length >= 3 ? "" : prev + "."));
-    }, 450);
-    return () => clearInterval(interval);
-  }, []);
+    if (paused) return;
+    const anims = barAnims.map((anim, i) => {
+      return Animated.loop(
+        Animated.sequence([
+          Animated.timing(anim, {
+            toValue: 20 + (i % 3) * 4,
+            duration: 320 + i * 35,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: false,
+          }),
+          Animated.timing(anim, {
+            toValue: 6 + (i % 2) * 3,
+            duration: 320 + i * 35,
+            easing: Easing.inOut(Easing.ease),
+            useNativeDriver: false,
+          }),
+        ])
+      );
+    });
+
+    Animated.parallel(anims).start();
+    return () => anims.forEach((a) => a.stop());
+  }, [paused, barAnims]);
 
   return (
-    <Text style={styles.matchingTitleText}>
-      Matching<Text style={styles.matchingDots}>{dots}</Text>
-    </Text>
+    <View style={styles.equalizerRow}>
+      {barAnims.map((anim, i) => (
+        <Animated.View
+          key={i}
+          style={[
+            styles.equalizerBar,
+            { height: anim },
+          ]}
+        >
+          <LinearGradient
+            colors={["#E8A838", "#1A6B3C"]}
+            style={StyleSheet.absoluteFill}
+          />
+        </Animated.View>
+      ))}
+    </View>
+  );
+}
+
+// ─── Carousel Slot Item with Spring Motion ────────────────────────────────────
+interface CarouselSlotProps {
+  avatarKey: string;
+  targetX: number;
+  targetScale: number;
+  targetOpacity: number;
+  isCenter: boolean;
+  showShockwave: boolean;
+}
+
+function CarouselSlotItem({
+  avatarKey,
+  targetX,
+  targetScale,
+  targetOpacity,
+  isCenter,
+  showShockwave,
+}: CarouselSlotProps) {
+  const animX = useRef(new Animated.Value(targetX)).current;
+  const animScale = useRef(new Animated.Value(targetScale)).current;
+  const animOpacity = useRef(new Animated.Value(targetOpacity)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.spring(animX, {
+        toValue: targetX,
+        stiffness: 220,
+        damping: 24,
+        mass: 0.8,
+        useNativeDriver: true,
+      }),
+      Animated.spring(animScale, {
+        toValue: targetScale,
+        stiffness: 220,
+        damping: 24,
+        mass: 0.8,
+        useNativeDriver: true,
+      }),
+      Animated.timing(animOpacity, {
+        toValue: targetOpacity,
+        duration: 280,
+        easing: Easing.out(Easing.ease),
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [targetX, targetScale, targetOpacity, animX, animScale, animOpacity]);
+
+  return (
+    <Animated.View
+      style={[
+        styles.slotContainer,
+        {
+          transform: [{ translateX: animX }, { scale: animScale }],
+          opacity: animOpacity,
+          zIndex: isCenter ? 20 : 10,
+        },
+      ]}
+      pointerEvents={isCenter ? "auto" : "none"}
+    >
+      <View style={styles.avatarGlowCircle}>
+        {showShockwave && isCenter && <ShockwaveRings />}
+        <AnonymousAvatar
+          avatarKey={avatarKey}
+          size={72}
+          borderWidth={0}
+        />
+      </View>
+    </Animated.View>
   );
 }
 
@@ -288,98 +342,97 @@ export function MatchmakingOverlayModal({
   const internalMM = useMatchmaking();
   const mm = externalMM || internalMM;
 
-  // Visual stage: 'searching' -> 'revealed' (confirmation card)
-  const [stage, setStage] = useState<"searching" | "revealed">(
+  // Visual stage choreography (Litmatch style matching web):
+  // 'searching' → 3-slot horizontal carousel cycling Left -> Center -> Right!
+  // 'detected'  → Cycling locks onto matched avatar in the CENTER with shockwave!
+  // 'revealed'  → Confirmation card animates in.
+  const [stage, setStage] = useState<"searching" | "detected" | "revealed">(
     mm.phase === "pending" ? "revealed" : "searching"
   );
 
+  const partnerAlias =
+    mm.identity?.partnerAlias ||
+    mm.pendingMatch?.partnerAlias ||
+    "Campus Ally";
+  const partnerAvatar =
+    mm.identity?.partnerAvatar ||
+    mm.pendingMatch?.partnerAvatar ||
+    "wolf";
+  const score = mm.compatibilityScore || 96;
+
+  // Transition from searching -> detected -> revealed when pending match arrives
   useEffect(() => {
     if (mm.phase === "pending") {
-      setStage("revealed");
-    } else {
+      setStage("detected");
+      const timer = setTimeout(() => {
+        setStage("revealed");
+      }, 1250);
+      return () => clearTimeout(timer);
+    } else if (mm.phase === "searching") {
       setStage("searching");
     }
-  }, [mm.phase]);
+  }, [mm.phase, mm.pendingMatch?.id]);
 
-  // Telemetry status cycling (random text while searching)
+  // Consecutive Horizontal Avatar Cycling (720ms cadence matching web)
+  const [cycleStep, setCycleStep] = useState(0);
+
+  useEffect(() => {
+    if (!visible || stage !== "searching") return;
+    const interval = setInterval(() => {
+      setCycleStep((prev) => prev + 1);
+    }, 720);
+    return () => clearInterval(interval);
+  }, [visible, stage]);
+
+  // Cycling Telemetry Status (2600ms cadence matching web)
   const [telemetryIndex, setTelemetryIndex] = useState(0);
   const telemetryFade = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    if (!visible || mm.phase !== "searching") return;
+    if (!visible || stage !== "searching") return;
     const interval = setInterval(() => {
       Animated.sequence([
         Animated.timing(telemetryFade, {
           toValue: 0,
-          duration: 220,
+          duration: 200,
           useNativeDriver: true,
         }),
         Animated.timing(telemetryFade, {
           toValue: 1,
-          duration: 320,
+          duration: 250,
           useNativeDriver: true,
         }),
       ]).start();
       setTelemetryIndex((prev) => (prev + 1) % TELEMETRY_MESSAGES.length);
-    }, 2800);
-
+    }, 2600);
     return () => clearInterval(interval);
-  }, [visible, mm.phase, telemetryFade]);
+  }, [visible, stage, telemetryFade]);
 
-  // Card entrance animation
-  const cardScaleAnim = useRef(new Animated.Value(0.92)).current;
+  // Card entrance animation when entering 'revealed' stage
+  const cardScaleAnim = useRef(new Animated.Value(0.94)).current;
   const cardOpacityAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     if (stage === "revealed") {
-      cardScaleAnim.setValue(0.92);
+      cardScaleAnim.setValue(0.94);
       cardOpacityAnim.setValue(0);
       Animated.parallel([
         Animated.timing(cardScaleAnim, {
           toValue: 1,
           duration: 350,
-          easing: Easing.out(Easing.back(1.4)),
+          easing: Easing.out(Easing.back(1.3)),
           useNativeDriver: true,
         }),
         Animated.timing(cardOpacityAnim, {
           toValue: 1,
-          duration: 300,
+          duration: 280,
           useNativeDriver: true,
         }),
       ]).start();
     }
   }, [stage, cardScaleAnim, cardOpacityAnim]);
 
-  // Auto-navigate when chat room is ready
-  useEffect(() => {
-    if (mm.roomReady && mm.roomReady.conversationId) {
-      const room = mm.roomReady;
-      const partnerAlias = room.identity?.partnerAlias || "Anonymous Ally";
-      const partnerAvatar = room.identity?.partnerAvatar || "fox";
-
-      if (onMatchAccepted) {
-        onMatchAccepted(partnerAlias);
-      }
-
-      const timer = setTimeout(() => {
-        mm.clearRoomReady();
-        onClose();
-        router.push({
-          pathname: "/pages/conversation" as any,
-          params: {
-            conversationId: room.conversationId,
-            prefillName: partnerAlias,
-            prefillAvatar: partnerAvatar,
-            isAnonymous: "true",
-          },
-        });
-      }, 1000);
-
-      return () => clearTimeout(timer);
-    }
-  }, [mm.roomReady, onMatchAccepted, onClose, mm]);
-
-  // Handle Cancel / Dismiss
+  // Handle Cancel / Dismiss with confirmation
   const handleClose = useCallback(() => {
     if (mm.phase === "searching") {
       mm.leaveQueue();
@@ -406,144 +459,187 @@ export function MatchmakingOverlayModal({
     }
   }, [mm, onClose]);
 
-  if (!visible) return null;
+  // Offsets window: [-3, -2, -1, 0, 1, 2, 3]
+  // pos = -1 (Left: -116px, 0.78 scale, 0.45 opacity)
+  // pos =  0 (Center: 0px, 1.25 scale, 1.0 opacity)
+  // pos = +1 (Right: 116px, 0.78 scale, 0.45 opacity)
+  const slotOffsetPx = 116;
 
-  const partnerAlias =
-    mm.identity?.partnerAlias ||
-    mm.pendingMatch?.partnerAlias ||
-    "Anonymous Ally";
-  const partnerAvatar =
-    mm.identity?.partnerAvatar ||
-    mm.pendingMatch?.partnerAvatar ||
-    "wolf";
-  const score = mm.compatibilityScore || 96;
+  // Reset cycle step cleanly when becoming visible in searching mode
+  useEffect(() => {
+    if (visible && mm.phase === "searching") {
+      setCycleStep(0);
+    }
+  }, [visible, mm.phase]);
 
   return (
     <Modal
       visible={visible}
       animationType="fade"
-      transparent={true}
+      transparent={false}
       onRequestClose={handleClose}
       statusBarTranslucent={true}
     >
       <View style={styles.overlayRoot}>
-        {/* ── Background: Deep Forest Emerald Gradient (System Palette) ── */}
+        {/* ── Background: Deep Radial Forest Gradient ── */}
         <LinearGradient
-          colors={["#0C301D", "#071F13", "#030E08"]}
-          locations={[0, 0.45, 1]}
+          colors={["#0B1E13", "#06110A", "#030805"]}
+          locations={[0, 0.55, 1]}
           style={StyleSheet.absoluteFill}
         />
 
-        {/* ── Twinkling Stars & Sparkles (Animotion B06 / CR28) ── */}
+        {/* ── Twinkling Starfield & Constellations ── */}
         <CelestialStarfield />
 
-        {/* ── Ambient Soft Nebula Glow ── */}
-        <View style={styles.ambientNebula} pointerEvents="none" />
+        {/* ── Top Header: Brand Bar with Litmatch Style Logo ── */}
+        <View style={[styles.topHeader, { paddingTop: Math.max(insets.top + 8, 20) }]}>
+          <View style={styles.brandRow}>
+            <View style={styles.brandLogoSquare}>
+              <Text style={styles.brandLogoLetter}>A</Text>
+            </View>
+            <Text style={styles.brandLogoText}>
+              Ally<Text style={styles.brandLogoAccent}>-jis</Text>
+            </Text>
+          </View>
 
-        {/* ── Top Bar: ArrowLeft, Centered Title (Leave button removed) ── */}
-        <View style={[styles.topBar, { paddingTop: Math.max(insets.top + 8, 20) }]}>
           <TouchableOpacity
             onPress={handleClose}
             hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
             activeOpacity={0.7}
-            style={styles.backBtn}
-            accessibilityLabel="Back"
+            style={styles.closeBtn}
+            accessibilityLabel="Cancel search"
           >
-            <ArrowLeft size={22} color="#FFFFFF" />
+            <X size={18} color="rgba(255,255,255,0.7)" />
           </TouchableOpacity>
-
-          <Text style={styles.topBarTitle}>Anonymous Match</Text>
-
-          {/* Balanced spacer so title stays centered without Leave button */}
-          <View style={styles.topBarSpacer} />
         </View>
 
-        {/* ── Main Content Area ── */}
+        {/* ── Central Main Arena ── */}
         <View style={styles.contentArea}>
-          {/* ═══ STATE: ROOM ACCEPTED CELEBRATION ═══ */}
-          {mm.phase === "accepted" ? (
-            <View style={styles.matchAcceptedCard}>
-              <View style={styles.matchAcceptedBadge}>
-                <Check size={38} color="#FFFFFF" />
-              </View>
-              <Text style={styles.matchAcceptedTitle}>It's a Match!</Text>
-              <Text style={styles.matchAcceptedSubtitle}>
-                You and {partnerAlias} both accepted. Entering confidential chat room…
-              </Text>
-              <ActivityIndicator color="#34D399" size="large" style={{ marginTop: 16 }} />
-            </View>
-          ) : mm.phase === "ended" ? (
-            /* ═══ STATE: MATCH EXPIRED OR DECLINED ═══ */
-            <View style={styles.matchEndedCard}>
-              <View style={styles.matchEndedBadge}>
-                <X size={28} color="#EF4444" />
-              </View>
-              <Text style={styles.matchEndedTitle}>Match Expired</Text>
-              <Text style={styles.matchEndedSubtitle}>
-                {mm.endedReason || "The match was declined or expired before both accepted."}
-              </Text>
-              <View style={{ width: "100%", gap: 10 }}>
-                <TouchableOpacity
-                  onPress={() => mm.joinQueue()}
-                  activeOpacity={0.8}
-                  style={styles.retrySearchBtn}
-                >
-                  <RotateCw size={16} color="#FFFFFF" />
-                  <Text style={styles.retrySearchBtnText}>Find Another Match</Text>
-                </TouchableOpacity>
-                <TouchableOpacity
-                  onPress={handleClose}
-                  activeOpacity={0.8}
-                  style={styles.closeEndedBtn}
-                >
-                  <Text style={styles.closeEndedBtnText}>Close</Text>
-                </TouchableOpacity>
-              </View>
-            </View>
-          ) : stage !== "revealed" ? (
+          {stage !== "revealed" ? (
             /* ═══════════════════════════════════════════════════════════
-               SEARCHING STAGE (LEFT-TO-RIGHT FISHEYE FLOW & CLEAN PILL)
+               STAGE 1 & 2: PURE CLEAN LITMATCH HORIZONTAL CAROUSEL
+               - 3-slot horizontal conveyor cycling
+               - Snapping lock into center on match found
+               - Shockwave explosion on match detected
+               - "Match Found!" gradient pill badge
                ═══════════════════════════════════════════════════════════ */
-            <View style={styles.searchBody}>
-              {/* 1. Left-to-Right Fisheye Conveyor (Disappearing on Right, Appearing on Left) */}
-              <View style={styles.conveyorContainer}>
-                <FisheyeConveyor />
-              </View>
-
-              {/* 2. "Matching..." Title & Random Telemetry Text */}
-              <View style={styles.matchingTextSection}>
-                <MatchingTitle />
-
-                <Animated.View
-                  style={[
-                    styles.telemetryTextWrapper,
-                    { opacity: telemetryFade },
-                  ]}
-                >
-                  <Text style={styles.telemetrySubText}>
-                    {TELEMETRY_MESSAGES[telemetryIndex]}
-                  </Text>
-                </Animated.View>
-              </View>
-
-              {/* 3. Action Section: Single Clean Cancel Search Pill Button */}
-              <View style={styles.bottomActionSection}>
-                <TouchableOpacity
-                  onPress={handleClose}
-                  activeOpacity={0.85}
-                  style={styles.cancelSearchPill}
-                >
-                  <Text style={styles.cancelSearchPillText}>Cancel Search</Text>
-                </TouchableOpacity>
-
-                <Text style={styles.matchesLeftFooterText}>
-                  Today you have {Math.max(0, mm.dailyLimit - mm.dailyMatchCount)} matches left
+            <View style={styles.carouselArena}>
+              {/* Header Title */}
+              <View style={styles.carouselHeaderWrapper}>
+                <Text style={styles.carouselMainTitle}>
+                  Finding Your Campus Ally
                 </Text>
+              </View>
+
+              {/* Avatar Conveyor Track with Seamless Natural Edge Fades and Sliding Spring Physics */}
+              <View style={styles.conveyorTrack}>
+                {/* Natural Edge fade gradient on Left - blends seamlessly into #06110A background */}
+                <LinearGradient
+                  colors={[
+                    "#06110A",
+                    "rgba(6, 17, 10, 0.95)",
+                    "rgba(6, 17, 10, 0.7)",
+                    "rgba(6, 17, 10, 0.3)",
+                    "rgba(6, 17, 10, 0)",
+                  ]}
+                  locations={[0, 0.25, 0.55, 0.8, 1]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.edgeFadeLeft}
+                  pointerEvents="none"
+                />
+
+                {[-3, -2, -1, 0, 1, 2, 3].map((offset) => {
+                  const i = cycleStep - offset;
+                  const pos = offset;
+                  const slotAvatarKey =
+                    stage === "detected" && pos === 0
+                      ? partnerAvatar
+                      : ANIMAL_KEYS[((i % ANIMAL_KEYS.length) + ANIMAL_KEYS.length) % ANIMAL_KEYS.length];
+
+                  let targetX = pos * slotOffsetPx;
+                  let targetScale = pos === 0 ? 1.25 : Math.abs(pos) === 1 ? 0.78 : 0.5;
+                  let targetOpacity = pos === 0 ? 1.0 : Math.abs(pos) === 1 ? 0.45 : 0;
+
+                  if (stage === "detected") {
+                    if (pos === 0) {
+                      targetX = 0;
+                      targetScale = 1.35;
+                      targetOpacity = 1.0;
+                    } else {
+                      targetX = pos < 0 ? -260 : 260;
+                      targetScale = 0.4;
+                      targetOpacity = 0;
+                    }
+                  }
+
+                  return (
+                    <CarouselSlotItem
+                      key={i}
+                      avatarKey={slotAvatarKey}
+                      targetX={targetX}
+                      targetScale={targetScale}
+                      targetOpacity={targetOpacity}
+                      isCenter={pos === 0}
+                      showShockwave={stage === "detected"}
+                    />
+                  );
+                })}
+
+                {/* Natural Edge fade gradient on Right - blends seamlessly into #06110A background */}
+                <LinearGradient
+                  colors={[
+                    "rgba(6, 17, 10, 0)",
+                    "rgba(6, 17, 10, 0.3)",
+                    "rgba(6, 17, 10, 0.7)",
+                    "rgba(6, 17, 10, 0.95)",
+                    "#06110A",
+                  ]}
+                  locations={[0, 0.2, 0.45, 0.75, 1]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.edgeFadeRight}
+                  pointerEvents="none"
+                />
+              </View>
+
+              {/* Status Ticker & Equalizer */}
+              <View style={styles.tickerSection}>
+                {stage === "detected" ? (
+                  <View style={styles.detectedBadgeRow}>
+                    <LinearGradient
+                      colors={["#10B981", "#F59E0B", "#10B981"]}
+                      start={{ x: 0, y: 0 }}
+                      end={{ x: 1, y: 0 }}
+                      style={styles.detectedBadgeGradient}
+                    >
+                      <Sparkles size={13} color="#030805" />
+                      <Text style={styles.detectedBadgeText}>Match Found!</Text>
+                      <Sparkles size={13} color="#030805" />
+                    </LinearGradient>
+                  </View>
+                ) : (
+                  <Animated.View style={{ opacity: telemetryFade, minHeight: 22, justifyContent: "center" }}>
+                    <Text style={styles.telemetryText}>
+                      {TELEMETRY_MESSAGES[telemetryIndex]}
+                    </Text>
+                  </Animated.View>
+                )}
+
+                {/* Affinity Score on Detected */}
+                {stage === "detected" && (
+                  <Text style={styles.affinityDetectedText}>
+                    ★ {score}% Soul Affinity with {partnerAlias}
+                  </Text>
+                )}
+
+                {/* Frequency Equalizer Waveform */}
+                <EqualizerWaveform paused={stage === "detected"} />
               </View>
             </View>
           ) : (
             /* ═══════════════════════════════════════════════════════════
-               MATCH FOUND: CONFIRMATION UI (EXACT SPEC FROM WEB)
+               STAGE 3: RENOVATED EDITORIAL CONFIRMATION CARD (MIRRORS WEB)
                ═══════════════════════════════════════════════════════════ */
             <Animated.View
               style={[
@@ -564,9 +660,6 @@ export function MatchmakingOverlayModal({
                   style={StyleSheet.absoluteFill}
                 />
 
-                {/* Warm Amber Glow in Upper-Right Corner */}
-                <View style={styles.cardAmberGlow} />
-
                 {/* Diagonal Angled Sheen Overlay for Depth */}
                 <LinearGradient
                   colors={["rgba(255,255,255,0.18)", "transparent", "rgba(0,0,0,0.35)"]}
@@ -576,18 +669,18 @@ export function MatchmakingOverlayModal({
                   pointerEvents="none"
                 />
 
-                {/* Top Row: Avatar on Left + 'X' Dismiss Button on Upper Right */}
+                {/* Card Top Row: Avatar on Left + 'X' Dismiss on Upper Right */}
                 <View style={styles.cardTopRow}>
                   <View style={styles.cardAvatarWrapper}>
                     <View style={styles.cardAvatarRing}>
-                      <AnonymousAvatar avatarKey={partnerAvatar} size={76} borderWidth={0} />
+                      <AnonymousAvatar avatarKey={partnerAvatar} size={78} borderWidth={0} />
                     </View>
                     <View style={styles.cardOnlineDot} />
                   </View>
 
                   <TouchableOpacity
                     onPress={mm.decline}
-                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                    hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                     activeOpacity={0.7}
                     style={styles.cardDismissBtn}
                     accessibilityLabel="Pass match"
@@ -606,7 +699,7 @@ export function MatchmakingOverlayModal({
                   </Text>
                 </View>
 
-                {/* Interest Pills */}
+                {/* Interest Pills (Uniform Dark Glass matching web) */}
                 <View style={styles.cardInterestRow}>
                   {["Tech & Code", "Web Design", "Figma", "Study"].map((interest, idx) => (
                     <View key={idx} style={styles.cardInterestPill}>
@@ -645,7 +738,7 @@ export function MatchmakingOverlayModal({
                   </View>
                 </View>
 
-                {/* Primary CTA Button */}
+                {/* Primary CTA Button (Clean White Pill) */}
                 <View style={styles.cardCtaSection}>
                   {mm.waitingForPartner ? (
                     <View style={styles.cardWaitingBtn}>
@@ -661,7 +754,7 @@ export function MatchmakingOverlayModal({
                       activeOpacity={0.85}
                       style={styles.cardConnectBtn}
                     >
-                      <Sparkles size={17} color="#F59E0B" />
+                      <Sparkles size={16} color="#F59E0B" />
                       <Text style={styles.cardConnectBtnText}>
                         Connect & Chat
                       </Text>
@@ -672,478 +765,423 @@ export function MatchmakingOverlayModal({
             </Animated.View>
           )}
         </View>
+
+        {/* ── Footer: Clean Cancel Action ── */}
+        <View style={[styles.bottomFooter, { paddingBottom: Math.max(insets.bottom + 12, 24) }]}>
+          {stage === "searching" ? (
+            <TouchableOpacity
+              onPress={handleClose}
+              activeOpacity={0.8}
+              style={styles.cancelFooterBtn}
+            >
+              <Text style={styles.cancelFooterBtnText}>Cancel search</Text>
+            </TouchableOpacity>
+          ) : (
+            <View style={{ height: 36 }} />
+          )}
+        </View>
       </View>
     </Modal>
   );
 }
 
+// ─── Stylesheet ──────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
   overlayRoot: {
     flex: 1,
-    backgroundColor: "#030E08",
-  },
-  ambientNebula: {
-    position: "absolute",
-    top: "22%",
-    alignSelf: "center",
-    width: 320,
-    height: 320,
-    borderRadius: 160,
-    backgroundColor: "#1A6B3C",
-    opacity: 0.18,
-    transform: [{ scale: 1.5 }],
+    backgroundColor: "#030805",
   },
 
-  // Top Bar (No Leave Button)
-  topBar: {
+  // Top Header (Exact web brand alignment)
+  topHeader: {
     width: "100%",
     paddingHorizontal: 20,
-    paddingBottom: 16,
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    zIndex: 10,
+    zIndex: 30,
   },
-  backBtn: {
-    width: 38,
-    height: 38,
-    borderRadius: 19,
+  brandRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  brandLogoSquare: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: "#1A6B3C",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 3,
+  },
+  brandLogoLetter: {
+    color: "#FFFFFF",
+    fontSize: 16,
+    fontWeight: "bold",
+    fontFamily: "Fraunces_700Bold",
+  },
+  brandLogoText: {
+    fontSize: 18,
+    fontWeight: "bold",
+    color: "#FFFFFF",
+    letterSpacing: 0.4,
+    fontFamily: "Fraunces_700Bold",
+  },
+  brandLogoAccent: {
+    color: "#E8A838",
+  },
+  closeBtn: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
     backgroundColor: "rgba(255, 255, 255, 0.08)",
     alignItems: "center",
     justifyContent: "center",
   },
-  topBarTitle: {
-    fontFamily: "PlusJakartaSans",
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#FFFFFF",
-    letterSpacing: 0.2,
-  },
-  topBarSpacer: {
-    width: 38,
-    height: 38,
-  },
 
-  // Content Area
+  // Central Arena
   contentArea: {
     flex: 1,
     alignItems: "center",
     justifyContent: "center",
-    paddingHorizontal: 20,
+    zIndex: 20,
   },
 
-  // Searching Body
-  searchBody: {
+  // Carousel Stage
+  carouselArena: {
     width: "100%",
-    flex: 1,
-    justifyContent: "space-around",
-    alignItems: "center",
-    paddingVertical: 18,
-  },
-
-  // 1. Fisheye Conveyor Stage
-  conveyorContainer: {
-    width: "100%",
-    height: 120,
     alignItems: "center",
     justifyContent: "center",
-    overflow: "hidden",
+    transform: [{ translateY: -20 }],
   },
-  conveyorStage: {
-    width: 340,
-    height: 110,
+  carouselHeaderWrapper: {
+    marginBottom: 20,
+    paddingHorizontal: 20,
+    alignItems: "center",
+  },
+  carouselMainTitle: {
+    fontSize: 22,
+    fontWeight: "bold",
+    color: "#FFFFFF",
+    letterSpacing: 0.4,
+    fontFamily: "Fraunces_700Bold",
+    textAlign: "center",
+  },
+  conveyorTrack: {
+    width: SCREEN_WIDTH,
+    height: 180,
     alignItems: "center",
     justifyContent: "center",
     position: "relative",
+    overflow: "hidden",
   },
-  avatarNode: {
+  edgeFadeLeft: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 80,
+    zIndex: 25,
+  },
+  edgeFadeRight: {
+    position: "absolute",
+    right: 0,
+    top: 0,
+    bottom: 0,
+    width: 80,
+    zIndex: 25,
+  },
+  slotContainer: {
     position: "absolute",
     alignItems: "center",
     justifyContent: "center",
   },
-  solidAvatarCircle: {
-    width: 58,
-    height: 58,
-    borderRadius: 29,
-    alignItems: "center",
-    justifyContent: "center",
+  avatarGlowCircle: {
+    position: "relative",
+    borderRadius: 999,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
+    shadowOpacity: 0.4,
     shadowRadius: 8,
-    elevation: 5,
   },
-  avatarEmoji: {
-    fontSize: 29,
+  shockwaveRing: {
+    position: "absolute",
+    top: -12,
+    left: -12,
+    right: -12,
+    bottom: -12,
+    borderRadius: 999,
+    borderWidth: 2,
   },
 
-  // 2. "Matching..." and Telemetry Text Section
-  matchingTextSection: {
+  // Status Ticker & Equalizer
+  tickerSection: {
+    marginTop: 20,
     alignItems: "center",
-    justifyContent: "center",
-    paddingHorizontal: 20,
-  },
-  matchingTitleText: {
-    fontFamily: "PlusJakartaSans",
-    fontSize: 28,
-    fontWeight: "800",
-    color: "#FFFFFF",
-    letterSpacing: 0.3,
-    marginBottom: 8,
-  },
-  matchingDots: {
-    color: "#34D399",
-  },
-  telemetryTextWrapper: {
-    minHeight: 44,
-    justifyContent: "center",
-    alignItems: "center",
-  },
-  telemetrySubText: {
-    fontFamily: "PlusJakartaSans",
-    fontSize: 14,
-    color: "rgba(167, 243, 208, 0.85)",
-    textAlign: "center",
-    lineHeight: 20,
-    fontWeight: "500",
+    gap: 10,
+    width: "100%",
     maxWidth: 320,
   },
-
-  // 3. Action Section: Single Clean Cancel Search Pill Button
-  bottomActionSection: {
-    width: "100%",
+  detectedBadgeRow: {
+    height: 28,
     alignItems: "center",
     justifyContent: "center",
-    gap: 12,
   },
-  cancelSearchPill: {
-    backgroundColor: "#1A6B3C",
-    height: 50,
-    borderRadius: 25,
-    paddingHorizontal: 44,
+  detectedBadgeGradient: {
+    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#10B981",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.35,
-    shadowRadius: 10,
-    elevation: 5,
-    borderWidth: 1,
-    borderColor: "rgba(52, 211, 153, 0.35)",
+    gap: 6,
+    paddingHorizontal: 16,
+    paddingVertical: 5,
+    borderRadius: 999,
   },
-  cancelSearchPillText: {
-    fontFamily: "PlusJakartaSans",
-    fontSize: 15,
-    fontWeight: "800",
-    color: "#FFFFFF",
+  detectedBadgeText: {
+    fontSize: 12,
+    fontWeight: "900",
+    color: "#030805",
+    letterSpacing: 0.6,
+    textTransform: "uppercase",
+  },
+  telemetryText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "rgba(110, 231, 183, 0.9)",
+    textAlign: "center",
     letterSpacing: 0.2,
   },
-  matchesLeftFooterText: {
-    fontFamily: "PlusJakartaSans",
-    fontSize: 12,
-    color: "rgba(255, 255, 255, 0.52)",
-    fontWeight: "500",
+  affinityDetectedText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#FCD34D",
     textAlign: "center",
+    letterSpacing: 0.2,
+  },
+  equalizerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 5,
+    height: 26,
+    paddingTop: 4,
+  },
+  equalizerBar: {
+    width: 3.5,
+    borderRadius: 2,
+    overflow: "hidden",
   },
 
-  // ── Confirmation Card (Matching Web Spec) ──
+  // Confirmation Card (Stage 3)
   cardWrapper: {
     width: "100%",
-    maxWidth: 360,
+    maxWidth: 380,
+    paddingHorizontal: 20,
     alignItems: "center",
   },
   confirmationCard: {
     width: "100%",
     borderRadius: 36,
-    padding: 22,
-    borderWidth: 1.5,
-    borderColor: "rgba(74, 222, 128, 0.35)",
+    padding: 24,
+    borderWidth: 1,
+    borderColor: "rgba(52, 211, 153, 0.25)",
     overflow: "hidden",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 16 },
-    shadowOpacity: 0.6,
+    shadowOffset: { width: 0, height: 24 },
+    shadowOpacity: 0.75,
     shadowRadius: 30,
-    elevation: 12,
-  },
-  cardAmberGlow: {
-    position: "absolute",
-    top: -40,
-    right: -40,
-    width: 140,
-    height: 140,
-    borderRadius: 70,
-    backgroundColor: "#E8A838",
-    opacity: 0.18,
+    elevation: 20,
   },
   cardTopRow: {
     flexDirection: "row",
     alignItems: "flex-start",
     justifyContent: "space-between",
-    marginBottom: 12,
   },
   cardAvatarWrapper: {
     position: "relative",
   },
   cardAvatarRing: {
     borderRadius: 44,
-    padding: 4,
-    backgroundColor: "rgba(255,255,255,0.18)",
-    borderWidth: 1.2,
-    borderColor: "rgba(255,255,255,0.35)",
+    padding: 3,
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.3)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
   },
   cardOnlineDot: {
     position: "absolute",
     bottom: 2,
     right: 2,
-    width: 14,
-    height: 14,
-    borderRadius: 7,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
     backgroundColor: "#10B981",
-    borderWidth: 2,
+    borderWidth: 2.5,
     borderColor: "#071F12",
   },
   cardDismissBtn: {
     width: 32,
     height: 32,
     borderRadius: 16,
-    backgroundColor: "rgba(0, 0, 0, 0.38)",
+    backgroundColor: "rgba(0, 0, 0, 0.35)",
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.25)",
     alignItems: "center",
     justifyContent: "center",
   },
   cardIdentitySection: {
-    marginBottom: 12,
+    marginTop: 12,
+    gap: 2,
   },
   cardPartnerAlias: {
-    fontFamily: "PlusJakartaSans",
     fontSize: 24,
     fontWeight: "800",
     color: "#FFFFFF",
-    letterSpacing: -0.4,
-    lineHeight: 30,
+    letterSpacing: -0.3,
   },
   cardPartnerSubtitle: {
-    fontFamily: "PlusJakartaSans",
     fontSize: 13,
     fontWeight: "500",
-    color: "rgba(255,255,255,0.8)",
-    marginTop: 2,
+    color: "rgba(255, 255, 255, 0.8)",
   },
   cardInterestRow: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: 6,
-    marginBottom: 16,
+    marginTop: 12,
   },
   cardInterestPill: {
     paddingHorizontal: 12,
     paddingVertical: 5,
-    borderRadius: 14,
-    backgroundColor: "rgba(0,0,0,0.42)",
+    borderRadius: 999,
+    backgroundColor: "rgba(0, 0, 0, 0.45)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.16)",
+    borderColor: "rgba(255, 255, 255, 0.15)",
   },
   cardInterestText: {
-    fontFamily: "PlusJakartaSans",
-    fontSize: 11,
-    fontWeight: "600",
+    fontSize: 12,
+    fontWeight: "500",
     color: "#FFFFFF",
   },
   cardInterestMorePill: {
     paddingHorizontal: 10,
     paddingVertical: 5,
-    borderRadius: 14,
-    backgroundColor: "rgba(0,0,0,0.3)",
+    borderRadius: 999,
+    backgroundColor: "rgba(0, 0, 0, 0.35)",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.16)",
+    borderColor: "rgba(255, 255, 255, 0.15)",
   },
   cardInterestMoreText: {
-    fontFamily: "PlusJakartaSans",
-    fontSize: 11,
-    fontWeight: "700",
-    color: "rgba(255,255,255,0.85)",
+    fontSize: 12,
+    fontWeight: "600",
+    color: "rgba(255, 255, 255, 0.8)",
   },
   cardStatsRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    paddingTop: 14,
+    marginTop: 16,
+    paddingTop: 12,
     borderTopWidth: 1,
-    borderColor: "rgba(255,255,255,0.15)",
-    marginBottom: 16,
+    borderTopColor: "rgba(255, 255, 255, 0.15)",
   },
   cardStatCol: {
     flex: 1,
     alignItems: "center",
+    gap: 2,
   },
   cardStatValueRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 3,
-    marginBottom: 2,
+    gap: 4,
   },
   cardStatAmberIcon: {
+    fontSize: 14,
     color: "#FCD34D",
-    fontSize: 13,
   },
   cardStatEmeraldIcon: {
-    fontSize: 13,
+    fontSize: 14,
+    color: "#6EE7B7",
   },
   cardStatClockIcon: {
-    fontSize: 12,
+    fontSize: 13,
+    color: "#FDE68A",
   },
   cardStatValueText: {
-    fontFamily: "PlusJakartaSans",
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: "700",
     color: "#FFFFFF",
   },
   cardStatLabel: {
     fontSize: 10,
     fontWeight: "700",
-    color: "rgba(255,255,255,0.65)",
-    textTransform: "uppercase",
+    color: "rgba(255, 255, 255, 0.65)",
     letterSpacing: 0.8,
+    textTransform: "uppercase",
   },
   cardCtaSection: {
+    marginTop: 16,
     width: "100%",
+  },
+  cardWaitingBtn: {
+    width: "100%",
+    paddingVertical: 14,
+    borderRadius: 999,
+    backgroundColor: "rgba(255, 255, 255, 0.2)",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.3)",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  cardWaitingBtnText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#FFFFFF",
   },
   cardConnectBtn: {
     width: "100%",
-    height: 50,
-    borderRadius: 25,
+    paddingVertical: 14,
+    borderRadius: 999,
     backgroundColor: "#FFFFFF",
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-    flexDirection: "row",
     gap: 8,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.25,
     shadowRadius: 10,
     elevation: 6,
   },
   cardConnectBtnText: {
-    fontFamily: "PlusJakartaSans",
     fontSize: 15,
     fontWeight: "800",
-    color: "#0F172A",
-    letterSpacing: -0.2,
-  },
-  cardWaitingBtn: {
-    width: "100%",
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: "rgba(255,255,255,0.18)",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.3)",
-    alignItems: "center",
-    justifyContent: "center",
-    flexDirection: "row",
-    gap: 10,
-  },
-  cardWaitingBtnText: {
-    fontFamily: "PlusJakartaSans",
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#FFFFFF",
+    color: "#111827",
+    letterSpacing: 0.2,
   },
 
-  // Match Accepted Card
-  matchAcceptedCard: {
-    alignItems: "center",
-    backgroundColor: "rgba(255, 255, 255, 0.08)",
-    borderRadius: 28,
-    padding: 30,
-    borderWidth: 1.5,
-    borderColor: "#34D399",
+  // Bottom Footer
+  bottomFooter: {
     width: "100%",
-    maxWidth: 320,
-  },
-  matchAcceptedBadge: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: "#1A6B3C",
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 16,
-    borderWidth: 2,
-    borderColor: "#34D399",
+    zIndex: 20,
   },
-  matchAcceptedTitle: {
-    fontSize: 22,
-    fontWeight: "900",
-    color: "#FFFFFF",
-    marginBottom: 6,
+  cancelFooterBtn: {
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 999,
   },
-  matchAcceptedSubtitle: {
+  cancelFooterBtnText: {
     fontSize: 13,
-    color: "#A7F3D0",
-    textAlign: "center",
-    lineHeight: 18,
-  },
-
-  // Match Ended Card
-  matchEndedCard: {
-    width: "100%",
-    maxWidth: 320,
-    backgroundColor: "rgba(255, 255, 255, 0.07)",
-    borderRadius: 24,
-    padding: 24,
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.15)",
-  },
-  matchEndedBadge: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: "rgba(239, 68, 68, 0.18)",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 14,
-  },
-  matchEndedTitle: {
-    fontSize: 18,
-    fontWeight: "800",
-    color: "#FFFFFF",
-    marginBottom: 6,
-  },
-  matchEndedSubtitle: {
-    fontSize: 13,
-    color: "#94A3B8",
-    textAlign: "center",
-    marginBottom: 20,
-    lineHeight: 18,
-  },
-  retrySearchBtn: {
-    width: "100%",
-    height: 46,
-    borderRadius: 16,
-    backgroundColor: "#1A6B3C",
-    alignItems: "center",
-    justifyContent: "center",
-    flexDirection: "row",
-    gap: 8,
-  },
-  retrySearchBtnText: {
-    fontSize: 14,
-    fontWeight: "800",
-    color: "#FFFFFF",
-  },
-  closeEndedBtn: {
-    width: "100%",
-    height: 42,
-    borderRadius: 16,
-    backgroundColor: "rgba(255,255,255,0.08)",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  closeEndedBtnText: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#94A3B8",
+    fontWeight: "500",
+    color: "rgba(255, 255, 255, 0.6)",
   },
 });

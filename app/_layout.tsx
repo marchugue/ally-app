@@ -12,6 +12,7 @@ import Constants from "expo-constants";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { AuthProvider, useAuth } from "@/lib/auth/AuthContext";
 import { PresenceProvider } from "@/context/PresenceContext";
+import { getMobileRegisterCache } from "@/lib/registerCache";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -70,118 +71,140 @@ function RootLayoutNav() {
   useEffect(() => {
     if (isLoading || hasSeenOnboarding === null) return;
 
-    const atRoot = segments.length === 0 || (segments.length === 1 && segments[0] === "index");
+    let isMounted = true;
 
-    const onAuthPages =
-      (segments[0] === "pages" &&
-        (segments[1] === "onboarding" ||
-          segments[1] === "landing" ||
-          segments[1] === "select-email" ||
-          segments[1] === "id-upload" ||
+    const runNavigation = async () => {
+      const atRoot = segments.length === 0 || (segments.length === 1 && segments[0] === "index");
+
+      const onAuthPages =
+        (segments[0] === "pages" &&
+          (segments[1] === "onboarding" ||
+            segments[1] === "landing" ||
+            segments[1] === "select-email" ||
+            segments[1] === "id-upload" ||
+            segments[1] === "id-scan-front" ||
+            segments[1] === "id-scan-back" ||
+            segments[1] === "id-upload-success" ||
+            segments[1] === "verify-otp" ||
+            segments[1] === "login" ||
+            segments[1] === "register" ||
+            segments[1] === "forgot-password" ||
+            segments[1] === "password-reset-success" ||
+            segments.length === 1)) ||
+        segments[0] === "login" ||
+        segments[0] === "register" ||
+        segments[0] === "landing" ||
+        segments[0] === "onboarding";
+
+      const onPendingPage = segments[0] === "pages" && segments[1] === "pending-approval";
+      const onRegisterPage = segments[0] === "pages" && segments[1] === "register";
+      const onIdUploadPages =
+        segments[0] === "pages" &&
+        (segments[1] === "id-upload" ||
           segments[1] === "id-scan-front" ||
           segments[1] === "id-scan-back" ||
-          segments[1] === "id-upload-success" ||
-          segments[1] === "verify-otp" ||
-          segments[1] === "login" ||
-          segments[1] === "register" ||
-          segments[1] === "forgot-password" ||
-          segments[1] === "password-reset-success" ||
-          segments.length === 1)) ||
-      segments[0] === "login" ||
-      segments[0] === "register" ||
-      segments[0] === "landing" ||
-      segments[0] === "onboarding";
+          segments[1] === "id-upload-success");
 
-    const onPendingPage = segments[0] === "pages" && segments[1] === "pending-approval";
-    const onRegisterPage = segments[0] === "pages" && segments[1] === "register";
-    const onIdUploadPages =
-      segments[0] === "pages" &&
-      (segments[1] === "id-upload" ||
-        segments[1] === "id-scan-front" ||
-        segments[1] === "id-scan-back" ||
-        segments[1] === "id-upload-success");
+      // ── 1. Device has session ──
+      if (user) {
+        // Mark onboarding as completed in storage so onboarding is never shown again
+        AsyncStorage.setItem("onboarding_done", "1").catch(() => {});
 
-    // ── 1. Device has session ──
-    if (user) {
-      // Mark onboarding as completed in storage so onboarding is never shown again
-      AsyncStorage.setItem("onboarding_done", "1").catch(() => {});
+        const emailType = user.user_metadata?.email_type;
+        const isExternal = emailType === "external";
+        const isApproved = Boolean(user.user_metadata?.is_approved);
+        const hasStudentId = Boolean(
+          user.user_metadata?.student_id_url ||
+          (user as any).student_id_url
+        );
 
-      const emailType = user.user_metadata?.email_type;
-      const isExternal = emailType === "external";
-      const isApproved = Boolean(user.user_metadata?.is_approved);
-      const hasStudentId = Boolean(
-        user.user_metadata?.student_id_url ||
-        (user as any).student_id_url
-      );
+        let hasCachedId = false;
+        if (isExternal && !isApproved && !hasStudentId) {
+          try {
+            const cached = await getMobileRegisterCache();
+            if (cached?.studentIdFrontUri) {
+              hasCachedId = true;
+            }
+          } catch {}
+        }
 
-      // Authenticated but profile incomplete (Steps 2-4 not yet done)
-      const hasAcademicMetadata = Boolean(
-        (user.user_metadata?.course || user.user_metadata?.department) &&
-        user.user_metadata?.year_level
-      );
-      const isComplete = Boolean(
-        user.user_metadata?.onboarding_complete === true ||
-        user.user_metadata?.onboarding_complete === "true" ||
-        hasAcademicMetadata
-      );
-      const needsOnboarding = !isComplete;
+        if (!isMounted) return;
 
-      // External user who has not uploaded their student ID yet
-      if (isExternal && !isApproved && !hasStudentId) {
-        if (!onIdUploadPages && !onRegisterPage) {
-          router.replace("/pages/id-upload" as any);
+        // Authenticated but profile incomplete (Steps 2-4 not yet done)
+        const hasAcademicMetadata = Boolean(
+          (user.user_metadata?.course || user.user_metadata?.department) &&
+          user.user_metadata?.year_level
+        );
+        const isComplete = Boolean(
+          user.user_metadata?.onboarding_complete === true ||
+          user.user_metadata?.onboarding_complete === "true" ||
+          hasAcademicMetadata
+        );
+        const needsOnboarding = !isComplete;
+
+        // External user who has not uploaded their student ID yet and has no cached ID
+        if (isExternal && !isApproved && !hasStudentId && !hasCachedId) {
+          if (!onIdUploadPages && !onRegisterPage) {
+            router.replace("/pages/id-upload" as any);
+          }
+          return;
+        }
+
+        if (needsOnboarding) {
+          if (!onRegisterPage && !onIdUploadPages) {
+            router.replace({
+              pathname: "/pages/register" as any,
+              params: { startStep: "2" },
+            });
+          }
+          return;
+        }
+
+        // Profile complete but external pending admin approval
+        const isPendingApproval = isExternal && !isApproved;
+        if (isPendingApproval) {
+          if (!onPendingPage && !onIdUploadPages && !onRegisterPage) {
+            router.replace("/pages/pending-approval" as any);
+          }
+          return;
+        }
+
+        // Authenticated user approved but currently on pending page
+        if (onPendingPage) {
+          router.replace("/(tabs)");
+          return;
+        }
+
+        // Fully authenticated, onboarded & approved:
+        // Always redirect to home / feed / dashboard whenever at root or on any auth/entry screen!
+        if (atRoot || onAuthPages) {
+          router.replace("/(tabs)");
         }
         return;
       }
 
-      if (needsOnboarding) {
-        if (!onRegisterPage && !onIdUploadPages) {
-          router.replace({
-            pathname: "/pages/register" as any,
-            params: { startStep: "2" },
-          });
+      // ── 2. Device has no session (unauthenticated) ──
+      // First launch: onboarding not yet completed
+      if (!hasSeenOnboarding) {
+        if (atRoot || !onAuthPages) {
+          router.replace("/pages/onboarding" as any);
         }
         return;
       }
 
-      // Profile complete but external pending admin approval
-      const isPendingApproval = isExternal && !isApproved;
-      if (isPendingApproval) {
-        if (!onPendingPage && !onIdUploadPages && !onRegisterPage) {
-          router.replace("/pages/pending-approval" as any);
-        }
-        return;
-      }
-
-      // Authenticated user approved but currently on pending page
-      if (onPendingPage) {
-        router.replace("/(tabs)");
-        return;
-      }
-
-      // Fully authenticated, onboarded & approved:
-      // Always redirect to home / feed / dashboard whenever at root or on any auth/entry screen!
-      if (atRoot || onAuthPages) {
-        router.replace("/(tabs)");
-      }
-      return;
-    }
-
-    // ── 2. Device has no session (unauthenticated) ──
-    // First launch: onboarding not yet completed
-    if (!hasSeenOnboarding) {
+      // Subsequent launches / unauthenticated:
+      // If at root or attempting to access protected screens, route to login
       if (atRoot || !onAuthPages) {
-        router.replace("/pages/onboarding" as any);
+        router.replace("/pages/login" as any);
+        return;
       }
-      return;
-    }
+    };
 
-    // Subsequent launches / unauthenticated:
-    // If at root or attempting to access protected screens, route to login
-    if (atRoot || !onAuthPages) {
-      router.replace("/pages/login" as any);
-      return;
-    }
+    runNavigation();
+
+    return () => {
+      isMounted = false;
+    };
   }, [user, isLoading, segments, hasSeenOnboarding]);
 
   if (isLoading || hasSeenOnboarding === null) {
