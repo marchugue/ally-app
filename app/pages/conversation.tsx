@@ -103,6 +103,7 @@ import { OfflineAnimatedEmoji } from "@/components/OfflineAnimatedEmoji";
 // MatchRevealSheet replaced by standalone roadmap page
 import { RoadmapProgressionBadge } from "@/components/RoadmapProgressionBadge";
 import { KeyboardHugView } from "@/components/KeyboardHugView";
+import { ConversationWelcomeHeader } from "@/components/ConversationWelcomeHeader";
 import { KeyboardGestureArea } from "react-native-keyboard-controller";
 import { ConfirmModal } from "@/components/ConfirmModal";
 import { ReportModal } from "@/components/ReportModal";
@@ -391,6 +392,7 @@ export default function ConversationScreen() {
     isAnonymousParam === "true" ? "anonymous" : null
   );
   const [avatarReveal, setAvatarReveal] = useState<AvatarRevealView | null>(null);
+  const [sharedInterests, setSharedInterests] = useState<string[]>([]);
 
   const fetchAvatarReveal = useCallback(async (mId?: string) => {
     const targetId = mId || matchInfo?.matchId || matchInfo?.id || conversationId;
@@ -405,9 +407,14 @@ export default function ConversationScreen() {
     if (!accessToken) return;
     try {
       const data = await getMatchReveal(targetId, accessToken);
-      if (data?.avatarReveal) {
-        setAvatarReveal(data.avatarReveal);
-        void setCachedAvatarReveal(targetId, data.avatarReveal);
+      if (data) {
+        if (data.avatarReveal) {
+          setAvatarReveal(data.avatarReveal);
+          void setCachedAvatarReveal(targetId, data.avatarReveal);
+        }
+        if (Array.isArray(data.sharedInterests) && data.sharedInterests.length > 0) {
+          setSharedInterests(data.sharedInterests);
+        }
       }
     } catch {
       // quiet fail
@@ -436,6 +443,24 @@ export default function ConversationScreen() {
     prefillAvatar,
     otherProfile?.avatar_url,
   ]);
+
+  const effectiveSharedInterests = useMemo(() => {
+    if (sharedInterests && sharedInterests.length > 0) return sharedInterests;
+    if (Array.isArray(matchInfo?.sharedInterests) && matchInfo.sharedInterests.length > 0) {
+      return matchInfo.sharedInterests;
+    }
+    return [];
+  }, [sharedInterests, matchInfo?.sharedInterests]);
+
+  const participantDisplayName = isAnonymous
+    ? matchInfo?.partnerAlias || prefillName || "Anonymous Ally"
+    : otherProfile?.full_name || otherProfile?.username || prefillName || "User";
+
+  const participantAvatarSrc = isAnonymous
+    ? matchInfo?.partnerAvatar || prefillAvatar || "fox"
+    : otherProfile?.avatar_url || prefillAvatar || null;
+
+  const partnerAvatarKey = matchInfo?.partnerAvatar || prefillAvatar || "fox";
 
   // Media sharing is always unlocked (streak is used as multiplier only)
   const isImagesLocked = false;
@@ -1801,19 +1826,40 @@ export default function ConversationScreen() {
             onEndReachedThreshold={0.2}
             ListFooterComponent={
               isLoadingOlder ? (
-                <View style={{ paddingVertical: 14, alignItems: "center", justifyContent: "center", transform: [{ scaleY: -1 }] }}>
+                <View style={{ paddingVertical: 14, alignItems: "center", justifyContent: "center" }}>
                   <ActivityIndicator size="small" color="#1A6B3C" />
                 </View>
+              ) : !hasMore && invertedChatItems.length > 0 ? (
+                <ConversationWelcomeHeader
+                  participantName={participantDisplayName}
+                  participantAvatar={participantAvatarSrc}
+                  participantCourse={otherProfile?.course}
+                  participantDepartment={otherProfile?.department}
+                  sharedInterests={effectiveSharedInterests}
+                  partnerAvatar={partnerAvatarKey}
+                  isAnonymous={isAnonymous}
+                  avatarReveal={effectiveAvatarReveal}
+                  style={{ marginBottom: 12 }}
+                />
               ) : null
             }
-            contentContainerStyle={{ paddingVertical: 12 }}
+            contentContainerStyle={
+              invertedChatItems.length === 0
+                ? { flexGrow: 1, justifyContent: "center", paddingVertical: 24 }
+                : { paddingVertical: 12 }
+            }
             renderItem={renderChatItem}
             ListEmptyComponent={
-              <View style={{ alignItems: "center", padding: 32, transform: [{ scaleY: -1 }] }}>
-                <Text style={{ fontSize: 14, color: "#9CA3AF", textAlign: "center" }}>
-                  Say hello! 👋{"\n"}Start the conversation.
-                </Text>
-              </View>
+              <ConversationWelcomeHeader
+                participantName={participantDisplayName}
+                participantAvatar={participantAvatarSrc}
+                participantCourse={otherProfile?.course}
+                participantDepartment={otherProfile?.department}
+                sharedInterests={effectiveSharedInterests}
+                partnerAvatar={partnerAvatarKey}
+                isAnonymous={isAnonymous}
+                avatarReveal={effectiveAvatarReveal}
+              />
             }
           />
         </KeyboardGestureArea>

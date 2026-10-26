@@ -96,7 +96,13 @@
       "expo-font",
       "expo-secure-store",
       "expo-status-bar",
-      "expo-image"
+      "expo-image",
+      [
+        "@react-native-google-signin/google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.REPLACE_WITH_IOS_CLIENT_ID"
+        }
+      ]
     ],
     "updates": {
       "url": "https://u.expo.dev/fb558069-d3da-43c2-ad88-5c3ee45b5144",

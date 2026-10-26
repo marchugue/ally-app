@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useRef } from "react";
 import {
   View,
   Text,
@@ -21,21 +21,14 @@ import AlertMessage from "@/components/AlertMessage";
 import LoadingOverlay from "@/components/LoadingOverlay";
 import { Button } from "@/components/Button";
 import GoogleButton, { OrDivider } from "@/components/GoogleButton";
-import { getMobileRegisterCache, saveMobileRegisterCache } from "@/lib/registerCache";
-import { uploadStudentIdFile } from "@/lib/api/media";
+import { completeOAuthPostLogin, navigateAfterOAuth } from "@/lib/auth/oauthPostLogin";
 
 const BRAND_GREEN = "#1A6B3C";
 const BRAND_GREEN_DARK = "#155a33";
 
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
-  const { signIn, signInWithGoogle, user, isLoading } = useAuth();
-
-  useEffect(() => {
-    if (!isLoading && user) {
-      router.replace("/(tabs)");
-    }
-  }, [user, isLoading]);
+  const { signIn, signInWithGoogle, completeLogin } = useAuth();
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -130,68 +123,11 @@ export default function LoginScreen() {
 
     try {
       const session = await signInWithGoogle();
-      const emailType = session.user?.user_metadata?.email_type;
-      const isChmsu = emailType === "chmsu";
-      const isApproved = session.user?.user_metadata?.is_approved;
-      const needsOnboard = !session.user?.user_metadata?.onboarding_complete;
-      const hasStudentId = Boolean(
-        session.user?.user_metadata?.student_id_url ||
-        (session.user as any)?.student_id_url
-      );
-
-      // Check if student ID is present in local cache
-      const cached = await getMobileRegisterCache();
-      const hasCachedId = Boolean(cached?.studentIdFrontUri);
-
-      if (isChmsu) {
-        if (needsOnboard) {
-          router.replace({ pathname: "/pages/register" as any, params: { startStep: "2" } });
-        } else {
-          router.replace("/(tabs)");
-        }
-      } else {
-        // External email
-        if (hasCachedId && session.user?.id) {
-          if (!hasStudentId && cached?.studentIdFrontUri) {
-            uploadStudentIdFile(session.user.id, cached.studentIdFrontUri, "front").catch((e) =>
-              console.warn("[login.tsx] Cached front ID upload error:", e)
-            );
-          }
-          if (cached?.studentIdBackUri) {
-            uploadStudentIdFile(session.user.id, cached.studentIdBackUri, "back").catch((e) =>
-              console.warn("[login.tsx] Cached back ID upload error:", e)
-            );
-          }
-          await saveMobileRegisterCache({
-            step: 2,
-            studentIdFrontUri: cached?.studentIdFrontUri,
-            studentIdBackUri: cached?.studentIdBackUri,
-          });
-
-          if (needsOnboard) {
-            router.replace({
-              pathname: "/pages/register" as any,
-              params: {
-                startStep: "2",
-                studentIdFrontUri: cached?.studentIdFrontUri || undefined,
-                studentIdBackUri: cached?.studentIdBackUri || undefined,
-              },
-            });
-          } else if (!isApproved) {
-            router.replace("/pages/pending-approval" as any);
-          } else {
-            router.replace("/(tabs)");
-          }
-        } else if (!hasStudentId && !isApproved) {
-          router.replace("/pages/id-upload" as any);
-        } else if (needsOnboard) {
-          router.replace({ pathname: "/pages/register" as any, params: { startStep: "2" } });
-        } else if (!isApproved) {
-          router.replace("/pages/pending-approval" as any);
-        } else {
-          router.replace("/(tabs)");
-        }
+      const { session: refreshed, target } = await completeOAuthPostLogin(session);
+      if (refreshed.accessToken && refreshed.user) {
+        await completeLogin(refreshed);
       }
+      navigateAfterOAuth(router, target);
     } catch (err: any) {
       const msg = err?.message || "Google authentication failed. Please try again.";
       if (!msg.toLowerCase().includes("cancelled")) {

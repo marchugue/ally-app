@@ -1703,6 +1703,39 @@ export default function NotificationsScreen() {
                 </TouchableOpacity>
               );
             })}
+            {/* Centered hyperlink under filter options */}
+            <View
+              style={{
+                borderTopWidth: 1,
+                borderTopColor: "#F3F4F6",
+                marginTop: 4,
+                paddingTop: 8,
+                paddingBottom: 4,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <TouchableOpacity
+                onPress={() => {
+                  setShowFilterDropdown(false);
+                  router.push("/pages/requests" as any);
+                }}
+                activeOpacity={0.7}
+                hitSlop={8}
+              >
+                <Text
+                  style={{
+                    fontSize: 12,
+                    fontFamily: "PlusJakartaSans-Bold",
+                    color: "#1A6B3C",
+                    textDecorationLine: "underline",
+                    textAlign: "center",
+                  }}
+                >
+                  View all requests
+                </Text>
+              </TouchableOpacity>
+            </View>
           </View>
         </Pressable>
       </Modal>

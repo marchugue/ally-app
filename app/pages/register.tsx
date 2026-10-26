@@ -64,6 +64,8 @@ import EmailInput from "@/components/buttons/email";
 import PasswordInput from "@/components/buttons/password";
 import AlertMessage from "@/components/AlertMessage";
 import GoogleButton, { OrDivider } from "@/components/GoogleButton";
+import { completeOAuthPostLogin, navigateAfterOAuth } from "@/lib/auth/oauthPostLogin";
+import { userNeedsOnboarding } from "@/lib/auth/googleOAuth";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 const GREEN = "#1A6B3C";
@@ -184,10 +186,10 @@ export default function RegisterScreen() {
   const { user, signUp, completeLogin, accessToken, refreshSession, updateUserMetadata, signInWithGoogle } = useAuth();
   const scrollViewRef = useRef<ScrollView>(null);
 
-  // Overall onboarding step: 1 (Credentials), 2 (Academic & Org), 3 (Interests), 4 (Avatar & Bio)
+  // Overall onboarding step: 1 (Credentials), 2 (Academic & Org), 3 (Interests), 4 (Bio), 5 (Avatar & Terms)
   const [step, setStep] = useState<number>(() => {
     const startStep = Number(params.startStep);
-    return startStep >= 2 && startStep <= 4 ? startStep : 1;
+    return startStep >= 2 && startStep <= 5 ? startStep : 1;
   });
 
   // Step 2 Academic Sub-Step ('username' | 'department' | 'course' | 'year' | 'organizations')
@@ -325,7 +327,7 @@ export default function RegisterScreen() {
     }
     if (params.startStep) {
       const s = Number(params.startStep);
-      if (s >= 2 && s <= 4) setStep(s);
+      if (s >= 2 && s <= 5) setStep(s);
     }
   }, [params.emailType, params.studentIdFrontUri, params.studentIdBackUri, params.email, params.username, params.startStep]);
 
@@ -373,7 +375,7 @@ export default function RegisterScreen() {
         if (cached.emailType && !params.emailType) setEmailType(cached.emailType);
         if (params.startStep) {
           const s = Number(params.startStep);
-          if (s >= 2 && s <= 4) setStep(s);
+          if (s >= 2 && s <= 5) setStep(s);
         } else if (cached.step && cached.step >= 1) {
           setStep(cached.step);
         }
@@ -455,6 +457,12 @@ export default function RegisterScreen() {
   const handleBack = () => {
     if (activeModal !== null) {
       setActiveModal(null);
+      return true;
+    }
+
+    if (step === 5) {
+      setStep(4);
+      setSubmitError("");
       return true;
     }
 
@@ -609,62 +617,23 @@ export default function RegisterScreen() {
     setGoogleLoading(true);
     try {
       const session = await signInWithGoogle();
-      const isChmsu = session.user?.user_metadata?.email_type === "chmsu";
-      const needsOnboarding = !session.user?.user_metadata?.onboarding_complete;
-      const hasStudentId = Boolean(session.user?.user_metadata?.student_id_url);
-
-      const cached = await getMobileRegisterCache();
-      const effectiveFront = studentIdUri || cached?.studentIdFrontUri || null;
-      const effectiveBack = studentIdBackUri || cached?.studentIdBackUri || null;
-      const hasCachedId = Boolean(effectiveFront);
-
-      if (isChmsu) {
-        if (needsOnboarding) {
-          setStep(2);
-          setAcademicSubStep("username");
-        } else {
-          router.replace("/(tabs)");
-        }
-      } else {
-        if (hasCachedId && session.user?.id) {
-          if (!hasStudentId && effectiveFront) {
-            uploadStudentIdFile(session.user.id, effectiveFront, "front").catch((e) =>
-              console.warn("[register.tsx] Auto-upload front ID warning:", e)
-            );
-          }
-          if (effectiveBack) {
-            uploadStudentIdFile(session.user.id, effectiveBack, "back").catch((e) =>
-              console.warn("[register.tsx] Auto-upload back ID warning:", e)
-            );
-          }
-          await saveMobileRegisterCache({
-            step: 2,
-            studentIdFrontUri: effectiveFront,
-            studentIdBackUri: effectiveBack,
-          });
-
-          if (needsOnboarding) {
-            setStep(2);
-            setAcademicSubStep("username");
-          } else if (!session.user?.user_metadata?.is_approved) {
-            router.replace("/pages/pending-approval" as any);
-          } else {
-            router.replace("/(tabs)");
-          }
-        } else if (!hasStudentId) {
-          router.replace({
-            pathname: "/pages/id-upload" as any,
-            params: { emailType: "external" },
-          });
-        } else if (needsOnboarding) {
-          setStep(2);
-          setAcademicSubStep("username");
-        } else if (!session.user?.user_metadata?.is_approved) {
-          router.replace("/pages/pending-approval" as any);
-        } else {
-          router.replace("/(tabs)");
-        }
+      const { session: refreshed, target } = await completeOAuthPostLogin(session, {
+        frontUri: studentIdUri,
+        backUri: studentIdBackUri,
+      });
+      if (refreshed.accessToken && refreshed.user) {
+        await completeLogin(refreshed);
       }
+
+      if (target.kind === "register-step-2" && refreshed.user && userNeedsOnboarding(refreshed.user)) {
+        setStep(2);
+        setAcademicSubStep("username");
+        if (target.studentIdFrontUri) setStudentIdUri(target.studentIdFrontUri);
+        if (target.studentIdBackUri) setStudentIdBackUri(target.studentIdBackUri);
+        return;
+      }
+
+      navigateAfterOAuth(router, target, { alreadyOnRegister: true });
     } catch (err: any) {
       if (err?.message && !err.message.includes("cancelled")) {
         setSubmitError(err.message || "Google Sign-In failed. Please try again.");
@@ -965,9 +934,15 @@ export default function RegisterScreen() {
         subtitle: "Pick topics you enjoy to help discover like-minded peers.",
       };
     }
+    if (step === 4) {
+      return {
+        title: "Tell Us About Yourself",
+        subtitle: "Write a short bio to introduce yourself to peers (optional).",
+      };
+    }
     return {
-      title: "Your Profile",
-      subtitle: "Review how fellow CHMSU students will see you",
+      title: "Your Profile Avatar",
+      subtitle: "Choose an avatar and agree to community standards.",
     };
   };
 
@@ -1709,7 +1684,7 @@ export default function RegisterScreen() {
                   label={
                     form.interests.length < 3
                       ? `Pick ${3 - form.interests.length} more interest${3 - form.interests.length > 1 ? "s" : ""}`
-                      : "Continue to Profile & Bio"
+                      : "Continue to Bio"
                   }
                   variant="primary"
                   pill
@@ -1724,9 +1699,74 @@ export default function RegisterScreen() {
           )}
 
           {/* ═════════════════════════════════════════════════════════════════
-                STEP 4: PROFILE & COMPLETE REGISTRATION (Mirrors Web)
+                STEP 4: BIO (Structured same like inputing username)
              ═════════════════════════════════════════════════════════════════ */}
           {step === 4 && (
+            <View style={styles.stepContainer}>
+              {/* Top Header */}
+              <View style={styles.headerText}>
+                <Text style={styles.title}>{currentTitle}</Text>
+                <Text style={styles.subtitle}>{currentSubtitle}</Text>
+              </View>
+
+              {/* Center decorative element */}
+              <View style={styles.centeredArea}>
+                <View style={styles.usernamePreviewCircle}>
+                  <FileText size={40} color="#1A6B3C" />
+                </View>
+                <Text
+                  style={[
+                    styles.usernameHandlePreview,
+                    {
+                      fontSize: 13,
+                      fontStyle: form.bio.trim() ? "normal" : "italic",
+                      color: form.bio.trim() ? "#1F2937" : "#9CA3AF",
+                      textAlign: "center",
+                      maxWidth: 290,
+                      lineHeight: 18,
+                    },
+                  ]}
+                  numberOfLines={3}
+                >
+                  {form.bio.trim() ? `“${form.bio.trim()}”` : "Share your campus vibe, hobbies, or passions..."}
+                </Text>
+                <Text style={[styles.bioCounter, { marginTop: 6 }]}>
+                  {form.bio.length}/250
+                </Text>
+              </View>
+
+              {/* Bottom: Bio Input sticking to Continue Button */}
+              <View style={[styles.bottomStickArea, { paddingBottom: isKeyboardVisible ? 10 : Math.max(insets.bottom + 12, 16) }]}>
+                <View style={{ marginBottom: 12, width: "100%" }}>
+                  <TextInput
+                    value={form.bio}
+                    onChangeText={(v) => set("bio", v.slice(0, 250))}
+                    placeholder="Share a short intro about yourself, hobbies, or campus goals..."
+                    placeholderTextColor="#9CA3AF"
+                    multiline
+                    numberOfLines={3}
+                    maxLength={250}
+                    style={styles.bioTextInput}
+                  />
+                </View>
+
+                <Button
+                  label="Continue to Avatar"
+                  variant="primary"
+                  pill
+                  size="lg"
+                  icon={<ArrowRight size={16} color="#FFFFFF" />}
+                  onPress={() => setStep(5)}
+                  className="w-full"
+                />
+              </View>
+            </View>
+          )}
+
+          {/* ═════════════════════════════════════════════════════════════════
+                STEP 5: AVATAR TOGETHER WITH TERMS & POLICY (Mirrors Web)
+             ═════════════════════════════════════════════════════════════════ */}
+          {step === 5 && (
             <View style={styles.stepContainer}>
               <View style={styles.headerText}>
                 <Text style={styles.title}>{currentTitle}</Text>
@@ -1738,7 +1778,7 @@ export default function RegisterScreen() {
                 ) : null}
               </View>
 
-              {/* Scrollable Content: Avatar on Top, DiceBear Critters, Upload Label, Bio, Terms */}
+              {/* Scrollable Content: Avatar on Top, DiceBear Critters, Upload Label, Terms */}
               <ScrollView
                 showsVerticalScrollIndicator={false}
                 style={{ flex: 1, width: "100%" }}
@@ -1827,27 +1867,7 @@ export default function RegisterScreen() {
                   )}
                 </View>
 
-                {/* 4. Bio Textarea */}
-                <View style={styles.bioSection}>
-                  <View style={styles.bioLabelRow}>
-                    <Text style={styles.bioLabel}>
-                      Bio <Text style={styles.optionalText}>(optional)</Text>
-                    </Text>
-                    <Text style={styles.bioCounter}>{form.bio.length}/250</Text>
-                  </View>
-                  <TextInput
-                    value={form.bio}
-                    onChangeText={(v) => set("bio", v.slice(0, 250))}
-                    placeholder="Share a short intro about yourself, hobbies, or campus goals..."
-                    placeholderTextColor="#9CA3AF"
-                    multiline
-                    numberOfLines={3}
-                    maxLength={250}
-                    style={styles.bioTextInput}
-                  />
-                </View>
-
-                {/* 5. Terms & Policy Paragraph + Single Checkbox */}
+                {/* 4. Terms & Policy Paragraph + Single Checkbox */}
                 <View style={styles.termsAgreementSection}>
                   <Text style={styles.termsParagraphText}>
                     By completing registration, you agree to our{" "}
