@@ -30,13 +30,14 @@ import {
 import Svg, { Defs, LinearGradient as LinearGradientSvg, Stop, Path, Circle } from "react-native-svg";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 
 import { AnonymousAvatar } from "@/components/AnonymousAvatar";
 import { usePresence } from "@/context/PresenceContext";
 import { MatchmakingOverlayModal } from "@/components/MatchmakingOverlayModal";
 import AlertMessage from "@/components/AlertMessage";
 import { useAuth } from "@/lib/auth/AuthContext";
+import { useTheme } from "@/context/ThemeContext";
 import { listProfiles, getMyProfile } from "@/lib/api/profiles";
 import { listInteractions, requestConnection } from "@/lib/api/interaction";
 import { getOrCreateConversationWithUser } from "@/lib/api/conversation";
@@ -151,6 +152,16 @@ const TAG_STYLES: Record<string, { bg: string; text: string; border: string }> =
   shared: { bg: "#ECFDF5", text: "#15803D", border: "#86EFAC" },
 };
 
+const DARK_TAG_STYLES: Record<string, { bg: string; text: string; border: string }> = {
+  blue: { bg: "rgba(59, 130, 246, 0.15)", text: "#93C5FD", border: "rgba(59, 130, 246, 0.3)" },
+  pink: { bg: "rgba(236, 72, 153, 0.15)", text: "#F472B6", border: "rgba(236, 72, 153, 0.3)" },
+  green: { bg: "rgba(16, 185, 129, 0.15)", text: "#6EE7B7", border: "rgba(16, 185, 129, 0.3)" },
+  orange: { bg: "rgba(249, 115, 22, 0.15)", text: "#FDBA74", border: "rgba(249, 115, 22, 0.3)" },
+  purple: { bg: "rgba(168, 85, 247, 0.15)", text: "#D8B4FE", border: "rgba(168, 85, 247, 0.3)" },
+  amber: { bg: "rgba(245, 158, 11, 0.15)", text: "#FCD34D", border: "rgba(245, 158, 11, 0.3)" },
+  shared: { bg: "rgba(56, 193, 133, 0.2)", text: "#38C185", border: "rgba(56, 193, 133, 0.4)" },
+};
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 function getAnonymousName(student: Student, avatarKey: string): string {
   if (student.name && student.name.toLowerCase().startsWith("anonymous")) {
@@ -208,11 +219,21 @@ function calculateMatchPercentage(userA: Student, userB: Student): number {
   return Math.min(Math.max(total, 15), 99);
 }
 
-function getMatchBadgeStyle(percentage: number, sharedCount: number) {
+function getMatchBadgeStyle(percentage: number, sharedCount: number, isDark = false) {
   let color = "gray";
   if (sharedCount >= 4 || percentage >= 80) color = "green";
   else if (sharedCount >= 2 || percentage >= 60) color = "orange";
   else if (sharedCount >= 1 || percentage >= 40) color = "yellow";
+
+  if (isDark) {
+    const darkMap: Record<string, { bg: string; text: string; border: string; dot: string }> = {
+      green: { bg: "rgba(56, 193, 133, 0.15)", text: "#38C185", border: "rgba(56, 193, 133, 0.3)", dot: "#38C185" },
+      orange: { bg: "rgba(249, 115, 22, 0.15)", text: "#FB923C", border: "rgba(249, 115, 22, 0.3)", dot: "#F97316" },
+      yellow: { bg: "rgba(240, 178, 71, 0.15)", text: "#F0B247", border: "rgba(240, 178, 71, 0.3)", dot: "#F0B247" },
+      gray: { bg: "rgba(255, 255, 255, 0.08)", text: "#A1A1AA", border: "rgba(255, 255, 255, 0.12)", dot: "#71717A" },
+    };
+    return darkMap[color] || darkMap.gray;
+  }
 
   const map: Record<string, { bg: string; text: string; border: string; dot: string }> = {
     green: { bg: "#ECFDF5", text: "#166534", border: "#86EFAC", dot: "#22C55E" },
@@ -226,6 +247,7 @@ function getMatchBadgeStyle(percentage: number, sharedCount: number) {
 export default function DiscoverScreen() {
   const insets = useSafeAreaInsets();
   const { user, accessToken } = useAuth();
+  const { colors, isDark } = useTheme();
   const { isOnline, gameOnlineCount } = usePresence();
 
   const [currentUser, setCurrentUser] = useState<Student | null>(null);
@@ -425,6 +447,12 @@ export default function DiscoverScreen() {
     loadMatches();
   }, [loadMatches]);
 
+  useFocusEffect(
+    useCallback(() => {
+      void loadMatches();
+    }, [loadMatches])
+  );
+
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
     await Promise.all([loadMatches(), matchmaking.refreshStatus()]);
@@ -579,7 +607,7 @@ export default function DiscoverScreen() {
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: "#F7F4EF", paddingTop: insets.top }}>
+    <View style={{ flex: 1, backgroundColor: colors.background, paddingTop: insets.top }}>
       {/* Toast Alert */}
       {toast && (
         <AlertMessage
@@ -606,7 +634,7 @@ export default function DiscoverScreen() {
               fontFamily: "Fraunces-Bold",
               fontSize: 26,
               fontWeight: "700",
-              color: "#111827",
+              color: colors.textPrimary,
               letterSpacing: -0.5,
             }}
           >
@@ -616,7 +644,7 @@ export default function DiscoverScreen() {
             style={{
               fontFamily: "PlusJakartaSans",
               fontSize: 12,
-              color: "#6B7280",
+              color: colors.textSecondary,
               marginTop: 1,
             }}
           >
@@ -631,14 +659,14 @@ export default function DiscoverScreen() {
             width: 38,
             height: 38,
             borderRadius: 12,
-            backgroundColor: "#FFFFFF",
+            backgroundColor: colors.surface,
             borderWidth: 1,
-            borderColor: "#E5E7EB",
+            borderColor: colors.border,
             alignItems: "center",
             justifyContent: "center",
           }}
         >
-          <RotateCcw size={16} color="#6B7280" />
+          <RotateCcw size={16} color={colors.textSecondary} />
         </Pressable>
       </View>
 
@@ -668,8 +696,8 @@ export default function DiscoverScreen() {
                   marginBottom: 14,
                   borderRadius: 16,
                   borderWidth: 1,
-                  borderColor: "#FDE68A",
-                  backgroundColor: "#FFFBEB",
+                  borderColor: isDark ? "rgba(240, 178, 71, 0.3)" : "#FDE68A",
+                  backgroundColor: isDark ? "rgba(240, 178, 71, 0.15)" : "#FFFBEB",
                   paddingHorizontal: 14,
                   paddingVertical: 10,
                   flexDirection: "row",
@@ -681,7 +709,7 @@ export default function DiscoverScreen() {
                   style={{
                     fontFamily: "PlusJakartaSans",
                     fontSize: 12,
-                    color: "#92400E",
+                    color: isDark ? "#FBBF24" : "#92400E",
                     flex: 1,
                     marginRight: 8,
                   }}
@@ -689,7 +717,7 @@ export default function DiscoverScreen() {
                   {banner}
                 </Text>
                 <Pressable onPress={() => setBanner(null)} hitSlop={8}>
-                  <X size={15} color="#B45309" />
+                  <X size={15} color={isDark ? "#FBBF24" : "#B45309"} />
                 </Pressable>
               </View>
             )}
@@ -705,19 +733,27 @@ export default function DiscoverScreen() {
                   borderRadius: 24,
                   overflow: "hidden",
                   borderWidth: 1.5,
-                  borderColor: isInQueue ? "rgba(245, 158, 11, 0.5)" : "rgba(16, 185, 129, 0.35)",
-                  backgroundColor: "#FFFFFF",
+                  borderColor: isInQueue
+                    ? "rgba(245, 158, 11, 0.5)"
+                    : isDark
+                    ? "rgba(56, 193, 133, 0.4)"
+                    : "rgba(16, 185, 129, 0.35)",
+                  backgroundColor: colors.surface,
                   elevation: 2,
                   shadowColor: "#000",
                   shadowOffset: { width: 0, height: 2 },
-                  shadowOpacity: 0.05,
+                  shadowOpacity: isDark ? 0.25 : 0.05,
                   shadowRadius: 6,
                 }}
               >
                 <LinearGradient
                   colors={
                     isInQueue
-                      ? ["rgba(245, 158, 11, 0.25)", "rgba(217, 119, 6, 0.25)", "rgba(234, 179, 8, 0.25)"]
+                      ? isDark
+                        ? ["rgba(245, 158, 11, 0.18)", "rgba(217, 119, 6, 0.18)", "rgba(234, 179, 8, 0.18)"]
+                        : ["rgba(245, 158, 11, 0.25)", "rgba(217, 119, 6, 0.25)", "rgba(234, 179, 8, 0.25)"]
+                      : isDark
+                      ? ["rgba(56, 193, 133, 0.18)", "rgba(26, 107, 60, 0.25)", "rgba(56, 193, 133, 0.15)"]
                       : ["rgba(26, 107, 60, 0.25)", "rgba(16, 185, 129, 0.25)", "rgba(56, 193, 133, 0.20)"]
                   }
                   start={{ x: 0, y: 0 }}
@@ -731,13 +767,13 @@ export default function DiscoverScreen() {
                 >
                   {/* Icon */}
                   {isInQueue ? (
-                    <ActivityIndicator color="#D97706" size="large" style={{ marginBottom: 10, height: 40 }} />
+                    <ActivityIndicator color={isDark ? "#FBBF24" : "#D97706"} size="large" style={{ marginBottom: 10, height: 40 }} />
                   ) : (
                     <View style={{ marginBottom: 10 }}>
                       <Svg width={40} height={40} viewBox="0 0 24 24">
                         <Defs>
                           <LinearGradientSvg id="anon-grad" x1="0" y1="0" x2="1" y2="1">
-                            <Stop offset="0" stopColor="#38C185" />
+                            <Stop offset="0" stopColor={colors.primary} />
                             <Stop offset="1" stopColor="#1A6B3C" />
                           </LinearGradientSvg>
                         </Defs>
@@ -745,9 +781,9 @@ export default function DiscoverScreen() {
                           d="M20 2H4C2.9 2 2 2.9 2 4V22L6 18H20C21.1 18 22 17.1 22 16V4C22 2.9 21.1 2 20 2Z"
                           fill="url(#anon-grad)"
                         />
-                        <Circle cx="8" cy="10" r="1.25" fill="#FFFFFF" fillOpacity="0.9" />
-                        <Circle cx="12" cy="10" r="1.25" fill="#FFFFFF" fillOpacity="0.9" />
-                        <Circle cx="16" cy="10" r="1.25" fill="#FFFFFF" fillOpacity="0.9" />
+                        <Circle cx="8" cy="10" r="1.25" fill="#FFFFFF" fillOpacity={0.9} />
+                        <Circle cx="12" cy="10" r="1.25" fill="#FFFFFF" fillOpacity={0.9} />
+                        <Circle cx="16" cy="10" r="1.25" fill="#FFFFFF" fillOpacity={0.9} />
                       </Svg>
                     </View>
                   )}
@@ -758,7 +794,7 @@ export default function DiscoverScreen() {
                       fontFamily: "Fraunces-Bold",
                       fontSize: 18,
                       fontWeight: "700",
-                      color: "#111827",
+                      color: colors.textPrimary,
                       textAlign: "center",
                     }}
                   >
@@ -771,7 +807,7 @@ export default function DiscoverScreen() {
                       fontFamily: "PlusJakartaSans",
                       fontSize: 11,
                       fontWeight: "600",
-                      color: isInQueue ? "#92400E" : "#065F46",
+                      color: isInQueue ? (isDark ? "#FBBF24" : "#92400E") : colors.primary,
                       marginTop: 4,
                       textAlign: "center",
                     }}
@@ -791,17 +827,21 @@ export default function DiscoverScreen() {
                   borderRadius: 24,
                   overflow: "hidden",
                   borderWidth: 1.5,
-                  borderColor: "rgba(245, 158, 11, 0.35)",
-                  backgroundColor: "#FFFFFF",
+                  borderColor: isDark ? "rgba(240, 178, 71, 0.35)" : "rgba(245, 158, 11, 0.35)",
+                  backgroundColor: colors.surface,
                   elevation: 2,
                   shadowColor: "#000",
                   shadowOffset: { width: 0, height: 2 },
-                  shadowOpacity: 0.05,
+                  shadowOpacity: isDark ? 0.25 : 0.05,
                   shadowRadius: 6,
                 }}
               >
                 <LinearGradient
-                  colors={["rgba(232, 168, 56, 0.25)", "rgba(245, 158, 11, 0.25)", "rgba(240, 178, 71, 0.20)"]}
+                  colors={
+                    isDark
+                      ? ["rgba(240, 178, 71, 0.18)", "rgba(245, 158, 11, 0.15)", "rgba(234, 179, 8, 0.12)"]
+                      : ["rgba(232, 168, 56, 0.25)", "rgba(245, 158, 11, 0.25)", "rgba(240, 178, 71, 0.20)"]
+                  }
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 1 }}
                   style={{
@@ -845,7 +885,7 @@ export default function DiscoverScreen() {
                       fontFamily: "Fraunces-Bold",
                       fontSize: 18,
                       fontWeight: "700",
-                      color: "#111827",
+                      color: colors.textPrimary,
                       textAlign: "center",
                     }}
                   >
@@ -860,7 +900,7 @@ export default function DiscoverScreen() {
                         fontFamily: "PlusJakartaSans",
                         fontSize: 11,
                         fontWeight: "600",
-                        color: "#92400E",
+                        color: isDark ? "#FBBF24" : "#92400E",
                       }}
                     >
                       {gameOnlineCount} {gameOnlineCount === 1 ? "player" : "players"} online
@@ -875,15 +915,15 @@ export default function DiscoverScreen() {
               (!currentUser?.username || !currentUser?.interests || currentUser.interests.length === 0) && (
                 <View
                   style={{
-                    backgroundColor: "#FFFFFF",
+                    backgroundColor: colors.surface,
                     borderRadius: 20,
                     padding: 16,
                     marginBottom: 16,
                     borderWidth: 1,
-                    borderColor: "rgba(16, 185, 129, 0.25)",
+                    borderColor: isDark ? "rgba(56, 193, 133, 0.3)" : "rgba(16, 185, 129, 0.25)",
                     shadowColor: "#000",
                     shadowOffset: { width: 0, height: 2 },
-                    shadowOpacity: 0.04,
+                    shadowOpacity: isDark ? 0.2 : 0.04,
                     shadowRadius: 4,
                     elevation: 1,
                   }}
@@ -894,12 +934,12 @@ export default function DiscoverScreen() {
                         width: 44,
                         height: 44,
                         borderRadius: 14,
-                        backgroundColor: "rgba(26, 107, 60, 0.1)",
+                        backgroundColor: colors.primarySoft,
                         alignItems: "center",
                         justifyContent: "center",
                       }}
                     >
-                      <Compass size={22} color="#1A6B3C" />
+                      <Compass size={22} color={colors.primary} />
                     </View>
                     <View style={{ flex: 1 }}>
                       <Text
@@ -907,7 +947,7 @@ export default function DiscoverScreen() {
                           fontFamily: "Fraunces-Bold",
                           fontSize: 15,
                           fontWeight: "700",
-                          color: "#111827",
+                          color: colors.textPrimary,
                         }}
                       >
                         Maximize your Match Accuracy 🎯
@@ -916,7 +956,7 @@ export default function DiscoverScreen() {
                         style={{
                           fontFamily: "PlusJakartaSans",
                           fontSize: 12,
-                          color: "#6B7280",
+                          color: colors.textSecondary,
                           marginTop: 2,
                         }}
                       >
@@ -929,7 +969,7 @@ export default function DiscoverScreen() {
                     onPress={() => router.push("/pages/edit-profile")}
                     style={{
                       marginTop: 12,
-                      backgroundColor: "#1A6B3C",
+                      backgroundColor: colors.primary,
                       borderRadius: 12,
                       paddingVertical: 10,
                       paddingHorizontal: 16,
@@ -957,14 +997,14 @@ export default function DiscoverScreen() {
             {/* ═══ Search & Controls Bar ═══ */}
             <View
               style={{
-                backgroundColor: "#FFFFFF",
+                backgroundColor: colors.surface,
                 borderRadius: 20,
                 padding: 14,
                 borderWidth: 1,
-                borderColor: "#E5E7EB",
+                borderColor: colors.border,
                 shadowColor: "#000",
                 shadowOffset: { width: 0, height: 1 },
-                shadowOpacity: 0.04,
+                shadowOpacity: isDark ? 0.2 : 0.04,
                 shadowRadius: 3,
                 elevation: 1,
               }}
@@ -977,31 +1017,31 @@ export default function DiscoverScreen() {
                     flex: 1,
                     flexDirection: "row",
                     alignItems: "center",
-                    backgroundColor: "#F9FAFB",
+                    backgroundColor: colors.surfaceMuted,
                     borderRadius: 14,
                     paddingHorizontal: 12,
                     height: 44,
                     borderWidth: 1,
-                    borderColor: "#E5E7EB",
+                    borderColor: colors.border,
                   }}
                 >
-                  <Search size={16} color="#9CA3AF" style={{ marginRight: 8 }} />
+                  <Search size={16} color={colors.textMuted} style={{ marginRight: 8 }} />
                   <TextInput
                     value={search}
                     onChangeText={setSearch}
                     placeholder="Search students by name, course, interests..."
-                    placeholderTextColor="#9CA3AF"
+                    placeholderTextColor={colors.textMuted}
                     style={{
                       flex: 1,
                       fontFamily: "PlusJakartaSans",
                       fontSize: 13,
-                      color: "#111827",
+                      color: colors.textPrimary,
                       height: "100%",
                     }}
                   />
                   {search.length > 0 && (
                     <Pressable onPress={() => setSearch("")} hitSlop={8}>
-                      <X size={15} color="#9CA3AF" />
+                      <X size={15} color={colors.textMuted} />
                     </Pressable>
                   )}
                 </View>
@@ -1016,21 +1056,21 @@ export default function DiscoverScreen() {
                     paddingHorizontal: 14,
                     height: 44,
                     borderRadius: 14,
-                    backgroundColor: showFilters || activeFiltersCount > 0 ? "rgba(26, 107, 60, 0.1)" : "#F9FAFB",
+                    backgroundColor: showFilters || activeFiltersCount > 0 ? colors.primarySoft : colors.surfaceMuted,
                     borderWidth: 1,
-                    borderColor: showFilters || activeFiltersCount > 0 ? "rgba(26, 107, 60, 0.4)" : "#E5E7EB",
+                    borderColor: showFilters || activeFiltersCount > 0 ? colors.primary : colors.border,
                   }}
                 >
                   <SlidersHorizontal
                     size={16}
-                    color={showFilters || activeFiltersCount > 0 ? "#1A6B3C" : "#4B5563"}
+                    color={showFilters || activeFiltersCount > 0 ? colors.primary : colors.textSecondary}
                   />
                   <Text
                     style={{
                       fontFamily: "PlusJakartaSans",
                       fontSize: 12,
                       fontWeight: "700",
-                      color: showFilters || activeFiltersCount > 0 ? "#1A6B3C" : "#4B5563",
+                      color: showFilters || activeFiltersCount > 0 ? colors.primary : colors.textSecondary,
                     }}
                   >
                     Filters
@@ -1041,7 +1081,7 @@ export default function DiscoverScreen() {
                         width: 18,
                         height: 18,
                         borderRadius: 9,
-                        backgroundColor: "#1A6B3C",
+                        backgroundColor: colors.primary,
                         alignItems: "center",
                         justifyContent: "center",
                       }}
@@ -1086,7 +1126,7 @@ export default function DiscoverScreen() {
                         paddingHorizontal: 12,
                         paddingVertical: 7,
                         borderRadius: 20,
-                        backgroundColor: isSel ? "#1A6B3C" : "#F3F4F6",
+                        backgroundColor: isSel ? colors.primary : colors.surfaceMuted,
                       }}
                     >
                       <Text
@@ -1094,14 +1134,18 @@ export default function DiscoverScreen() {
                           fontFamily: "PlusJakartaSans",
                           fontSize: 12,
                           fontWeight: "600",
-                          color: isSel ? "#FFFFFF" : "#4B5563",
+                          color: isSel ? "#FFFFFF" : colors.textSecondary,
                         }}
                       >
                         {short}
                       </Text>
                       <View
                         style={{
-                          backgroundColor: isSel ? "rgba(255, 255, 255, 0.25)" : "rgba(0, 0, 0, 0.06)",
+                          backgroundColor: isSel
+                            ? "rgba(255, 255, 255, 0.25)"
+                            : isDark
+                            ? "rgba(255, 255, 255, 0.08)"
+                            : "rgba(0, 0, 0, 0.06)",
                           paddingHorizontal: 6,
                           paddingVertical: 1,
                           borderRadius: 8,
@@ -1112,7 +1156,7 @@ export default function DiscoverScreen() {
                             fontFamily: "PlusJakartaSans",
                             fontSize: 10,
                             fontWeight: "800",
-                            color: isSel ? "#FFFFFF" : "#6B7280",
+                            color: isSel ? "#FFFFFF" : colors.textMuted,
                           }}
                         >
                           {count}
@@ -1130,7 +1174,7 @@ export default function DiscoverScreen() {
                     marginTop: 12,
                     paddingTop: 12,
                     borderTopWidth: 1,
-                    borderTopColor: "#F3F4F6",
+                    borderTopColor: colors.border,
                     gap: 10,
                   }}
                 >
@@ -1141,7 +1185,7 @@ export default function DiscoverScreen() {
                         fontFamily: "PlusJakartaSans",
                         fontSize: 11,
                         fontWeight: "700",
-                        color: "#6B7280",
+                        color: colors.textMuted,
                         textTransform: "uppercase",
                         marginBottom: 4,
                       }}
@@ -1154,19 +1198,19 @@ export default function DiscoverScreen() {
                         flexDirection: "row",
                         alignItems: "center",
                         justifyContent: "space-between",
-                        backgroundColor: "#F9FAFB",
+                        backgroundColor: colors.surfaceMuted,
                         paddingHorizontal: 12,
                         paddingVertical: 10,
                         borderRadius: 12,
                         borderWidth: 1,
-                        borderColor: "#E5E7EB",
+                        borderColor: colors.border,
                       }}
                     >
                       <Text
                         style={{
                           fontFamily: "PlusJakartaSans",
                           fontSize: 13,
-                          color: filters.department ? "#111827" : "#6B7280",
+                          color: filters.department ? colors.textPrimary : colors.textMuted,
                         }}
                         numberOfLines={1}
                       >
@@ -1174,7 +1218,7 @@ export default function DiscoverScreen() {
                           ? filters.department.replace("College of ", "")
                           : "All Colleges"}
                       </Text>
-                      <ChevronDown size={16} color="#6B7280" />
+                      <ChevronDown size={16} color={colors.textMuted} />
                     </Pressable>
                   </View>
 
@@ -1185,7 +1229,7 @@ export default function DiscoverScreen() {
                         fontFamily: "PlusJakartaSans",
                         fontSize: 11,
                         fontWeight: "700",
-                        color: "#6B7280",
+                        color: colors.textMuted,
                         textTransform: "uppercase",
                         marginBottom: 4,
                       }}
@@ -1198,25 +1242,25 @@ export default function DiscoverScreen() {
                         flexDirection: "row",
                         alignItems: "center",
                         justifyContent: "space-between",
-                        backgroundColor: "#F9FAFB",
+                        backgroundColor: colors.surfaceMuted,
                         paddingHorizontal: 12,
                         paddingVertical: 10,
                         borderRadius: 12,
                         borderWidth: 1,
-                        borderColor: "#E5E7EB",
+                        borderColor: colors.border,
                       }}
                     >
                       <Text
                         style={{
                           fontFamily: "PlusJakartaSans",
                           fontSize: 13,
-                          color: filters.course ? "#111827" : "#6B7280",
+                          color: filters.course ? colors.textPrimary : colors.textMuted,
                         }}
                         numberOfLines={1}
                       >
                         {filters.course || "All Degree Courses"}
                       </Text>
-                      <ChevronDown size={16} color="#6B7280" />
+                      <ChevronDown size={16} color={colors.textMuted} />
                     </Pressable>
                   </View>
 
@@ -1227,7 +1271,7 @@ export default function DiscoverScreen() {
                         fontFamily: "PlusJakartaSans",
                         fontSize: 11,
                         fontWeight: "700",
-                        color: "#6B7280",
+                        color: colors.textMuted,
                         textTransform: "uppercase",
                         marginBottom: 4,
                       }}
@@ -1240,25 +1284,25 @@ export default function DiscoverScreen() {
                         flexDirection: "row",
                         alignItems: "center",
                         justifyContent: "space-between",
-                        backgroundColor: "#F9FAFB",
+                        backgroundColor: colors.surfaceMuted,
                         paddingHorizontal: 12,
                         paddingVertical: 10,
                         borderRadius: 12,
                         borderWidth: 1,
-                        borderColor: "#E5E7EB",
+                        borderColor: colors.border,
                       }}
                     >
                       <Text
                         style={{
                           fontFamily: "PlusJakartaSans",
                           fontSize: 13,
-                          color: filters.yearLevel ? "#111827" : "#6B7280",
+                          color: filters.yearLevel ? colors.textPrimary : colors.textMuted,
                         }}
                         numberOfLines={1}
                       >
                         {filters.yearLevel || "All Year Levels"}
                       </Text>
-                      <ChevronDown size={16} color="#6B7280" />
+                      <ChevronDown size={16} color={colors.textMuted} />
                     </Pressable>
                   </View>
 
@@ -1269,7 +1313,7 @@ export default function DiscoverScreen() {
                         fontFamily: "PlusJakartaSans",
                         fontSize: 11,
                         fontWeight: "700",
-                        color: "#6B7280",
+                        color: colors.textMuted,
                         textTransform: "uppercase",
                         marginBottom: 6,
                       }}
@@ -1290,7 +1334,7 @@ export default function DiscoverScreen() {
                             paddingVertical: 6,
                             paddingHorizontal: 10,
                             borderRadius: 10,
-                            backgroundColor: filters.sortBy === opt.id ? "#1A6B3C" : "#F3F4F6",
+                            backgroundColor: filters.sortBy === opt.id ? colors.primary : colors.surfaceMuted,
                           }}
                         >
                           <Text
@@ -1298,7 +1342,7 @@ export default function DiscoverScreen() {
                               fontFamily: "PlusJakartaSans",
                               fontSize: 11,
                               fontWeight: "700",
-                              color: filters.sortBy === opt.id ? "#FFFFFF" : "#374151",
+                              color: filters.sortBy === opt.id ? "#FFFFFF" : colors.textSecondary,
                             }}
                           >
                             {opt.label}
@@ -1322,7 +1366,7 @@ export default function DiscoverScreen() {
                         style={{
                           fontFamily: "PlusJakartaSans",
                           fontSize: 11,
-                          color: "#9CA3AF",
+                          color: colors.textMuted,
                         }}
                       >
                         Active criteria applied.
@@ -1331,13 +1375,13 @@ export default function DiscoverScreen() {
                         onPress={handleResetFilters}
                         style={{ flexDirection: "row", alignItems: "center", gap: 4 }}
                       >
-                        <RotateCcw size={12} color="#1A6B3C" />
+                        <RotateCcw size={12} color={colors.primary} />
                         <Text
                           style={{
                             fontFamily: "PlusJakartaSans",
                             fontSize: 12,
                             fontWeight: "700",
-                            color: "#1A6B3C",
+                            color: colors.primary,
                           }}
                         >
                           Reset filters
@@ -1375,21 +1419,22 @@ export default function DiscoverScreen() {
           const displayedInterests = sortedInterests.slice(0, maxToShow);
           const remainingCount = sortedInterests.length - maxToShow;
 
-          const badgeStyle = getMatchBadgeStyle(item.matchPercentage, item.sharedInterests.length);
+          const badgeStyle = getMatchBadgeStyle(item.matchPercentage, item.sharedInterests.length, isDark);
+          const activeTagStyles = isDark ? DARK_TAG_STYLES : TAG_STYLES;
 
           return (
             <Pressable
               onPress={() => setSelectedCard(item)}
               style={{
-                backgroundColor: "#FFFFFF",
+                backgroundColor: colors.surface,
                 borderRadius: 20,
                 padding: 16,
                 marginBottom: 12,
                 borderWidth: 1,
-                borderColor: "#E5E7EB",
+                borderColor: colors.border,
                 shadowColor: "#000",
                 shadowOffset: { width: 0, height: 1 },
-                shadowOpacity: 0.04,
+                shadowOpacity: isDark ? 0.2 : 0.04,
                 shadowRadius: 3,
                 elevation: 1,
               }}
@@ -1410,7 +1455,7 @@ export default function DiscoverScreen() {
                         borderRadius: 7,
                         backgroundColor: "#22C55E",
                         borderWidth: 2,
-                        borderColor: "#FFFFFF",
+                        borderColor: colors.surface,
                       }}
                     />
                   )}
@@ -1429,10 +1474,10 @@ export default function DiscoverScreen() {
                     borderRadius: 14,
                     alignItems: "center",
                     justifyContent: "center",
-                    backgroundColor: "#F9FAFB",
+                    backgroundColor: colors.surfaceMuted,
                   }}
                 >
-                  <X size={15} color="#9CA3AF" />
+                  <X size={15} color={colors.textMuted} />
                 </Pressable>
               </View>
 
@@ -1443,7 +1488,7 @@ export default function DiscoverScreen() {
                     fontFamily: "Fraunces-Bold",
                     fontSize: 16,
                     fontWeight: "700",
-                    color: "#111827",
+                    color: colors.textPrimary,
                   }}
                   numberOfLines={1}
                 >
@@ -1453,7 +1498,7 @@ export default function DiscoverScreen() {
                   style={{
                     fontFamily: "PlusJakartaSans",
                     fontSize: 12,
-                    color: "#6B7280",
+                    color: colors.textSecondary,
                     marginTop: 2,
                   }}
                   numberOfLines={1}
@@ -1464,7 +1509,7 @@ export default function DiscoverScreen() {
                 <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginTop: 6 }}>
                   <View
                     style={{
-                      backgroundColor: "#F3F4F6",
+                      backgroundColor: colors.surfaceMuted,
                       paddingHorizontal: 8,
                       paddingVertical: 2,
                       borderRadius: 6,
@@ -1475,7 +1520,7 @@ export default function DiscoverScreen() {
                         fontFamily: "PlusJakartaSans",
                         fontSize: 10,
                         fontWeight: "600",
-                        color: "#374151",
+                        color: colors.textSecondary,
                       }}
                     >
                       {student.yearLevel || "Student"}
@@ -1486,7 +1531,7 @@ export default function DiscoverScreen() {
                       style={{
                         fontFamily: "PlusJakartaSans",
                         fontSize: 11,
-                        color: "#9CA3AF",
+                        color: colors.textMuted,
                         flex: 1,
                       }}
                       numberOfLines={1}
@@ -1504,7 +1549,7 @@ export default function DiscoverScreen() {
                     style={{
                       fontFamily: "PlusJakartaSans",
                       fontSize: 11,
-                      color: "#9CA3AF",
+                      color: colors.textMuted,
                       fontStyle: "italic",
                     }}
                   >
@@ -1515,7 +1560,7 @@ export default function DiscoverScreen() {
                     {displayedInterests.map((interest) => {
                       const isShared = item.sharedInterests.includes(interest);
                       const catColor = INTEREST_COLOR_MAP[interest] || "blue";
-                      const tStyle = isShared ? TAG_STYLES.shared : (TAG_STYLES[catColor] || TAG_STYLES.blue);
+                      const tStyle = isShared ? activeTagStyles.shared : (activeTagStyles[catColor] || activeTagStyles.blue);
 
                       return (
                         <View
@@ -1534,7 +1579,7 @@ export default function DiscoverScreen() {
                           }}
                         >
                           {isShared && (
-                            <Text style={{ fontSize: 10, color: "#15803D" }}>✦</Text>
+                            <Text style={{ fontSize: 10, color: isDark ? colors.primary : "#15803D" }}>✦</Text>
                           )}
                           <Text
                             style={{
@@ -1554,7 +1599,7 @@ export default function DiscoverScreen() {
                     {remainingCount > 0 && (
                       <View
                         style={{
-                          backgroundColor: "#F3F4F6",
+                          backgroundColor: colors.surfaceMuted,
                           paddingHorizontal: 8,
                           paddingVertical: 3,
                           borderRadius: 8,
@@ -1565,7 +1610,7 @@ export default function DiscoverScreen() {
                             fontFamily: "PlusJakartaSans",
                             fontSize: 10,
                             fontWeight: "700",
-                            color: "#6B7280",
+                            color: colors.textMuted,
                           }}
                         >
                           +{remainingCount} more
@@ -1582,7 +1627,7 @@ export default function DiscoverScreen() {
                   <View
                     style={{
                       flex: 1,
-                      backgroundColor: "rgba(26, 107, 60, 0.1)",
+                      backgroundColor: colors.primarySoft,
                       borderRadius: 12,
                       paddingVertical: 10,
                       flexDirection: "row",
@@ -1591,13 +1636,13 @@ export default function DiscoverScreen() {
                       gap: 6,
                     }}
                   >
-                    <Check size={14} color="#1A6B3C" strokeWidth={2.5} />
+                    <Check size={14} color={colors.primary} strokeWidth={2.5} />
                     <Text
                       style={{
                         fontFamily: "PlusJakartaSans",
                         fontSize: 13,
                         fontWeight: "700",
-                        color: "#1A6B3C",
+                        color: colors.primary,
                       }}
                     >
                       Connected
@@ -1610,7 +1655,7 @@ export default function DiscoverScreen() {
                       width: 44,
                       height: 44,
                       borderRadius: 12,
-                      backgroundColor: "#1A6B3C",
+                      backgroundColor: colors.primary,
                       alignItems: "center",
                       justifyContent: "center",
                     }}
@@ -1621,9 +1666,9 @@ export default function DiscoverScreen() {
               ) : status === "pending" ? (
                 <View
                   style={{
-                    backgroundColor: "#FEF3C7",
+                    backgroundColor: isDark ? "rgba(240, 178, 71, 0.15)" : "#FEF3C7",
                     borderWidth: 1,
-                    borderColor: "#FDE68A",
+                    borderColor: isDark ? "rgba(240, 178, 71, 0.3)" : "#FDE68A",
                     borderRadius: 12,
                     paddingVertical: 10,
                     alignItems: "center",
@@ -1635,7 +1680,7 @@ export default function DiscoverScreen() {
                       fontFamily: "PlusJakartaSans",
                       fontSize: 13,
                       fontWeight: "700",
-                      color: "#B45309",
+                      color: isDark ? "#FBBF24" : "#B45309",
                     }}
                   >
                     Request Sent
@@ -1645,14 +1690,14 @@ export default function DiscoverScreen() {
                 <Pressable
                   onPress={() => handleConnect(student.id)}
                   style={{
-                    backgroundColor: "#1A6B3C",
+                    backgroundColor: colors.primary,
                     borderRadius: 12,
                     paddingVertical: 10,
                     flexDirection: "row",
                     alignItems: "center",
                     justifyContent: "center",
                     gap: 6,
-                    shadowColor: "#1A6B3C",
+                    shadowColor: colors.primary,
                     shadowOffset: { width: 0, height: 2 },
                     shadowOpacity: 0.15,
                     shadowRadius: 4,
@@ -1678,17 +1723,17 @@ export default function DiscoverScreen() {
         ListEmptyComponent={
           isLoading ? (
             <View style={{ paddingVertical: 40, alignItems: "center" }}>
-              <ActivityIndicator size="large" color="#1A6B3C" />
+              <ActivityIndicator size="large" color={colors.primary} />
             </View>
           ) : (
             <View
               style={{
-                backgroundColor: "#FFFFFF",
+                backgroundColor: colors.surface,
                 borderRadius: 24,
                 padding: 24,
                 alignItems: "center",
                 borderWidth: 1,
-                borderColor: "#E5E7EB",
+                borderColor: colors.border,
                 marginTop: 8,
               }}
             >
@@ -1697,13 +1742,13 @@ export default function DiscoverScreen() {
                   width: 56,
                   height: 56,
                   borderRadius: 28,
-                  backgroundColor: "rgba(26, 107, 60, 0.1)",
+                  backgroundColor: colors.primarySoft,
                   alignItems: "center",
                   justifyContent: "center",
                   marginBottom: 12,
                 }}
               >
-                <Compass size={28} color="#1A6B3C" />
+                <Compass size={28} color={colors.primary} />
               </View>
 
               <Text
@@ -1711,7 +1756,7 @@ export default function DiscoverScreen() {
                   fontFamily: "Fraunces-Bold",
                   fontSize: 18,
                   fontWeight: "700",
-                  color: "#111827",
+                  color: colors.textPrimary,
                   marginBottom: 6,
                   textAlign: "center",
                 }}
@@ -1722,7 +1767,7 @@ export default function DiscoverScreen() {
                 style={{
                   fontFamily: "PlusJakartaSans",
                   fontSize: 12,
-                  color: "#6B7280",
+                  color: colors.textSecondary,
                   textAlign: "center",
                   marginBottom: 16,
                   lineHeight: 18,
@@ -1740,19 +1785,20 @@ export default function DiscoverScreen() {
                       paddingHorizontal: 16,
                       borderRadius: 12,
                       borderWidth: 1,
-                      borderColor: "#E5E7EB",
+                      borderColor: colors.border,
+                      backgroundColor: colors.surfaceMuted,
                       flexDirection: "row",
                       alignItems: "center",
                       gap: 6,
                     }}
                   >
-                    <RotateCcw size={14} color="#4B5563" />
+                    <RotateCcw size={14} color={colors.textSecondary} />
                     <Text
                       style={{
                         fontFamily: "PlusJakartaSans",
                         fontSize: 12,
                         fontWeight: "700",
-                        color: "#4B5563",
+                        color: colors.textSecondary,
                       }}
                     >
                       Clear Filters
@@ -1764,7 +1810,7 @@ export default function DiscoverScreen() {
                   onPress={handleFindMatch}
                   disabled={!canMatch}
                   style={{
-                    backgroundColor: "#1A6B3C",
+                    backgroundColor: colors.primary,
                     paddingVertical: 10,
                     paddingHorizontal: 16,
                     borderRadius: 12,
@@ -1806,7 +1852,7 @@ export default function DiscoverScreen() {
             <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.6)", justifyContent: "flex-end" }}>
               <View
                 style={{
-                  backgroundColor: "#FFFFFF",
+                  backgroundColor: colors.surface,
                   borderTopLeftRadius: 28,
                   borderTopRightRadius: 28,
                   maxHeight: "88%",
@@ -1815,7 +1861,7 @@ export default function DiscoverScreen() {
               >
                 {/* Modal Header with Rich Forest Green Gradient */}
                 <LinearGradient
-                  colors={["#1A6B3C", "#14532D", "#0A331C"]}
+                  colors={isDark ? ["#1E3A2B", "#152E22", "#0D1F17"] : ["#1A6B3C", "#14532D", "#0A331C"]}
                   style={{ padding: 20, position: "relative" }}
                 >
                   <Pressable
@@ -1850,7 +1896,7 @@ export default function DiscoverScreen() {
                             borderRadius: 8,
                             backgroundColor: "#22C55E",
                             borderWidth: 2,
-                            borderColor: "#FFFFFF",
+                            borderColor: colors.surface,
                           }}
                         />
                       )}
@@ -1942,22 +1988,22 @@ export default function DiscoverScreen() {
                       flexDirection: "row",
                       alignItems: "center",
                       justifyContent: "space-between",
-                      backgroundColor: "rgba(26, 107, 60, 0.08)",
+                      backgroundColor: colors.primarySoft,
                       borderWidth: 1,
-                      borderColor: "rgba(26, 107, 60, 0.15)",
+                      borderColor: isDark ? "rgba(56, 193, 133, 0.3)" : "rgba(26, 107, 60, 0.15)",
                       borderRadius: 18,
                       padding: 16,
                     }}
                   >
                     <View style={{ flex: 1, marginRight: 12 }}>
                       <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
-                        <Sparkles size={14} color="#1A6B3C" />
+                        <Sparkles size={14} color={colors.primary} />
                         <Text
                           style={{
                             fontFamily: "PlusJakartaSans",
                             fontSize: 13,
                             fontWeight: "700",
-                            color: "#1A6B3C",
+                            color: colors.primary,
                           }}
                         >
                           Peer Compatibility
@@ -1967,7 +2013,7 @@ export default function DiscoverScreen() {
                         style={{
                           fontFamily: "PlusJakartaSans",
                           fontSize: 11,
-                          color: "#6B7280",
+                          color: colors.textSecondary,
                           marginTop: 3,
                         }}
                       >
@@ -1983,7 +2029,7 @@ export default function DiscoverScreen() {
                           fontFamily: "Fraunces-Bold",
                           fontSize: 26,
                           fontWeight: "800",
-                          color: "#1A6B3C",
+                          color: colors.primary,
                         }}
                       >
                         {selectedCard.matchPercentage}%
@@ -1993,7 +2039,7 @@ export default function DiscoverScreen() {
                           fontFamily: "PlusJakartaSans",
                           fontSize: 9,
                           fontWeight: "800",
-                          color: "#9CA3AF",
+                          color: colors.textMuted,
                           textTransform: "uppercase",
                           letterSpacing: 0.5,
                         }}
@@ -2011,7 +2057,7 @@ export default function DiscoverScreen() {
                           fontFamily: "PlusJakartaSans",
                           fontSize: 11,
                           fontWeight: "700",
-                          color: "#9CA3AF",
+                          color: colors.textMuted,
                           textTransform: "uppercase",
                           marginBottom: 6,
                         }}
@@ -2020,18 +2066,18 @@ export default function DiscoverScreen() {
                       </Text>
                       <View
                         style={{
-                          backgroundColor: "#F9FAFB",
+                          backgroundColor: colors.surfaceMuted,
                           padding: 14,
                           borderRadius: 14,
                           borderWidth: 1,
-                          borderColor: "#E5E7EB",
+                          borderColor: colors.border,
                         }}
                       >
                         <Text
                           style={{
                             fontFamily: "PlusJakartaSans",
                             fontSize: 13,
-                            color: "#374151",
+                            color: colors.textSecondary,
                             fontStyle: "italic",
                             lineHeight: 18,
                           }}
@@ -2046,13 +2092,13 @@ export default function DiscoverScreen() {
                   {selectedCard.sharedInterests.length > 0 && (
                     <View>
                       <View style={{ flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8 }}>
-                        <Sparkles size={13} color="#1A6B3C" />
+                        <Sparkles size={13} color={colors.primary} />
                         <Text
                           style={{
                             fontFamily: "PlusJakartaSans",
                             fontSize: 11,
                             fontWeight: "700",
-                            color: "#1A6B3C",
+                            color: colors.primary,
                             textTransform: "uppercase",
                           }}
                         >
@@ -2066,9 +2112,9 @@ export default function DiscoverScreen() {
                           <View
                             key={interest}
                             style={{
-                              backgroundColor: "#ECFDF5",
+                              backgroundColor: colors.primarySoft,
                               borderWidth: 1,
-                              borderColor: "#86EFAC",
+                              borderColor: isDark ? "rgba(56, 193, 133, 0.3)" : "#86EFAC",
                               paddingHorizontal: 10,
                               paddingVertical: 5,
                               borderRadius: 10,
@@ -2077,13 +2123,13 @@ export default function DiscoverScreen() {
                               gap: 4,
                             }}
                           >
-                            <Text style={{ fontSize: 10, color: "#15803D" }}>✦</Text>
+                            <Text style={{ fontSize: 10, color: colors.primary }}>✦</Text>
                             <Text
                               style={{
                                 fontFamily: "PlusJakartaSans",
                                 fontSize: 12,
                                 fontWeight: "600",
-                                color: "#15803D",
+                                color: colors.primary,
                               }}
                             >
                               {interest}
@@ -2103,7 +2149,7 @@ export default function DiscoverScreen() {
                             fontFamily: "PlusJakartaSans",
                             fontSize: 11,
                             fontWeight: "700",
-                            color: "#9CA3AF",
+                            color: colors.textMuted,
                             textTransform: "uppercase",
                             marginBottom: 8,
                           }}
@@ -2114,8 +2160,9 @@ export default function DiscoverScreen() {
                           {student.interests
                             .filter((i) => !selectedCard.sharedInterests.includes(i))
                             .map((interest) => {
+                              const activeTagStyles = isDark ? DARK_TAG_STYLES : TAG_STYLES;
                               const catColor = INTEREST_COLOR_MAP[interest] || "blue";
-                              const tStyle = TAG_STYLES[catColor] || TAG_STYLES.blue;
+                              const tStyle = activeTagStyles[catColor] || activeTagStyles.blue;
                               return (
                                 <View
                                   key={interest}
@@ -2153,7 +2200,7 @@ export default function DiscoverScreen() {
                           fontFamily: "PlusJakartaSans",
                           fontSize: 11,
                           fontWeight: "700",
-                          color: "#9CA3AF",
+                          color: colors.textMuted,
                           textTransform: "uppercase",
                           marginBottom: 8,
                         }}
@@ -2174,8 +2221,12 @@ export default function DiscoverScreen() {
                                 paddingVertical: 9,
                                 borderRadius: 12,
                                 borderWidth: 1,
-                                borderColor: isSharedOrg ? "rgba(26, 107, 60, 0.25)" : "#E5E7EB",
-                                backgroundColor: isSharedOrg ? "rgba(26, 107, 60, 0.08)" : "#F9FAFB",
+                                borderColor: isSharedOrg
+                                  ? isDark
+                                    ? "rgba(56, 193, 133, 0.4)"
+                                    : "rgba(26, 107, 60, 0.25)"
+                                  : colors.border,
+                                backgroundColor: isSharedOrg ? colors.primarySoft : colors.surfaceMuted,
                               }}
                             >
                               <Text style={{ fontSize: 13 }}>🏛️</Text>
@@ -2184,7 +2235,7 @@ export default function DiscoverScreen() {
                                   fontFamily: "PlusJakartaSans",
                                   fontSize: 12,
                                   fontWeight: "600",
-                                  color: isSharedOrg ? "#1A6B3C" : "#374151",
+                                  color: isSharedOrg ? colors.primary : colors.textPrimary,
                                   flex: 1,
                                 }}
                                 numberOfLines={1}
@@ -2194,7 +2245,7 @@ export default function DiscoverScreen() {
                               {isSharedOrg && (
                                 <View
                                   style={{
-                                    backgroundColor: "rgba(26, 107, 60, 0.15)",
+                                    backgroundColor: colors.primarySoft,
                                     paddingHorizontal: 6,
                                     paddingVertical: 2,
                                     borderRadius: 6,
@@ -2205,7 +2256,7 @@ export default function DiscoverScreen() {
                                       fontFamily: "PlusJakartaSans",
                                       fontSize: 9,
                                       fontWeight: "800",
-                                      color: "#1A6B3C",
+                                      color: colors.primary,
                                     }}
                                   >
                                     Shared Org!
@@ -2225,8 +2276,8 @@ export default function DiscoverScreen() {
                   style={{
                     padding: 16,
                     borderTopWidth: 1,
-                    borderTopColor: "#F3F4F6",
-                    backgroundColor: "#FFFFFF",
+                    borderTopColor: colors.border,
+                    backgroundColor: colors.surface,
                   }}
                 >
                   {cardStatus === "none" && (
@@ -2236,7 +2287,7 @@ export default function DiscoverScreen() {
                         setSelectedCard(null);
                       }}
                       style={{
-                        backgroundColor: "#1A6B3C",
+                        backgroundColor: colors.primary,
                         paddingVertical: 13,
                         borderRadius: 14,
                         flexDirection: "row",
@@ -2262,9 +2313,9 @@ export default function DiscoverScreen() {
                   {cardStatus === "pending" && (
                     <View
                       style={{
-                        backgroundColor: "#FEF3C7",
+                        backgroundColor: isDark ? "rgba(240, 178, 71, 0.15)" : "#FEF3C7",
                         borderWidth: 1,
-                        borderColor: "#FDE68A",
+                        borderColor: isDark ? "rgba(240, 178, 71, 0.3)" : "#FDE68A",
                         paddingVertical: 13,
                         borderRadius: 14,
                         alignItems: "center",
@@ -2276,7 +2327,7 @@ export default function DiscoverScreen() {
                           fontFamily: "PlusJakartaSans",
                           fontSize: 14,
                           fontWeight: "700",
-                          color: "#B45309",
+                          color: isDark ? "#FBBF24" : "#B45309",
                         }}
                       >
                         ⏳ Connection Request Pending
@@ -2289,7 +2340,7 @@ export default function DiscoverScreen() {
                       <View
                         style={{
                           flex: 1,
-                          backgroundColor: "rgba(26, 107, 60, 0.1)",
+                          backgroundColor: colors.primarySoft,
                           paddingVertical: 13,
                           borderRadius: 14,
                           flexDirection: "row",
@@ -2298,13 +2349,13 @@ export default function DiscoverScreen() {
                           gap: 6,
                         }}
                       >
-                        <Check size={16} color="#1A6B3C" strokeWidth={2.5} />
+                        <Check size={16} color={colors.primary} strokeWidth={2.5} />
                         <Text
                           style={{
                             fontFamily: "PlusJakartaSans",
                             fontSize: 14,
                             fontWeight: "700",
-                            color: "#1A6B3C",
+                            color: colors.primary,
                           }}
                         >
                           Connected Ally
@@ -2317,7 +2368,7 @@ export default function DiscoverScreen() {
                           handleMessage(student.id);
                         }}
                         style={{
-                          backgroundColor: "#1A6B3C",
+                          backgroundColor: colors.primary,
                           paddingVertical: 13,
                           paddingHorizontal: 20,
                           borderRadius: 14,
@@ -2353,7 +2404,7 @@ export default function DiscoverScreen() {
         <View style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)", justifyContent: "flex-end" }}>
           <View
             style={{
-              backgroundColor: "#FFFFFF",
+              backgroundColor: colors.surface,
               borderTopLeftRadius: 24,
               borderTopRightRadius: 24,
               maxHeight: "75%",
@@ -2374,7 +2425,7 @@ export default function DiscoverScreen() {
                   fontFamily: "Fraunces-Bold",
                   fontSize: 18,
                   fontWeight: "700",
-                  color: "#111827",
+                  color: colors.textPrimary,
                 }}
               >
                 {pickerModal === "department"
@@ -2384,7 +2435,7 @@ export default function DiscoverScreen() {
                   : "Select Year Level"}
               </Text>
               <Pressable onPress={() => setPickerModal(null)} hitSlop={8}>
-                <X size={20} color="#6B7280" />
+                <X size={20} color={colors.textSecondary} />
               </Pressable>
             </View>
 
@@ -2409,8 +2460,8 @@ export default function DiscoverScreen() {
                     (pickerModal === "department" && !filters.department) ||
                     (pickerModal === "course" && !filters.course) ||
                     (pickerModal === "year" && !filters.yearLevel)
-                      ? "#1A6B3C"
-                      : "#F3F4F6",
+                      ? colors.primary
+                      : colors.surfaceMuted,
                 }}
               >
                 <Text
@@ -2423,7 +2474,7 @@ export default function DiscoverScreen() {
                       (pickerModal === "course" && !filters.course) ||
                       (pickerModal === "year" && !filters.yearLevel)
                         ? "#FFFFFF"
-                        : "#374151",
+                        : colors.textPrimary,
                   }}
                 >
                   {pickerModal === "department"
@@ -2453,7 +2504,7 @@ export default function DiscoverScreen() {
                         paddingVertical: 12,
                         paddingHorizontal: 14,
                         borderRadius: 12,
-                        backgroundColor: isSel ? "#1A6B3C" : "#F3F4F6",
+                        backgroundColor: isSel ? colors.primary : colors.surfaceMuted,
                       }}
                     >
                       <Text
@@ -2461,7 +2512,7 @@ export default function DiscoverScreen() {
                           fontFamily: "PlusJakartaSans",
                           fontSize: 13,
                           fontWeight: "600",
-                          color: isSel ? "#FFFFFF" : "#374151",
+                          color: isSel ? "#FFFFFF" : colors.textPrimary,
                         }}
                       >
                         {dept.replace("College of ", "")}
@@ -2484,7 +2535,7 @@ export default function DiscoverScreen() {
                         paddingVertical: 12,
                         paddingHorizontal: 14,
                         borderRadius: 12,
-                        backgroundColor: isSel ? "#1A6B3C" : "#F3F4F6",
+                        backgroundColor: isSel ? colors.primary : colors.surfaceMuted,
                       }}
                     >
                       <Text
@@ -2492,7 +2543,7 @@ export default function DiscoverScreen() {
                           fontFamily: "PlusJakartaSans",
                           fontSize: 13,
                           fontWeight: "600",
-                          color: isSel ? "#FFFFFF" : "#374151",
+                          color: isSel ? "#FFFFFF" : colors.textPrimary,
                         }}
                       >
                         {c}
@@ -2515,7 +2566,7 @@ export default function DiscoverScreen() {
                         paddingVertical: 12,
                         paddingHorizontal: 14,
                         borderRadius: 12,
-                        backgroundColor: isSel ? "#1A6B3C" : "#F3F4F6",
+                        backgroundColor: isSel ? colors.primary : colors.surfaceMuted,
                       }}
                     >
                       <Text
@@ -2523,7 +2574,7 @@ export default function DiscoverScreen() {
                           fontFamily: "PlusJakartaSans",
                           fontSize: 13,
                           fontWeight: "600",
-                          color: isSel ? "#FFFFFF" : "#374151",
+                          color: isSel ? "#FFFFFF" : colors.textPrimary,
                         }}
                       >
                         {y}

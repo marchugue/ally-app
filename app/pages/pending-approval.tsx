@@ -20,13 +20,14 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { Search } from 'lucide-react-native';
 import { useAuth } from '@/lib/auth/AuthContext';
 import * as authApi from '@/lib/api/auth';
+import { getSocket } from '@/lib/socket';
 import { Button } from '@/components/Button';
 
-const POLL_INTERVAL_MS = 5_000; // 5s fast poll for near-realtime detection
+const POLL_INTERVAL_MS = 3_000; // 3s fast poll fallback for near-realtime detection
 const GREEN = '#1A6B3C';
 
 export default function PendingApprovalPage() {
-  const { user, accessToken, completeLogin, signOut } = useAuth();
+  const { user, accessToken, completeLogin, refreshSession, signOut } = useAuth();
   const [, setChecking] = useState(false);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isCheckingRef = useRef(false);
@@ -43,14 +44,27 @@ export default function PendingApprovalPage() {
     setChecking(true);
     try {
       const session = await authApi.getSession(accessToken);
-      const updatedStatus = session.user?.user_metadata?.student_verification_status;
-      const stillPending = session.user?.user_metadata?.pending_student_verification;
-      const isApproved = session.user?.user_metadata?.is_approved;
+      const meta = session.user?.user_metadata;
+      const updatedStatus = meta?.student_verification_status;
+      const isApproved = Boolean(
+        meta?.is_approved ||
+        meta?.admin_verified ||
+        updatedStatus === 'approved' ||
+        meta?.chmsu_auto_verified ||
+        (meta?.email_type && meta.email_type !== 'external')
+      );
 
-      if (isApproved || !stillPending || updatedStatus === 'approved') {
-        // Approved — navigate to main app
-        await completeLogin(session);
+      if (isApproved) {
+        // Approved — refresh session with backend to acquire fresh JWT and updated claims
+        const refreshed = await refreshSession().catch(() => null);
+        const resolvedSession = refreshed || session;
+        await completeLogin(resolvedSession);
         router.replace('/(tabs)');
+        return;
+      }
+
+      if (updatedStatus === 'rejected') {
+        await completeLogin(session);
       }
     } catch {
       // Silently ignore network errors — try again next tick
@@ -60,6 +74,34 @@ export default function PendingApprovalPage() {
     }
   };
 
+  // 1. Real-time Socket.io listener for instant wakeup when approved on the spot
+  useEffect(() => {
+    const socket = getSocket(accessToken);
+    if (!socket) return;
+
+    const handleVerificationEvent = (payload: any) => {
+      if (
+        payload?.is_approved ||
+        payload?.status === 'approved' ||
+        payload?.student_verification_status === 'approved' ||
+        payload?.admin_verified
+      ) {
+        void checkStatus();
+      }
+    };
+
+    socket.on('user:verification_status', handleVerificationEvent);
+    socket.on('user:updated', handleVerificationEvent);
+    socket.on('profile:updated', handleVerificationEvent);
+
+    return () => {
+      socket.off('user:verification_status', handleVerificationEvent);
+      socket.off('user:updated', handleVerificationEvent);
+      socket.off('profile:updated', handleVerificationEvent);
+    };
+  }, [accessToken]);
+
+  // 2. Fast background polling fallback
   useEffect(() => {
     void checkStatus();
     intervalRef.current = setInterval(checkStatus, POLL_INTERVAL_MS);
@@ -68,6 +110,7 @@ export default function PendingApprovalPage() {
     };
   }, [accessToken]);
 
+  // 3. Foreground change re-check
   useEffect(() => {
     const handleAppState = (nextState: AppStateStatus) => {
       if (nextState === 'active') {

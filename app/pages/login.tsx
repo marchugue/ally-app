@@ -87,11 +87,18 @@ export default function LoginScreen() {
         new Promise((resolve) => setTimeout(resolve, 1000)),
       ]);
 
-      // Non-CHMSU students with pending student ID review go to waiting room.
-      // CHMSU / approved users go straight to the main app.
-      const isPending =
-        session.user?.user_metadata?.pending_student_verification === true &&
-        session.user?.user_metadata?.student_verification_status !== "approved";
+      const emailType = session.user?.user_metadata?.email_type;
+      const isChmsu =
+        emailType === "chmsu" ||
+        Boolean(session.user?.email && session.user.email.toLowerCase().endsWith("@chmsu.edu.ph"));
+      const isApproved = Boolean(
+        session.user?.user_metadata?.is_approved ||
+        session.user?.user_metadata?.admin_verified ||
+        session.user?.user_metadata?.student_verification_status === "approved" ||
+        session.user?.user_metadata?.chmsu_auto_verified ||
+        isChmsu
+      );
+      const isPending = !isApproved && (emailType === "external" || !isChmsu);
 
       router.replace(
         isPending ? ("/pages/pending-approval" as any) : "/(tabs)"

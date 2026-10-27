@@ -134,7 +134,7 @@ export default function TabIcon({
           style={{
             fontSize: 10,
             fontWeight: "700",
-            color: "#1A6B3C",
+            color: (color as string) || "#1A6B3C",
             letterSpacing: -0.2,
             textAlign: "center",
           }}

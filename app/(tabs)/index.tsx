@@ -20,6 +20,7 @@ import { PostCard } from "@/components/PostCard";
 import { CreatePostSheet } from "@/components/CreatePostSheet";
 import { EmptyState } from "@/components/EmptyState";
 import { useAuth } from "@/lib/auth/AuthContext";
+import { useTheme } from "@/context/ThemeContext";
 import { listFeed, likePost, unlikePost } from "@/lib/api/feed";
 import { newsfeedCache } from "@/lib/newsfeedCache";
 import type { FeedPost } from "@/types/feed";
@@ -37,6 +38,7 @@ const FILTER_OPTIONS: { value: FeedFilter; label: string; description: string }[
 export default function HomeScreen() {
   const insets = useSafeAreaInsets();
   const { accessToken, user } = useAuth();
+  const { colors, isDark } = useTheme();
   const [activeFilter, setActiveFilter] = useState<FeedFilter>("all");
   const initialMemCache = newsfeedCache.getMemory(activeFilter, user?.id);
   const [posts, setPosts] = useState<FeedPost[]>(() => initialMemCache?.posts ?? []);
@@ -240,8 +242,8 @@ export default function HomeScreen() {
       const currentTopId = postsRef.current[0]?.id;
       const latestBackendPost = peek[0];
 
-      if (currentTopId && latestBackendPost.id !== currentTopId) {
-        // Backend has new post(s)! Reload feed and update cache
+      if (!currentTopId || latestBackendPost.id !== currentTopId) {
+        // Backend has new post(s) or feed was empty! Reload feed and update cache
         await loadData(activeFilter);
       } else {
         // No new posts: keep cache intact
@@ -253,11 +255,15 @@ export default function HomeScreen() {
     }
   }, [accessToken, activeFilter, loadData]);
 
-  // Check when tab focuses (e.g. switching back from other tabs)
+  // Check when tab focuses (e.g. switching back from other tabs or returning from pending approval)
   useFocusEffect(
     useCallback(() => {
-      void checkTabReopen();
-    }, [checkTabReopen])
+      if (postsRef.current.length === 0) {
+        void loadData(activeFilter);
+      } else {
+        void checkTabReopen();
+      }
+    }, [checkTabReopen, loadData, activeFilter])
   );
 
   // Check when app returns from background to active foreground
@@ -377,7 +383,7 @@ export default function HomeScreen() {
   const isFilterActive = activeFilter !== "all";
 
   return (
-    <ResponsiveContainer backgroundColor="#F9FAFB">
+    <ResponsiveContainer backgroundColor={colors.background}>
       {/* ── Feed Header Bar: Ally-jis Brand & Animated Filter Dropdown ── */}
       <View
         style={{
@@ -387,9 +393,9 @@ export default function HomeScreen() {
           paddingHorizontal: 16,
           paddingTop: insets.top > 0 ? insets.top + 8 : 12,
           paddingBottom: 10,
-          backgroundColor: "#FFFFFF",
+          backgroundColor: colors.surface,
           borderBottomWidth: 1,
-          borderBottomColor: "#E5E7EB",
+          borderBottomColor: colors.border,
           zIndex: 10,
         }}
       >
@@ -399,7 +405,7 @@ export default function HomeScreen() {
             style={{
               fontFamily: "Fraunces_700Bold",
               fontSize: 22,
-              color: "#1A6B3C",
+              color: colors.primary,
               letterSpacing: -0.5,
             }}
           >
@@ -410,7 +416,7 @@ export default function HomeScreen() {
               style={{
                 fontSize: 12,
                 fontWeight: "600",
-                color: "#16A34A",
+                color: colors.primary,
                 textTransform: "capitalize",
               }}
             >
@@ -432,10 +438,10 @@ export default function HomeScreen() {
             paddingVertical: 7,
             borderRadius: 20,
             backgroundColor:
-              isFilterActive || showFilterDropdown ? "rgba(26,107,60,0.1)" : "#F3F4F6",
+              isFilterActive || showFilterDropdown ? colors.primarySoft : colors.surfaceMuted,
             borderWidth: 1,
             borderColor:
-              isFilterActive || showFilterDropdown ? "rgba(26,107,60,0.3)" : "#E5E7EB",
+              isFilterActive || showFilterDropdown ? colors.primaryBorder : colors.border,
           }}
         >
           <Animated.View
@@ -445,7 +451,7 @@ export default function HomeScreen() {
           >
             <SlidersHorizontal
               size={16}
-              color={isFilterActive || showFilterDropdown ? "#1A6B3C" : "#4B5563"}
+              color={isFilterActive || showFilterDropdown ? colors.primary : colors.textSecondary}
               strokeWidth={2.2}
             />
           </Animated.View>
@@ -454,7 +460,7 @@ export default function HomeScreen() {
             style={{
               fontSize: 13,
               fontWeight: "600",
-              color: isFilterActive || showFilterDropdown ? "#1A6B3C" : "#4B5563",
+              color: isFilterActive || showFilterDropdown ? colors.primary : colors.textSecondary,
               textTransform: "capitalize",
             }}
           >
@@ -474,7 +480,7 @@ export default function HomeScreen() {
         <Pressable
           style={{
             flex: 1,
-            backgroundColor: "rgba(0,0,0,0.18)",
+            backgroundColor: "rgba(0,0,0,0.4)",
             justifyContent: "flex-start",
             alignItems: "flex-end",
             paddingTop: insets.top > 0 ? insets.top + 52 : 56,
@@ -485,13 +491,13 @@ export default function HomeScreen() {
           <Pressable
             onPress={(e) => e.stopPropagation()}
             style={{
-              backgroundColor: "#FFFFFF",
+              backgroundColor: colors.surface,
               borderRadius: 14,
               paddingVertical: 6,
               paddingHorizontal: 6,
               minWidth: 175,
               borderWidth: 1,
-              borderColor: "#E5E7EB",
+              borderColor: colors.border,
               shadowColor: "#000",
               shadowOffset: { width: 0, height: 4 },
               shadowOpacity: 0.12,
@@ -507,7 +513,7 @@ export default function HomeScreen() {
                     <View
                       style={{
                         height: 1,
-                        backgroundColor: "#F3F4F6",
+                        backgroundColor: colors.border,
                         marginHorizontal: 10,
                         marginVertical: 2,
                       }}
@@ -524,20 +530,20 @@ export default function HomeScreen() {
                       paddingVertical: 10,
                       paddingHorizontal: 12,
                       borderRadius: 8,
-                      backgroundColor: isSelected ? "rgba(26,107,60,0.06)" : "transparent",
+                      backgroundColor: isSelected ? colors.primarySoft : "transparent",
                     }}
                   >
                     <Text
                       style={{
                         fontSize: 14,
                         fontWeight: isSelected ? "700" : "500",
-                        color: isSelected ? "#1A6B3C" : "#374151",
+                        color: isSelected ? colors.primary : colors.textPrimary,
                       }}
                     >
                       {option.label}
                     </Text>
                     {isSelected && (
-                      <Check size={16} color="#1A6B3C" strokeWidth={2.5} />
+                      <Check size={16} color={colors.primary} strokeWidth={2.5} />
                     )}
                   </TouchableOpacity>
                 </View>
@@ -671,10 +677,10 @@ export default function HomeScreen() {
           width: 56,
           height: 56,
           borderRadius: 16,
-          backgroundColor: "#1A6B3C",
+          backgroundColor: colors.primary,
           alignItems: "center",
           justifyContent: "center",
-          shadowColor: "#1A6B3C",
+          shadowColor: colors.primary,
           shadowOffset: { width: 0, height: 6 },
           shadowOpacity: 0.35,
           shadowRadius: 12,

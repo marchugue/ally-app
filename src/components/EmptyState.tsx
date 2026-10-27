@@ -1,5 +1,6 @@
 import { View, Text } from "react-native";
 import { Button } from "./Button";
+import { useTheme } from "@/context/ThemeContext";
 
 interface EmptyStateProps {
   icon: React.ReactNode;
@@ -16,6 +17,8 @@ export function EmptyState({
   actionLabel,
   onAction,
 }: EmptyStateProps) {
+  const { colors } = useTheme();
+
   return (
     <View
       style={{
@@ -29,8 +32,8 @@ export function EmptyState({
         style={{
           width: 64,
           height: 64,
-          borderRadius: 20,
-          backgroundColor: "#1A6B3C10",
+          borderRadius: 22,
+          backgroundColor: colors.primarySoft,
           alignItems: "center",
           justifyContent: "center",
           marginBottom: 16,
@@ -43,7 +46,7 @@ export function EmptyState({
         style={{
           fontSize: 17,
           fontWeight: "700",
-          color: "#111827",
+          color: colors.textPrimary,
           marginBottom: 6,
           textAlign: "center",
           letterSpacing: -0.3,
@@ -55,7 +58,7 @@ export function EmptyState({
       <Text
         style={{
           fontSize: 13,
-          color: "#6B7280",
+          color: colors.textSecondary,
           textAlign: "center",
           lineHeight: 20,
         }}

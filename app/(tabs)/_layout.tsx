@@ -9,7 +9,8 @@ import {
 } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import TabIcon from "@/components/navigation/TabIcon";
-import { TAB_THEME } from "@/constants/tabBarTheme";
+import { getTabBarTheme } from "@/constants/tabBarTheme";
+import { useTheme } from "@/context/ThemeContext";
 
 const tabs = [
   {
@@ -45,6 +46,8 @@ const tabs = [
 ];
 
 export default function TabsLayout() {
+  const { isDark } = useTheme();
+  const tabTheme = getTabBarTheme(isDark);
   const insets = useSafeAreaInsets();
   const bottomInset = insets.bottom > 0 ? insets.bottom : 8;
   const barHeight = 58 + bottomInset;
@@ -55,8 +58,8 @@ export default function TabsLayout() {
         headerShown: false,
         tabBarShowLabel: false,
 
-        tabBarActiveTintColor: TAB_THEME.activeColor,
-        tabBarInactiveTintColor: TAB_THEME.inactiveColor,
+        tabBarActiveTintColor: tabTheme.activeColor,
+        tabBarInactiveTintColor: tabTheme.inactiveColor,
 
         tabBarButton: (props) => {
           const { ref: _ref, ...rest } = props as any;
@@ -70,8 +73,8 @@ export default function TabsLayout() {
         },
 
         tabBarStyle: {
-          backgroundColor: TAB_THEME.backgroundColor,
-          borderTopColor: TAB_THEME.borderColor,
+          backgroundColor: tabTheme.backgroundColor,
+          borderTopColor: tabTheme.borderColor,
           borderTopWidth: 1,
           height: barHeight,
           paddingTop: 6,

@@ -119,7 +119,7 @@ export default function RequestsScreen() {
       setProcessing((prev) => new Set(prev).add(item.id));
       try {
         await acceptConnection(requesterId, accessToken);
-        await markNotificationRead(item.id, accessToken).catch(() => {});
+        await markNotificationRead(item.id, accessToken).catch(() => { });
         setHandledStatus((prev) => ({ ...prev, [item.id]: "accepted" }));
         setTimeout(() => {
           setRequests((prev) => prev.filter((r) => r.id !== item.id));
@@ -144,7 +144,7 @@ export default function RequestsScreen() {
       setProcessing((prev) => new Set(prev).add(item.id));
       try {
         await rejectConnection(requesterId, accessToken);
-        await markNotificationRead(item.id, accessToken).catch(() => {});
+        await markNotificationRead(item.id, accessToken).catch(() => { });
         setHandledStatus((prev) => ({ ...prev, [item.id]: "declined" }));
         setTimeout(() => {
           setRequests((prev) => prev.filter((r) => r.id !== item.id));
@@ -253,71 +253,6 @@ export default function RequestsScreen() {
         </TouchableOpacity>
       </View>
 
-      {/* ═══ Filter Chips Bar ═══ */}
-      <View
-        style={{
-          flexDirection: "row",
-          alignItems: "center",
-          gap: 8,
-          paddingHorizontal: 16,
-          paddingVertical: 10,
-          backgroundColor: "#FFFFFF",
-          borderBottomWidth: 1,
-          borderBottomColor: "#F3F4F6",
-        }}
-      >
-        {[
-          { id: "all", label: "All", count: counts.all },
-          { id: "unread", label: "Unread", count: counts.unread },
-          { id: "recent", label: "Recent", count: counts.recent },
-        ].map((tab) => {
-          const isActive = activeFilter === tab.id;
-          return (
-            <TouchableOpacity
-              key={tab.id}
-              onPress={() => setActiveFilter(tab.id as RequestFilter)}
-              activeOpacity={0.7}
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                gap: 5,
-                backgroundColor: isActive ? "#1A6B3C" : "#F3F4F6",
-                paddingHorizontal: 12,
-                paddingVertical: 6,
-                borderRadius: 12,
-              }}
-            >
-              <Text
-                style={{
-                  fontSize: 12,
-                  fontWeight: isActive ? "800" : "600",
-                  color: isActive ? "#FFFFFF" : "#4B5563",
-                }}
-              >
-                {tab.label}
-              </Text>
-              <View
-                style={{
-                  backgroundColor: isActive ? "rgba(255,255,255,0.25)" : "#E5E7EB",
-                  paddingHorizontal: 6,
-                  paddingVertical: 1,
-                  borderRadius: 10,
-                }}
-              >
-                <Text
-                  style={{
-                    fontSize: 10,
-                    fontWeight: "700",
-                    color: isActive ? "#FFFFFF" : "#6B7280",
-                  }}
-                >
-                  {tab.count}
-                </Text>
-              </View>
-            </TouchableOpacity>
-          );
-        })}
-      </View>
 
       {/* ═══ Requests List ═══ */}
       <FlatList

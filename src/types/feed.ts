@@ -22,6 +22,8 @@ export interface FeedPost {
   author: PostAuthor;
   liked_by_me: boolean;
   media: string[];
+  is_flagged?: boolean;
+  is_restricted?: boolean;
 }
 
 export interface CreatePostPayload {

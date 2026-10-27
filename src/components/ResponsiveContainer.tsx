@@ -1,6 +1,7 @@
 import React from "react";
 import { View, ScrollView, ViewStyle, StyleProp, RefreshControlProps } from "react-native";
 import { useResponsive } from "@/lib/responsive";
+import { useTheme } from "@/context/ThemeContext";
 
 interface ResponsiveContainerProps {
   children: React.ReactNode;
@@ -19,17 +20,21 @@ export function ResponsiveContainer({
   style,
   contentStyle,
   maxContentWidth = 500,
-  backgroundColor = "#FFFFFF",
+  backgroundColor,
   useSafeAreaTop = false,
   useSafeAreaBottom = false,
   scrollable = false,
   refreshControl,
 }: ResponsiveContainerProps) {
   const { insets, isTablet } = useResponsive();
+  const { colors, isDark } = useTheme();
+
+  const isDefaultLightBg = !backgroundColor || ["#FFFFFF", "#F7F4EF", "#F9FAFB", "#F7F8FA", "#F0EDE8"].includes(backgroundColor);
+  const resolvedBg = isDark && isDefaultLightBg ? colors.background : (backgroundColor ?? colors.background);
 
   const containerStyle: ViewStyle = {
     flex: 1,
-    backgroundColor,
+    backgroundColor: resolvedBg,
     paddingTop: useSafeAreaTop ? insets.top : 0,
     paddingBottom: useSafeAreaBottom ? insets.bottom : 0,
   };

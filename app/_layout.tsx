@@ -18,6 +18,7 @@ SplashScreen.preventAutoHideAsync();
 
 function RootLayoutNav() {
   const { user, accessToken, isLoading } = useAuth();
+  const { colors } = useTheme();
   const segments = useSegments() as string[];
   const [hasSeenOnboarding, setHasSeenOnboarding] = useState<boolean | null>(null);
 
@@ -111,8 +112,17 @@ function RootLayoutNav() {
         AsyncStorage.setItem("onboarding_done", "1").catch(() => {});
 
         const emailType = user.user_metadata?.email_type;
-        const isExternal = emailType === "external";
-        const isApproved = Boolean(user.user_metadata?.is_approved);
+        const isChmsu =
+          emailType === "chmsu" ||
+          Boolean(user.email && user.email.toLowerCase().endsWith("@chmsu.edu.ph"));
+        const isExternal = emailType === "external" || (!isChmsu && !emailType);
+        const isApproved = Boolean(
+          user.user_metadata?.is_approved ||
+          user.user_metadata?.admin_verified ||
+          user.user_metadata?.student_verification_status === "approved" ||
+          user.user_metadata?.chmsu_auto_verified ||
+          isChmsu
+        );
         const hasStudentId = Boolean(
           user.user_metadata?.student_id_url ||
           (user as any).student_id_url
@@ -209,8 +219,8 @@ function RootLayoutNav() {
 
   if (isLoading || hasSeenOnboarding === null) {
     return (
-      <View className="flex-1 bg-background items-center justify-center">
-        <ActivityIndicator color="#1A6B3C" />
+      <View style={{ flex: 1, backgroundColor: colors.background, alignItems: "center", justifyContent: "center" }}>
+        <ActivityIndicator color={colors.primary} />
       </View>
     );
   }
@@ -269,6 +279,23 @@ import {
 } from "@expo-google-fonts/plus-jakarta-sans";
 
 import { NetworkProvider } from "@/context/NetworkContext";
+import { ThemeProvider, useTheme } from "@/context/ThemeContext";
+
+function ThemedAppContainer() {
+  const { isDark } = useTheme();
+  return (
+    <>
+      <StatusBar style={isDark ? "light" : "dark"} />
+      <NetworkProvider>
+        <AuthProvider>
+          <PresenceProvider>
+            <RootLayoutNav />
+          </PresenceProvider>
+        </AuthProvider>
+      </NetworkProvider>
+    </>
+  );
+}
 
 export default function RootLayout() {
   const [fontsLoaded] = useFonts({
@@ -299,14 +326,9 @@ export default function RootLayout() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <SafeAreaProvider>
         <KeyboardProvider>
-          <StatusBar style="dark" />
-          <NetworkProvider>
-            <AuthProvider>
-              <PresenceProvider>
-                <RootLayoutNav />
-              </PresenceProvider>
-            </AuthProvider>
-          </NetworkProvider>
+          <ThemeProvider>
+            <ThemedAppContainer />
+          </ThemeProvider>
         </KeyboardProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>

@@ -40,6 +40,7 @@ import {
   clearActivityLogs,
 } from "@/lib/api/activityLogs";
 import { ConfirmModal } from "@/components/ConfirmModal";
+import { useTheme } from "@/context/ThemeContext";
 import type {
   ActivityBucket,
   ActivityLogRow,
@@ -106,6 +107,7 @@ function formatTime(isoString: string): string {
 export default function ActivityLogScreen() {
   const insets = useSafeAreaInsets();
   const { accessToken } = useAuth();
+  const { colors, isDark } = useTheme();
 
   const [activeBucket, setActiveBucket] = useState<ActivityBucket | "all">("all");
   const [sections, setSections] = useState<SectionData[]>([]);
@@ -218,16 +220,16 @@ export default function ActivityLogScreen() {
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: "#F7F4EF" }}>
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
       {/* Header */}
       <View
         style={{
           paddingTop: insets.top + 8,
           paddingBottom: 12,
           paddingHorizontal: 16,
-          backgroundColor: "#FFFFFF",
+          backgroundColor: colors.surface,
           borderBottomWidth: 1,
-          borderBottomColor: "#E2DED7",
+          borderBottomColor: colors.border,
           flexDirection: "row",
           alignItems: "center",
           justifyContent: "space-between",
@@ -235,7 +237,7 @@ export default function ActivityLogScreen() {
       >
         <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
           <Pressable onPress={() => router.back()} hitSlop={10}>
-            <ArrowLeft size={22} color="#111827" />
+            <ArrowLeft size={22} color={colors.textPrimary} />
           </Pressable>
           <View>
             <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
@@ -243,7 +245,7 @@ export default function ActivityLogScreen() {
                 style={{
                   fontFamily: "Fraunces_700Bold",
                   fontSize: 18,
-                  color: "#111827",
+                  color: colors.textPrimary,
                 }}
               >
                 Activity Log
@@ -307,9 +309,9 @@ export default function ActivityLogScreen() {
       {/* Filter Tabs */}
       <View
         style={{
-          backgroundColor: "#FFFFFF",
+          backgroundColor: colors.surface,
           borderBottomWidth: 1,
-          borderBottomColor: "#EAE7E1",
+          borderBottomColor: colors.borderSubtle,
           paddingVertical: 10,
         }}
       >
@@ -414,7 +416,7 @@ export default function ActivityLogScreen() {
           renderSectionHeader={({ section: { title } }) => (
             <View
               style={{
-                backgroundColor: "#F7F4EF",
+                backgroundColor: colors.background,
                 paddingHorizontal: 16,
                 paddingVertical: 8,
               }}
@@ -423,7 +425,7 @@ export default function ActivityLogScreen() {
                 style={{
                   fontFamily: "Fraunces_700Bold",
                   fontSize: 12,
-                  color: "#4B5563",
+                  color: colors.textSecondary,
                   textTransform: "uppercase",
                   letterSpacing: 0.5,
                 }}
@@ -439,7 +441,7 @@ export default function ActivityLogScreen() {
             return (
               <View
                 style={{
-                  backgroundColor: "#FFFFFF",
+                  backgroundColor: colors.surface,
                   marginHorizontal: 16,
                   marginBottom: 8,
                   borderRadius: 14,
@@ -448,7 +450,7 @@ export default function ActivityLogScreen() {
                   alignItems: "flex-start",
                   justifyContent: "space-between",
                   borderWidth: 1,
-                  borderColor: "#EAE7E1",
+                  borderColor: colors.borderSubtle,
                 }}
               >
                 <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 10, flex: 1 }}>

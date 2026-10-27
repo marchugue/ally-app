@@ -32,6 +32,7 @@ import {
   Share2,
   Trash2,
   Reply,
+  ShieldAlert,
 } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { KeyboardGestureArea } from "react-native-keyboard-controller";
@@ -48,10 +49,11 @@ import {
   likeComment,
   unlikeComment,
   deletePost,
+  getPost,
 } from "@/lib/api/feed";
 import { reportUser } from "@/lib/api/moderation";
 import { ReportModal } from "@/components/ReportModal";
-import type { Comment } from "@/types/feed";
+import type { Comment, FeedPost } from "@/types/feed";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
@@ -95,8 +97,23 @@ export default function MediaPreviewScreen() {
     commentId?: string;
   }>();
 
+  const [fetchedPost, setFetchedPost] = useState<FeedPost | null>(null);
+
+  useEffect(() => {
+    if (!postId || !accessToken) return;
+    getPost(postId, accessToken)
+      .then((p) => {
+        setFetchedPost(p);
+        if (p.liked_by_me !== undefined) setLiked(p.liked_by_me);
+        if (p.likes_count !== undefined) setLikesCount(p.likes_count);
+      })
+      .catch((err) => {
+        console.warn("Failed to fetch post in media preview:", err);
+      });
+  }, [postId, accessToken]);
+
   const parsedUrls: string[] = useMemo(() => {
-    const raw = mediaUrls || mediaUrl;
+    const raw = mediaUrls || mediaUrl || (fetchedPost?.media ? JSON.stringify(fetchedPost.media) : "");
     if (!raw) return [];
     let list: any[] = [];
     try {
@@ -106,11 +123,24 @@ export default function MediaPreviewScreen() {
       list = [raw];
     }
     return list
-      .map((item) => resolveImageUri(item))
+      .map((item) => (item === "[removed]" ? "[removed]" : resolveImageUri(item)))
       .filter((uri): uri is string => Boolean(uri));
-  }, [mediaUrls, mediaUrl]);
+  }, [mediaUrls, mediaUrl, fetchedPost?.media]);
 
   const hasMedia = parsedUrls.length > 0;
+  const effectiveCaption = fetchedPost?.content || caption || "";
+  const effectiveAuthorName =
+    authorUsername && authorUsername !== "anonymous"
+      ? `@${authorUsername}`
+      : fetchedPost?.author?.full_name || fetchedPost?.author?.username || authorName || "Anonymous Peer";
+  const effectiveAuthorAvatar = fetchedPost?.author?.avatar_url || authorAvatar || "";
+  const effectiveAuthorId = fetchedPost?.author?.id || authorId;
+  const isPostFlagged = Boolean(
+    fetchedPost?.is_flagged ||
+    fetchedPost?.is_restricted ||
+    fetchedPost?.content?.includes("<!--flagged") ||
+    effectiveCaption.includes("<!--flagged")
+  );
 
   const displayTime = useMemo(() => {
     if (!createdAt) return "";
@@ -375,14 +405,51 @@ export default function MediaPreviewScreen() {
           keyExtractor={(url, index) => `${url}-${index}`}
           renderItem={({ item }) => (
             <View style={styles.slide}>
-              <Image source={{ uri: item }} style={styles.fullImage} resizeMode="contain" />
+              {item === "[removed]" ? (
+                <View
+                  style={{
+                    width: SCREEN_WIDTH * 0.85,
+                    padding: 24,
+                    borderRadius: 16,
+                    backgroundColor: "#334155",
+                    borderWidth: 1,
+                    borderColor: "rgba(255,255,255,0.15)",
+                    alignItems: "center",
+                    justifyContent: "center",
+                  }}
+                >
+                  <Text
+                    style={{
+                      fontSize: 14,
+                      color: "#CBD5E1",
+                      fontWeight: "500",
+                      textAlign: "center",
+                      lineHeight: 20,
+                    }}
+                  >
+                    This photo was removed for violating community standards.
+                  </Text>
+                </View>
+              ) : (
+                <Image source={{ uri: item }} style={styles.fullImage} resizeMode="contain" />
+              )}
             </View>
           )}
         />
       ) : (
         <View style={styles.textOnlySlide}>
-          {caption ? (
-            <Text style={styles.textOnlyContent}>{caption}</Text>
+          {effectiveCaption ? (
+            <Text
+              style={[
+                styles.textOnlyContent,
+                effectiveCaption === "This message was removed" && {
+                  fontStyle: "italic",
+                  color: "#94A3B8",
+                },
+              ]}
+            >
+              {effectiveCaption}
+            </Text>
           ) : null}
         </View>
       )}
@@ -416,6 +483,40 @@ export default function MediaPreviewScreen() {
           <View style={{ width: 38 }} />
         )}
       </View>
+
+      {/* Moderation Warning / Restricted Visibility Banner */}
+      {isPostFlagged && (
+        <View
+          style={{
+            position: "absolute",
+            top: Math.max(insets.top + 60, 72),
+            left: 16,
+            right: 16,
+            zIndex: 40,
+            padding: 12,
+            borderRadius: 12,
+            backgroundColor: "rgba(217, 119, 6, 0.95)",
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 10,
+            shadowColor: "#000",
+            shadowOffset: { width: 0, height: 2 },
+            shadowOpacity: 0.25,
+            shadowRadius: 4,
+            elevation: 4,
+          }}
+        >
+          <ShieldAlert size={18} color="#FFFFFF" />
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 12, fontWeight: "700", color: "#FFFFFF" }}>
+              Flagged Content (Restricted Visibility)
+            </Text>
+            <Text style={{ fontSize: 11, color: "rgba(255,255,255,0.9)", marginTop: 1, lineHeight: 15 }}>
+              This post received an administrative warning. Its visibility is restricted to you and administrators.
+            </Text>
+          </View>
+        </View>
+      )}
 
       {/* ── Center Right Floating Action Bar ─────────────────────────────── */}
       {postId && (
@@ -524,11 +625,28 @@ export default function MediaPreviewScreen() {
                       isSelected && styles.thumbnailWrapperActive,
                     ]}
                   >
-                    <Image
-                      source={{ uri: item }}
-                      style={styles.thumbnailImage}
-                      resizeMode="cover"
-                    />
+                    {item === "[removed]" ? (
+                      <View
+                        style={[
+                          styles.thumbnailImage,
+                          {
+                            backgroundColor: "#475569",
+                            alignItems: "center",
+                            justifyContent: "center",
+                          },
+                        ]}
+                      >
+                        <Text style={{ fontSize: 9, color: "#CBD5E1", textAlign: "center" }}>
+                          Removed
+                        </Text>
+                      </View>
+                    ) : (
+                      <Image
+                        source={{ uri: item }}
+                        style={styles.thumbnailImage}
+                        resizeMode="cover"
+                      />
+                    )}
                   </Pressable>
                 );
               }}
@@ -539,33 +657,33 @@ export default function MediaPreviewScreen() {
         <Pressable
           style={styles.bottomAuthorRow}
           onPress={() => {
-            if (authorId) {
+            if (effectiveAuthorId) {
               router.push({
                 pathname: "/pages/user-profile",
                 params: {
-                  userId: authorId,
-                  avatarUrl: authorAvatar || "",
-                  avatarKey: authorAvatar || "",
-                  authorName: authorUsername && authorUsername !== "anonymous" ? `@${authorUsername}` : authorName || "Anonymous Peer",
+                  userId: effectiveAuthorId,
+                  avatarUrl: effectiveAuthorAvatar || "",
+                  avatarKey: effectiveAuthorAvatar || "",
+                  authorName: effectiveAuthorName,
                 },
               } as any);
             }
           }}
         >
-          {isAlly === "false" || (!authorAvatar && authorUsername === "anonymous") ? (
+          {isAlly === "false" || (!effectiveAuthorAvatar && authorUsername === "anonymous") ? (
             <AnonymousAvatar size={32} />
           ) : (
-            <UserAvatar avatar={authorAvatar} size="sm" />
+            <UserAvatar avatar={effectiveAuthorAvatar} size="sm" />
           )}
           <Text style={styles.bottomUsernameText} numberOfLines={1}>
-            {authorUsername && authorUsername !== "anonymous" ? `@${authorUsername}` : authorName || "Anonymous Peer"}
+            {effectiveAuthorName}
           </Text>
           {displayTime ? (
             <Text style={styles.bottomTimeText}>· {displayTime}</Text>
           ) : null}
         </Pressable>
 
-        {caption ? (
+        {effectiveCaption ? (
           <View style={styles.captionContainer}>
             <ScrollView
               nestedScrollEnabled
@@ -578,14 +696,20 @@ export default function MediaPreviewScreen() {
             >
               <Pressable onPress={() => setIsCaptionExpanded(!isCaptionExpanded)}>
                 <Text
-                  style={styles.bottomCaptionText}
+                  style={[
+                    styles.bottomCaptionText,
+                    effectiveCaption === "This message was removed" && {
+                      fontStyle: "italic",
+                      color: "#94A3B8",
+                    },
+                  ]}
                   numberOfLines={isCaptionExpanded ? undefined : 2}
                 >
-                  {caption}
+                  {effectiveCaption}
                 </Text>
               </Pressable>
             </ScrollView>
-            {caption.length > 70 && (
+            {effectiveCaption.length > 70 && effectiveCaption !== "This message was removed" && (
               <Pressable
                 onPress={() => setIsCaptionExpanded(!isCaptionExpanded)}
                 hitSlop={8}

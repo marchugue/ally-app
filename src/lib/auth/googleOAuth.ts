@@ -147,6 +147,22 @@ export async function nativeGoogleSignIn(): Promise<{
         "Google Play Services is not available or outdated. Please update it and try again."
       );
     }
+    // Specific check for DEVELOPER_ERROR (status code 10 from Google Play Services)
+    const isDevError =
+      err?.code === "10" ||
+      err?.code === 10 ||
+      String(err?.message || "").includes("DEVELOPER_ERROR") ||
+      String(err?.message || "").includes("developer_error");
+
+    if (isDevError) {
+      const devErr: any = new Error(
+        "DEVELOPER_ERROR: Google Sign-In is misconfigured on Android. The APK SHA-1 fingerprint is not added to Google Cloud Console for com.allyjis.mobile."
+      );
+      devErr.code = "DEVELOPER_ERROR";
+      devErr.isDeveloperError = true;
+      devErr.originalError = err;
+      throw devErr;
+    }
     throw err;
   }
 
@@ -169,7 +185,7 @@ export async function nativeGoogleSignIn(): Promise<{
 }
 
 /**
- * Optional browser fallback for Expo Go or environments without the native Google Sign-In SDK.
+ * Optional browser fallback for Expo Go or when native Google Sign-In has configuration issues.
  */
 export async function browserGoogleSignIn(): Promise<{
   accessToken: string;
@@ -189,7 +205,8 @@ export async function browserGoogleSignIn(): Promise<{
     );
   }
 
-  const returnUrl = "https://ally-jis.com/confirm";
+  // Use native custom scheme `ally://confirm` so Android immediately intercepts and returns to the app
+  const returnUrl = Platform.OS === "web" ? "https://ally-jis.com/confirm" : "ally://confirm";
   const supabaseOAuthUrl = `${SUPABASE_URL}/auth/v1/authorize?provider=google&redirect_to=${encodeURIComponent(returnUrl)}`;
 
   const result = await webBrowser.openAuthSessionAsync(supabaseOAuthUrl, returnUrl);
@@ -214,8 +231,33 @@ export async function browserGoogleSignIn(): Promise<{
     throw new Error(decodeURIComponent(errorDesc).replace(/\+/g, " "));
   }
 
-  const accessToken = hashParams.get("access_token") || queryParams.get("access_token");
-  const refreshToken = hashParams.get("refresh_token") || queryParams.get("refresh_token") || "";
+  let accessToken = hashParams.get("access_token") || queryParams.get("access_token");
+  let refreshToken = hashParams.get("refresh_token") || queryParams.get("refresh_token") || "";
+
+  // If Supabase returned an authorization code instead of direct tokens, exchange it
+  const code = queryParams.get("code") || hashParams.get("code");
+  if (!accessToken && code) {
+    try {
+      const tokenUrl = `${SUPABASE_URL}/auth/v1/token?grant_type=authorization_code`;
+      const resp = await fetch(tokenUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({ auth_code: code }),
+      });
+      if (resp.ok) {
+        const data = await resp.json();
+        if (data?.access_token) {
+          accessToken = data.access_token;
+          refreshToken = data.refresh_token || refreshToken;
+        }
+      }
+    } catch {
+      // Fall through to error below if token is not extracted
+    }
+  }
 
   if (!accessToken) {
     throw new Error("No authorization token received from Google.");
@@ -259,8 +301,16 @@ export function resolveOAuthNavigationTarget(
   }
 ): OAuthNavigationTarget {
   const emailType = session.user?.user_metadata?.email_type;
-  const isChmsu = emailType === "chmsu";
-  const isApproved = Boolean(session.user?.user_metadata?.is_approved);
+  const isChmsu =
+    emailType === "chmsu" ||
+    Boolean(session.user?.email && session.user.email.toLowerCase().endsWith("@chmsu.edu.ph"));
+  const isApproved = Boolean(
+    session.user?.user_metadata?.is_approved ||
+    session.user?.user_metadata?.admin_verified ||
+    session.user?.user_metadata?.student_verification_status === "approved" ||
+    session.user?.user_metadata?.chmsu_auto_verified ||
+    isChmsu
+  );
   const needsOnboard = session.user ? userNeedsOnboarding(session.user) : false;
   const { hasStudentId, hasCachedId, cachedFrontUri, cachedBackUri } = opts;
 

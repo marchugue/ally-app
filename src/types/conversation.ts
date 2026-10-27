@@ -54,6 +54,7 @@ export interface Message {
   /** True when the sender deleted the message for everyone (tombstone). */
   is_deleted?: boolean;
   deleted_at?: string | null;
+  is_flagged?: boolean;
   game_invite?: GameInvitePayload | null;
 }
 

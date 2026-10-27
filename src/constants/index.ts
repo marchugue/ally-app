@@ -3,12 +3,12 @@ import { Platform } from "react-native";
 
 export const COLORS = {
   // Backgrounds
-  background: "#F7F4EF",       // warm cream — main app bg
+  background: "#FFFFFF",       // clean white — main app bg
   surface: "#FFFFFF",          // white cards / surfaces
-  surfaceMuted: "#F0EDE8",     // slightly deeper cream for muted areas
+  surfaceMuted: "#F9FAFB",     // clean neutral light gray for muted areas
 
   // Borders
-  border: "#E2DED7",           // soft warm-gray border
+  border: "#E5E7EB",           // clean neutral gray border
 
   // Brand greens
   primary: "#1A6B3C",          // forest green — main CTA, active tabs

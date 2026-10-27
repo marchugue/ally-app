@@ -1,7 +1,7 @@
 import { View, Text, Pressable } from "react-native";
-import { Menu } from "lucide-react-native";
 import { router } from "expo-router";
 import { useResponsive } from "@/lib/responsive";
+import { useTheme } from "@/context/ThemeContext";
 
 interface ScreenHeaderProps {
   title?: string;
@@ -13,6 +13,7 @@ interface ScreenHeaderProps {
 
 export function ScreenHeader({ right, hideDivider = false }: ScreenHeaderProps) {
   const { insets, isSmallScreen, scaleClamped } = useResponsive();
+  const { colors } = useTheme();
 
   const topPadding = Math.max(insets.top + 8, 16);
   const horizontalPadding = isSmallScreen ? 14 : 20;
@@ -24,9 +25,9 @@ export function ScreenHeader({ right, hideDivider = false }: ScreenHeaderProps) 
         paddingTop: topPadding,
         paddingBottom: 12,
         paddingHorizontal: horizontalPadding,
-        backgroundColor: "#FFFFFF",
+        backgroundColor: colors.surface,
         borderBottomWidth: hideDivider ? 0 : 1,
-        borderBottomColor: hideDivider ? "transparent" : "#F0EDE8",
+        borderBottomColor: hideDivider ? "transparent" : colors.border,
         flexDirection: "row",
         alignItems: "center",
         justifyContent: "space-between",
@@ -41,13 +42,15 @@ export function ScreenHeader({ right, hideDivider = false }: ScreenHeaderProps) 
           style={{
             fontFamily: "Fraunces_700Bold",
             fontSize: brandFontSize,
-            color: "#1A6B3C",
+            color: colors.primary,
             letterSpacing: -0.5,
           }}
         >
           Ally-jis
         </Text>
       </Pressable>
+
+      {right ? <View>{right}</View> : null}
     </View>
   );
 }

@@ -411,10 +411,7 @@ export default function IdUploadSuccessScreen() {
           {isRegistering ? (
             <ActivityIndicator color="#fff" />
           ) : (
-            <>
-              <Text style={styles.continueBtnText}>Continue to Verification</Text>
-              <ChevronRight size={20} color="#fff" />
-            </>
+            <Text style={styles.continueBtnText}>Next</Text>
           )}
         </Pressable>
       </View>

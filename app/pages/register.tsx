@@ -183,13 +183,14 @@ function FieldError({ msg }: { msg?: string }) {
 export default function RegisterScreen() {
   const insets = useSafeAreaInsets();
   const params = useLocalSearchParams();
-  const { user, signUp, completeLogin, accessToken, refreshSession, updateUserMetadata, signInWithGoogle } = useAuth();
+  const { user, signUp, completeLogin, accessToken, refreshSession, updateUserMetadata, signInWithGoogle, signOut } = useAuth();
   const scrollViewRef = useRef<ScrollView>(null);
 
   // Overall onboarding step: 1 (Credentials), 2 (Academic & Org), 3 (Interests), 4 (Bio), 5 (Avatar & Terms)
   const [step, setStep] = useState<number>(() => {
     const startStep = Number(params.startStep);
-    return startStep >= 2 && startStep <= 5 ? startStep : 1;
+    if (startStep >= 2 && startStep <= 5) return startStep;
+    return user ? 2 : 1;
   });
 
   // Step 2 Academic Sub-Step ('username' | 'department' | 'course' | 'year' | 'organizations')
@@ -401,28 +402,23 @@ export default function RegisterScreen() {
     }).catch(() => {});
   }, []);
 
-  // If user is already authenticated (e.g. Google OAuth) and onboarding is incomplete, ensure step is at least 2 and sync cached ID
+  // If user is already authenticated (e.g. Google OAuth) and onboarding is incomplete, sync cached ID
   useEffect(() => {
-    if (user) {
-      setStep((prev) => (prev === 1 ? 2 : prev));
-      setAcademicSubStep("username");
-
-      if (!user.user_metadata?.student_id_url) {
-        getMobileRegisterCache().then((cached) => {
-          const front = studentIdUri || cached?.studentIdFrontUri;
-          const back = studentIdBackUri || cached?.studentIdBackUri;
-          if (front) {
-            uploadStudentIdFile(user.id, front, "front").catch((e) =>
-              console.warn("[register.tsx] Auto-upload cached front ID error:", e)
-            );
-          }
-          if (back) {
-            uploadStudentIdFile(user.id, back, "back").catch((e) =>
-              console.warn("[register.tsx] Auto-upload cached back ID error:", e)
-            );
-          }
-        });
-      }
+    if (user && !user.user_metadata?.student_id_url) {
+      getMobileRegisterCache().then((cached) => {
+        const front = studentIdUri || cached?.studentIdFrontUri;
+        const back = studentIdBackUri || cached?.studentIdBackUri;
+        if (front) {
+          uploadStudentIdFile(user.id, front, "front").catch((e) =>
+            console.warn("[register.tsx] Auto-upload cached front ID error:", e)
+          );
+        }
+        if (back) {
+          uploadStudentIdFile(user.id, back, "back").catch((e) =>
+            console.warn("[register.tsx] Auto-upload cached back ID error:", e)
+          );
+        }
+      });
     }
   }, [user]);
 
@@ -501,11 +497,9 @@ export default function RegisterScreen() {
         return true;
       }
       if (academicSubStep === "username") {
-        if (user) {
-          const isPending = user.user_metadata?.email_type === "external" && !user.user_metadata?.is_approved;
-          router.replace(isPending ? ("/pages/pending-approval" as any) : "/(tabs)");
-          return true;
-        }
+        try {
+          router.setParams({ startStep: "" });
+        } catch {}
         setStep(1);
         setSubmitError("");
         return true;
@@ -514,9 +508,7 @@ export default function RegisterScreen() {
 
     if (step === 1) {
       if (user) {
-        const isPending = user.user_metadata?.email_type === "external" && !user.user_metadata?.is_approved;
-        router.replace(isPending ? ("/pages/pending-approval" as any) : "/(tabs)");
-        return true;
+        signOut().catch(() => {});
       }
       if (router.canGoBack()) {
         router.back();
@@ -646,6 +638,12 @@ export default function RegisterScreen() {
   // ── Step 1: Credentials Submission ────────────────────────────────────────
   const handleContinueCredentials = async () => {
     setSubmitError("");
+
+    if (user) {
+      setStep(2);
+      setAcademicSubStep("username");
+      return;
+    }
 
     const cleanEmail = form.email.trim().toLowerCase();
     const analysis = analyzeEmail(cleanEmail);
@@ -1140,15 +1138,14 @@ export default function RegisterScreen() {
                   />
                 </View>
 
-                {/* Continue button */}
+                {/* Next button */}
                 <Button
-                  label={isSubmitting ? "Processing…" : "Continue"}
+                  label={isSubmitting ? "Processing…" : "Next"}
                   variant="primary"
                   pill
                   size="lg"
                   loading={isSubmitting}
                   disabled={isSubmitting}
-                  icon={<ArrowRight size={16} color="#FFFFFF" />}
                   onPress={handleContinueCredentials}
                   className="w-full"
                 />
@@ -1156,7 +1153,12 @@ export default function RegisterScreen() {
                 {!isKeyboardVisible && (
                   <View style={{ flexDirection: "row", justifyContent: "center", marginTop: 14, gap: 4 }}>
                     <Text style={{ fontSize: 13, color: "#6B7280" }}>Already have an account?</Text>
-                    <Pressable onPress={() => router.replace("/pages/login")}>
+                    <Pressable
+                      onPress={() => {
+                        if (user) signOut().catch(() => {});
+                        router.replace("/pages/login");
+                      }}
+                    >
                       <Text style={{ fontSize: 13, fontWeight: "700", color: "#1A6B3C" }}>Sign in</Text>
                     </Pressable>
                   </View>
@@ -1211,12 +1213,11 @@ export default function RegisterScreen() {
                 </View>
 
                 <Button
-                  label="Continue to Academic Details"
+                  label="Next"
                   variant="primary"
                   pill
                   size="lg"
                   disabled={!form.username.trim()}
-                  icon={<ArrowRight size={16} color="#FFFFFF" />}
                   onPress={handleNextFromUsername}
                   className="w-full"
                 />
@@ -1266,12 +1267,11 @@ export default function RegisterScreen() {
               {/* Continue Button on the Bottom */}
               <View style={[styles.bottomStickArea, { paddingBottom: Math.max(insets.bottom + 12, 16) }]}>
                 <Button
-                  label="Continue to Degree Program"
+                  label="Next"
                   variant="primary"
                   pill
                   size="lg"
                   disabled={!form.department}
-                  icon={<ArrowRight size={16} color="#FFFFFF" />}
                   onPress={() => setAcademicSubStep("course")}
                   className="w-full"
                 />
@@ -1329,12 +1329,11 @@ export default function RegisterScreen() {
               {/* Continue Button on the Bottom */}
               <View style={[styles.bottomStickArea, { paddingBottom: Math.max(insets.bottom + 12, 16) }]}>
                 <Button
-                  label="Continue to Year Level"
+                  label="Next"
                   variant="primary"
                   pill
                   size="lg"
                   disabled={!form.course}
-                  icon={<ArrowRight size={16} color="#FFFFFF" />}
                   onPress={() => setAcademicSubStep("year")}
                   className="w-full"
                 />
@@ -1414,12 +1413,11 @@ export default function RegisterScreen() {
                 )}
 
                 <Button
-                  label="Continue to Campus Organizations"
+                  label="Next"
                   variant="primary"
                   pill
                   size="lg"
                   disabled={!form.yearLevel}
-                  icon={<ArrowRight size={16} color="#FFFFFF" />}
                   onPress={() => setAcademicSubStep("organizations")}
                   className="w-full"
                 />
@@ -1458,7 +1456,7 @@ export default function RegisterScreen() {
                             hitSlop={8}
                             style={{ marginLeft: 6 }}
                           >
-                            <X size={14} color="#6B7280" />
+                            <X size={14} color="#FFFFFF" />
                           </Pressable>
                         </View>
                       ))}
@@ -1576,11 +1574,10 @@ export default function RegisterScreen() {
 
                 {/* Continue button */}
                 <Button
-                  label={form.organizations.length > 0 ? "Continue to Interests" : "Skip & Continue"}
+                  label="Next"
                   variant="primary"
                   pill
                   size="lg"
-                  icon={<ArrowRight size={16} color="#FFFFFF" />}
                   onPress={() => setStep(3)}
                   className="w-full"
                 />
@@ -1681,16 +1678,11 @@ export default function RegisterScreen() {
                 </View>
 
                 <Button
-                  label={
-                    form.interests.length < 3
-                      ? `Pick ${3 - form.interests.length} more interest${3 - form.interests.length > 1 ? "s" : ""}`
-                      : "Continue to Bio"
-                  }
+                  label="Next"
                   variant="primary"
                   pill
                   size="lg"
                   disabled={form.interests.length < 3}
-                  icon={<ArrowRight size={16} color="#FFFFFF" />}
                   onPress={() => setStep(4)}
                   className="w-full"
                 />
@@ -1751,11 +1743,10 @@ export default function RegisterScreen() {
                 </View>
 
                 <Button
-                  label="Continue to Avatar"
+                  label="Next"
                   variant="primary"
                   pill
                   size="lg"
-                  icon={<ArrowRight size={16} color="#FFFFFF" />}
                   onPress={() => setStep(5)}
                   className="w-full"
                 />
@@ -1908,12 +1899,11 @@ export default function RegisterScreen() {
               {/* Complete Registration Button */}
               <View style={[styles.bottomStickArea, { paddingBottom: isKeyboardVisible ? 10 : Math.max(insets.bottom + 12, 16) }]}>
                 <Button
-                  label={isSubmitting ? "Finalizing Profile..." : "Complete Registration"}
+                  label={isSubmitting ? "Finalizing Profile..." : "Next"}
                   variant="primary"
                   pill
                   size="lg"
                   disabled={isSubmitting || !agreedToTerms}
-                  icon={<Check size={16} color="#FFFFFF" />}
                   onPress={handleNextAvatar}
                   className="w-full"
                 />
@@ -2152,7 +2142,12 @@ const styles = StyleSheet.create({
   },
   pillOptionCardSelected: {
     borderColor: "#1A6B3C",
-    backgroundColor: "#1A6B3C12",
+    backgroundColor: "#1A6B3C",
+    shadowColor: "#1A6B3C",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.22,
+    shadowRadius: 8,
+    elevation: 3,
   },
   pillOptionText: {
     fontSize: 14,
@@ -2161,7 +2156,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   pillOptionTextSelected: {
-    color: "#1A6B3C",
+    color: "#FFFFFF",
     fontWeight: "700",
   },
   emptyCourseBox: {
@@ -2220,13 +2215,13 @@ const styles = StyleSheet.create({
     paddingVertical: 6,
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: "#D1D5DB",
-    backgroundColor: "#F9FAFB",
+    borderColor: "#1A6B3C",
+    backgroundColor: "#1A6B3C",
   },
   orgSelectedText: {
     fontSize: 12,
-    fontWeight: "500",
-    color: "#1F2937",
+    fontWeight: "600",
+    color: "#FFFFFF",
   },
   orgInputContainer: {
     flexDirection: "row",

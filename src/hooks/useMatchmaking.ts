@@ -163,10 +163,7 @@ export function useMatchmaking(): UseMatchmakingResult {
         }
       }
 
-      if (status.queueEntry && status.queueEntry.status === "searching") {
-        setQueueEntry(status.queueEntry);
-        setPhase("searching");
-      } else if (pending) {
+      if (pending) {
         setPhase("pending");
         if (pending.accept_expires_at) {
           const remainingSecs = Math.max(
@@ -175,6 +172,9 @@ export function useMatchmaking(): UseMatchmakingResult {
           );
           startCountdown(remainingSecs || 30);
         }
+      } else if (status.queueEntry && status.queueEntry.status === "searching") {
+        setQueueEntry(status.queueEntry);
+        setPhase("searching");
       } else if (phaseRef.current === "searching" && !status.queueEntry) {
         // queue ended
       }

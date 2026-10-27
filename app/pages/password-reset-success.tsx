@@ -10,7 +10,7 @@ export default function PasswordResetSuccessScreen() {
   const insets = useSafeAreaInsets();
 
   return (
-    <View style={{ flex: 1, backgroundColor: "#F7F4EF", paddingTop: insets.top + 24, paddingHorizontal: 24 }}>
+    <View style={{ flex: 1, backgroundColor: "#FFFFFF", paddingTop: insets.top + 24, paddingHorizontal: 24 }}>
       <StatusBar barStyle="dark-content" />
       <View
         style={{

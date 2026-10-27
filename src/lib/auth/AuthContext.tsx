@@ -304,7 +304,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     let tokens: { accessToken: string; refreshToken?: string };
 
     if (isNativeGoogleSignInAvailable()) {
-      tokens = await nativeGoogleSignIn();
+      try {
+        tokens = await nativeGoogleSignIn();
+      } catch (nativeErr: any) {
+        if (nativeErr?.message === "cancelled") {
+          throw nativeErr;
+        }
+
+        const isDeveloperError =
+          nativeErr?.isDeveloperError ||
+          nativeErr?.code === "DEVELOPER_ERROR" ||
+          nativeErr?.code === "10" ||
+          nativeErr?.code === 10 ||
+          String(nativeErr?.message || "").toLowerCase().includes("developer_error");
+
+        if (isDeveloperError) {
+          console.warn(
+            "[AuthContext] Native Google Sign-In failed with DEVELOPER_ERROR (misconfigured SHA-1/Google Cloud Client). Falling back to browser OAuth...",
+            nativeErr
+          );
+          tokens = await browserGoogleSignIn();
+        } else {
+          throw nativeErr;
+        }
+      }
     } else {
       tokens = await browserGoogleSignIn();
     }
@@ -329,13 +352,33 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function refreshSession(): Promise<AuthSession | undefined> {
     const refreshToken = await getPersistedItem(REFRESH_TOKEN_KEY);
-    if (!refreshToken) return undefined;
+    if (!refreshToken) {
+      const storedAccessToken = (await getPersistedItem(ACCESS_TOKEN_KEY)) || accessToken;
+      if (storedAccessToken) {
+        try {
+          const freshSession = await authApi.getSession(storedAccessToken);
+          await applySession(freshSession);
+          return freshSession;
+        } catch {
+          return undefined;
+        }
+      }
+      return undefined;
+    }
     try {
       const session = await authApi.refreshSessionWithToken(refreshToken);
       await applySession(session);
       return session;
     } catch (err) {
-      console.warn("[AuthContext] Failed to refresh session:", err);
+      console.warn("[AuthContext] Failed to refresh session with token:", err);
+      const storedAccessToken = (await getPersistedItem(ACCESS_TOKEN_KEY)) || accessToken;
+      if (storedAccessToken) {
+        try {
+          const freshSession = await authApi.getSession(storedAccessToken);
+          await applySession(freshSession);
+          return freshSession;
+        } catch {}
+      }
       return undefined;
     }
   }

@@ -1,4 +1,5 @@
 import { Modal, View, Text, Pressable } from "react-native";
+import { useTheme } from "@/context/ThemeContext";
 
 interface ConfirmModalProps {
   visible: boolean;
@@ -21,6 +22,8 @@ export function ConfirmModal({
   onConfirm,
   onCancel,
 }: ConfirmModalProps) {
+  const { colors, isDark } = useTheme();
+
   return (
     <Modal
       visible={visible}
@@ -31,24 +34,27 @@ export function ConfirmModal({
       <Pressable
         style={{
           flex: 1,
-          backgroundColor: "rgba(0,0,0,0.4)",
+          backgroundColor: isDark ? "rgba(0,0,0,0.7)" : "rgba(0,0,0,0.45)",
           justifyContent: "center",
           alignItems: "center",
-          paddingHorizontal: 32,
+          paddingHorizontal: 28,
         }}
         onPress={onCancel}
       >
         <Pressable
           style={{
             width: "100%",
-            backgroundColor: "#FFFFFF",
-            borderRadius: 20,
+            maxWidth: 400,
+            backgroundColor: colors.surface,
+            borderRadius: 24,
             padding: 24,
+            borderWidth: isDark ? 1 : 0,
+            borderColor: colors.border,
             shadowColor: "#000",
-            shadowOffset: { width: 0, height: 8 },
-            shadowOpacity: 0.15,
-            shadowRadius: 24,
-            elevation: 12,
+            shadowOffset: { width: 0, height: 12 },
+            shadowOpacity: isDark ? 0.45 : 0.12,
+            shadowRadius: 28,
+            elevation: 16,
           }}
           onPress={(e) => e.stopPropagation()}
         >
@@ -56,7 +62,7 @@ export function ConfirmModal({
             style={{
               fontSize: 18,
               fontWeight: "700",
-              color: "#111827",
+              color: colors.textPrimary,
               marginBottom: 8,
               letterSpacing: -0.3,
             }}
@@ -67,7 +73,7 @@ export function ConfirmModal({
           <Text
             style={{
               fontSize: 14,
-              color: "#6B7280",
+              color: colors.textSecondary,
               lineHeight: 20,
               marginBottom: 24,
             }}
@@ -81,9 +87,10 @@ export function ConfirmModal({
               style={{
                 flex: 1,
                 paddingVertical: 12,
-                borderRadius: 12,
+                borderRadius: 14,
                 borderWidth: 1.5,
-                borderColor: "#E2DED7",
+                borderColor: colors.border,
+                backgroundColor: colors.surfaceMuted,
                 alignItems: "center",
               }}
             >
@@ -91,7 +98,7 @@ export function ConfirmModal({
                 style={{
                   fontSize: 14,
                   fontWeight: "600",
-                  color: "#374151",
+                  color: colors.textPrimary,
                 }}
               >
                 {cancelLabel}
@@ -103,15 +110,15 @@ export function ConfirmModal({
               style={{
                 flex: 1,
                 paddingVertical: 12,
-                borderRadius: 12,
-                backgroundColor: destructive ? "#EF4444" : "#1A6B3C",
+                borderRadius: 14,
+                backgroundColor: destructive ? colors.danger : colors.primary,
                 alignItems: "center",
               }}
             >
               <Text
                 style={{
                   fontSize: 14,
-                  fontWeight: "600",
+                  fontWeight: "700",
                   color: "#FFFFFF",
                 }}
               >

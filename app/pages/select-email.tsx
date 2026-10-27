@@ -97,16 +97,18 @@ export default function SelectEmailScreen() {
                     selectedType === "chmsu" ? styles.iconCircleActive : styles.iconCircleInactive,
                   ]}
                 >
-                  <GraduationCap size={22} color={selectedType === "chmsu" ? GREEN : "#4B5563"} />
+                  <GraduationCap size={22} color={selectedType === "chmsu" ? "#FFFFFF" : "#4B5563"} />
                 </View>
 
                 {selectedType === "chmsu" && (
-                  <CheckCircle2 size={22} color={GREEN} style={styles.checkIcon} />
+                  <CheckCircle2 size={22} color="#FFFFFF" style={styles.checkIcon} />
                 )}
               </View>
 
-              <Text style={styles.cardTitle}>CHMSU Student Email</Text>
-              <Text style={styles.cardDesc}>
+              <Text style={[styles.cardTitle, selectedType === "chmsu" && styles.cardTitleActive]}>
+                CHMSU Student Email
+              </Text>
+              <Text style={[styles.cardDesc, selectedType === "chmsu" && styles.cardDescActive]}>
                 Instant verification code sent to your student inbox. No ID upload needed.
               </Text>
             </Pressable>
@@ -126,26 +128,28 @@ export default function SelectEmailScreen() {
                     selectedType === "external" ? styles.iconCircleActive : styles.iconCircleInactive,
                   ]}
                 >
-                  <FileCheck size={22} color={selectedType === "external" ? GREEN : "#4B5563"} />
+                  <FileCheck size={22} color={selectedType === "external" ? "#FFFFFF" : "#4B5563"} />
                 </View>
 
                 {selectedType === "external" && (
-                  <CheckCircle2 size={22} color={GREEN} style={styles.checkIcon} />
+                  <CheckCircle2 size={22} color="#FFFFFF" style={styles.checkIcon} />
                 )}
               </View>
 
-              <Text style={styles.cardTitle}>Personal Email</Text>
-              <Text style={styles.cardDesc}>
+              <Text style={[styles.cardTitle, selectedType === "external" && styles.cardTitleActive]}>
+                Personal Email
+              </Text>
+              <Text style={[styles.cardDesc, selectedType === "external" && styles.cardDescActive]}>
                 For students awaiting school email. Requires Student ID or COR verification.
               </Text>
             </Pressable>
           </View>
         </ScrollView>
 
-        {/* Bottom Continue Button */}
+        {/* Bottom Next Button */}
         <View style={styles.ctaArea}>
           <Button
-            label="Continue"
+            label="Next"
             variant="primary"
             pill
             size="lg"
@@ -220,11 +224,22 @@ const styles = StyleSheet.create({
   },
   cardActive: {
     borderColor: GREEN,
-    backgroundColor: "#F0FDF4",
+    backgroundColor: GREEN,
+    shadowColor: GREEN,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.22,
+    shadowRadius: 10,
+    elevation: 4,
   },
   cardInactive: {
     borderColor: "#E5E7EB",
     backgroundColor: "#FFFFFF",
+  },
+  cardTitleActive: {
+    color: "#FFFFFF",
+  },
+  cardDescActive: {
+    color: "#E8F5EE",
   },
   cardHeaderRow: {
     flexDirection: "row",
@@ -239,7 +254,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   iconCircleActive: {
-    backgroundColor: "#DCFCE7",
+    backgroundColor: "rgba(255, 255, 255, 0.22)",
   },
   iconCircleInactive: {
     backgroundColor: "#F3F4F6",

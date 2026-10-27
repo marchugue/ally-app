@@ -29,6 +29,7 @@ import {
   ShieldAlert,
 } from "lucide-react-native";
 import { useAuth } from "@/lib/auth/AuthContext";
+import { useTheme } from "@/context/ThemeContext";
 import { UserAvatar } from "@/components/UserAvatar";
 import { AnonymousAvatar } from "@/components/AnonymousAvatar";
 import { acceptConnection, rejectConnection } from "@/lib/api/interaction";
@@ -347,6 +348,7 @@ function checkConversationStatus(
 export default function NotificationsScreen() {
   const insets = useSafeAreaInsets();
   const { user, accessToken } = useAuth();
+  const { colors, isDark } = useTheme();
 
   const [notifications, setNotifications] = useState<NotificationItem[]>([]);
   const [userConversations, setUserConversations] = useState<Conversation[]>([]);
@@ -809,6 +811,24 @@ export default function NotificationsScreen() {
         return;
       }
 
+      // Admin warning / Safety alert routing
+      if (
+        item.type === "admin_warning" ||
+        item.type === "safety" ||
+        item.type === "emergency"
+      ) {
+        const targetPostId = item.post_id || (item as any).postId || item.target_id;
+        if (targetPostId && !targetPostId.startsWith("user_") && !targetPostId.startsWith("notif_")) {
+          router.push({
+            pathname: "/pages/media-preview" as any,
+            params: {
+              postId: targetPostId,
+            },
+          });
+          return;
+        }
+      }
+
       // Redirection from backend fallback
       if (item.redirection?.route) {
         router.push({
@@ -976,7 +996,7 @@ export default function NotificationsScreen() {
               alignItems: "center",
               justifyContent: "center",
               borderWidth: 1.5,
-              borderColor: "#FFFFFF",
+              borderColor: colors.surface,
             }}
           >
             <Flame size={10} color="#FFFFFF" />
@@ -1013,7 +1033,7 @@ export default function NotificationsScreen() {
             alignItems: "center",
             justifyContent: "center",
             borderWidth: 1.5,
-            borderColor: "#FFFFFF",
+            borderColor: colors.surface,
           }}
         >
           {badgeIcon}
@@ -1062,9 +1082,9 @@ export default function NotificationsScreen() {
           alignItems: "flex-start",
           paddingHorizontal: 16,
           paddingVertical: 14,
-          backgroundColor: isUnread ? "rgba(26,107,60,0.035)" : "#FFFFFF",
+          backgroundColor: isUnread ? colors.primarySoft : colors.surface,
           borderBottomWidth: 1,
-          borderBottomColor: "#F3F4F6",
+          borderBottomColor: colors.border,
           gap: 12,
         }}
       >
@@ -1079,14 +1099,14 @@ export default function NotificationsScreen() {
             }}
             numberOfLines={2}
           >
-            <Text style={{ fontFamily: "PlusJakartaSans-Bold", color: "#111827" }}>
+            <Text style={{ fontFamily: "PlusJakartaSans-Bold", color: colors.textPrimary }}>
               {name}
             </Text>
             <Text
               style={{
                 fontFamily: "PlusJakartaSans",
                 fontWeight: isUnread ? "600" : "400",
-                color: isUnread ? "#1F2937" : "#4B5563",
+                color: isUnread ? colors.textPrimary : colors.textSecondary,
               }}
             >
               {` ${actionText}`}
@@ -1097,15 +1117,15 @@ export default function NotificationsScreen() {
           {isMatchReq ? (
             reqStatus === "accepted" ? (
               <View style={{ flexDirection: "row", alignItems: "center", gap: 5, marginTop: 6 }}>
-                <Check size={13} color="#1A6B3C" strokeWidth={2.5} />
-                <Text style={{ fontSize: 12, fontFamily: "PlusJakartaSans-Bold", color: "#1A6B3C" }}>
+                <Check size={13} color={colors.primary} strokeWidth={2.5} />
+                <Text style={{ fontSize: 12, fontFamily: "PlusJakartaSans-Bold", color: colors.primary }}>
                   Match Request Accepted
                 </Text>
               </View>
             ) : reqStatus === "declined" ? (
               <View style={{ flexDirection: "row", alignItems: "center", gap: 5, marginTop: 6 }}>
-                <X size={13} color="#6B7280" />
-                <Text style={{ fontSize: 12, fontWeight: "600", color: "#6B7280" }}>
+                <X size={13} color={colors.textMuted} />
+                <Text style={{ fontSize: 12, fontWeight: "600", color: colors.textMuted }}>
                   Match Request Declined
                 </Text>
               </View>
@@ -1117,7 +1137,7 @@ export default function NotificationsScreen() {
                   activeOpacity={0.7}
                   style={{
                     flex: 1,
-                    backgroundColor: "#1A6B3C",
+                    backgroundColor: colors.primary,
                     paddingVertical: 7.5,
                     paddingHorizontal: 12,
                     borderRadius: 12,
@@ -1140,7 +1160,7 @@ export default function NotificationsScreen() {
                   activeOpacity={0.7}
                   style={{
                     flex: 1,
-                    backgroundColor: "#F3F4F6",
+                    backgroundColor: colors.surfaceMuted,
                     paddingVertical: 7.5,
                     paddingHorizontal: 12,
                     borderRadius: 12,
@@ -1149,12 +1169,12 @@ export default function NotificationsScreen() {
                     justifyContent: "center",
                     gap: 5,
                     borderWidth: 1,
-                    borderColor: "#E5E7EB",
+                    borderColor: colors.border,
                     opacity: isBusy ? 0.6 : 1,
                   }}
                 >
-                  <X size={13} color="#4B5563" />
-                  <Text style={{ fontSize: 12, fontWeight: "600", color: "#4B5563" }}>
+                  <X size={13} color={colors.textSecondary} />
+                  <Text style={{ fontSize: 12, fontWeight: "600", color: colors.textSecondary }}>
                     {isBusy ? "Declining..." : "Decline Request"}
                   </Text>
                 </TouchableOpacity>
@@ -1169,7 +1189,7 @@ export default function NotificationsScreen() {
                 activeOpacity={0.7}
                 style={{
                   flex: 1,
-                  backgroundColor: "#1A6B3C",
+                  backgroundColor: colors.primary,
                   paddingVertical: 7.5,
                   paddingHorizontal: 12,
                   borderRadius: 12,
@@ -1195,7 +1215,7 @@ export default function NotificationsScreen() {
                 disabled={isFollowBusy}
                 activeOpacity={0.7}
                 style={{
-                  backgroundColor: "#F3F4F6",
+                  backgroundColor: colors.surfaceMuted,
                   paddingVertical: 7.5,
                   paddingHorizontal: 12,
                   borderRadius: 12,
@@ -1204,12 +1224,12 @@ export default function NotificationsScreen() {
                   justifyContent: "center",
                   gap: 4,
                   borderWidth: 1,
-                  borderColor: "#E5E7EB",
+                  borderColor: colors.border,
                   opacity: isFollowBusy ? 0.6 : 1,
                 }}
               >
-                <X size={13} color="#4B5563" />
-                <Text style={{ fontSize: 12, fontWeight: "600", color: "#4B5563" }}>
+                <X size={13} color={colors.textSecondary} />
+                <Text style={{ fontSize: 12, fontWeight: "600", color: colors.textSecondary }}>
                   Close
                 </Text>
               </TouchableOpacity>
@@ -1220,7 +1240,7 @@ export default function NotificationsScreen() {
                 style={{
                   fontFamily: "PlusJakartaSans",
                   fontSize: 13,
-                  color: isUnread ? "#4B5563" : "#6B7280",
+                  color: isUnread ? colors.textSecondary : colors.textMuted,
                   marginTop: 3,
                   lineHeight: 18,
                 }}
@@ -1246,7 +1266,7 @@ export default function NotificationsScreen() {
             style={{
               fontSize: 11,
               fontWeight: "500",
-              color: "#9CA3AF",
+              color: colors.textMuted,
               fontFamily: "PlusJakartaSans",
             }}
           >
@@ -1259,7 +1279,7 @@ export default function NotificationsScreen() {
                 width: 7,
                 height: 7,
                 borderRadius: 4,
-                backgroundColor: "#1A6B3C",
+                backgroundColor: colors.primary,
               }}
             />
           )}
@@ -1269,7 +1289,7 @@ export default function NotificationsScreen() {
   };
 
   return (
-    <View style={{ flex: 1, backgroundColor: "#FFFFFF" }}>
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
       {/* ═══ Top Sticky Header with Seamless Transparent Blend (No Hard Divider) ═══ */}
       <View
         style={{
@@ -1284,7 +1304,7 @@ export default function NotificationsScreen() {
         {/* Solid Header Content Bar */}
         <View
           style={{
-            backgroundColor: "#FFFFFF",
+            backgroundColor: colors.surface,
             paddingHorizontal: 16,
             paddingTop: insets.top + 8,
             paddingBottom: 8,
@@ -1306,7 +1326,7 @@ export default function NotificationsScreen() {
               style={{
                 fontFamily: "Fraunces_700Bold",
                 fontSize: 24,
-                color: "#1A6B3C",
+                color: colors.primary,
                 letterSpacing: -0.5,
               }}
             >
@@ -1316,7 +1336,7 @@ export default function NotificationsScreen() {
             {unreadCount > 0 && (
               <View
                 style={{
-                  backgroundColor: "#1A6B3C",
+                  backgroundColor: colors.primary,
                   paddingHorizontal: 8,
                   paddingVertical: 2,
                   borderRadius: 12,
@@ -1342,7 +1362,7 @@ export default function NotificationsScreen() {
                 position: "relative",
               }}
             >
-              <Filter size={17} color="#1A6B3C" strokeWidth={2.2} />
+              <Filter size={17} color={colors.primary} strokeWidth={2.2} />
               {activeFilter !== "all" && (
                 <View
                   style={{
@@ -1352,9 +1372,9 @@ export default function NotificationsScreen() {
                     width: 7,
                     height: 7,
                     borderRadius: 4,
-                    backgroundColor: "#1A6B3C",
+                    backgroundColor: colors.primary,
                     borderWidth: 1.5,
-                    borderColor: "#FFFFFF",
+                    borderColor: colors.surface,
                   }}
                 />
               )}
@@ -1382,14 +1402,14 @@ export default function NotificationsScreen() {
                   flexDirection: "row",
                   alignItems: "center",
                   gap: 4,
-                  backgroundColor: "rgba(26,107,60,0.08)",
+                  backgroundColor: colors.primarySoft,
                   paddingHorizontal: 9,
                   paddingVertical: 5,
                   borderRadius: 10,
                 }}
               >
-                <CheckCheck size={13} color="#1A6B3C" strokeWidth={2.5} />
-                <Text style={{ fontSize: 11, fontFamily: "PlusJakartaSans-Bold", color: "#1A6B3C" }}>
+                <CheckCheck size={13} color={colors.primary} strokeWidth={2.5} />
+                <Text style={{ fontSize: 11, fontFamily: "PlusJakartaSans-Bold", color: colors.primary }}>
                   Read All
                 </Text>
               </TouchableOpacity>
@@ -1404,12 +1424,12 @@ export default function NotificationsScreen() {
                   width: 30,
                   height: 30,
                   borderRadius: 10,
-                  backgroundColor: "#F3F4F6",
+                  backgroundColor: colors.surfaceMuted,
                   alignItems: "center",
                   justifyContent: "center",
                 }}
               >
-                <Trash2 size={14} color="#6B7280" />
+                <Trash2 size={14} color={colors.textSecondary} />
               </TouchableOpacity>
             )}
           </View>
@@ -1417,7 +1437,11 @@ export default function NotificationsScreen() {
 
         {/* Seamless Transparent Gradient Blend: Smoothly dissolves scrolling content */}
         <LinearGradient
-          colors={["#FFFFFF", "rgba(255, 255, 255, 0.9)", "rgba(255, 255, 255, 0.4)", "rgba(255, 255, 255, 0)"]}
+          colors={
+            isDark
+              ? ["#181818", "rgba(24, 24, 24, 0.9)", "rgba(24, 24, 24, 0.4)", "rgba(24, 24, 24, 0)"]
+              : ["#FFFFFF", "rgba(255, 255, 255, 0.9)", "rgba(255, 255, 255, 0.4)", "rgba(255, 255, 255, 0)"]
+          }
           style={{ height: 28, width: "100%" }}
           pointerEvents="none"
         />
@@ -1429,7 +1453,7 @@ export default function NotificationsScreen() {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor="#1A6B3C"
+            tintColor={colors.primary}
             progressViewOffset={insets.top + 48}
           />
         }
@@ -1437,7 +1461,7 @@ export default function NotificationsScreen() {
           paddingTop: insets.top + 54,
           paddingBottom: 40,
         }}
-        style={{ flex: 1, backgroundColor: "#FFFFFF" }}
+        style={{ flex: 1, backgroundColor: colors.background }}
       >
         {loading ? (
           <View style={{ padding: 16, gap: 14 }}>
@@ -1456,7 +1480,7 @@ export default function NotificationsScreen() {
                     width: 44,
                     height: 44,
                     borderRadius: 22,
-                    backgroundColor: "#E5E7EB",
+                    backgroundColor: colors.surfaceMuted,
                     opacity: 0.6,
                   }}
                 />
@@ -1466,7 +1490,7 @@ export default function NotificationsScreen() {
                       height: 14,
                       width: "45%",
                       borderRadius: 7,
-                      backgroundColor: "#E5E7EB",
+                      backgroundColor: colors.surfaceMuted,
                       opacity: 0.6,
                     }}
                   />
@@ -1475,7 +1499,7 @@ export default function NotificationsScreen() {
                       height: 12,
                       width: "70%",
                       borderRadius: 6,
-                      backgroundColor: "#F3F4F6",
+                      backgroundColor: colors.surfaceMuted,
                       opacity: 0.8,
                     }}
                   />
@@ -1490,19 +1514,19 @@ export default function NotificationsScreen() {
                 width: 68,
                 height: 68,
                 borderRadius: 24,
-                backgroundColor: "rgba(26,107,60,0.08)",
+                backgroundColor: colors.primarySoft,
                 alignItems: "center",
                 justifyContent: "center",
                 marginBottom: 16,
               }}
             >
-              <Bell size={30} color="#1A6B3C" />
+              <Bell size={30} color={colors.primary} />
             </View>
             <Text
               style={{
                 fontFamily: "Fraunces_700Bold",
                 fontSize: 18,
-                color: "#111827",
+                color: colors.textPrimary,
                 marginBottom: 6,
               }}
             >
@@ -1512,7 +1536,7 @@ export default function NotificationsScreen() {
               style={{
                 fontFamily: "PlusJakartaSans",
                 fontSize: 13,
-                color: "#6B7280",
+                color: colors.textSecondary,
                 textAlign: "center",
                 lineHeight: 18,
               }}
@@ -1548,15 +1572,15 @@ export default function NotificationsScreen() {
                         left: 16,
                         right: 16,
                         height: 1,
-                        backgroundColor: "#F3F4F6",
+                        backgroundColor: colors.border,
                       }}
                     />
-                    <View style={{ backgroundColor: "#FFFFFF", paddingHorizontal: 12 }}>
+                    <View style={{ backgroundColor: colors.background, paddingHorizontal: 12 }}>
                       <Text
                         style={{
                           fontFamily: "PlusJakartaSans-Bold",
                           fontSize: 10.5,
-                          color: "#9CA3AF",
+                          color: colors.textMuted,
                           letterSpacing: 1.5,
                           textTransform: "uppercase",
                         }}
@@ -1566,7 +1590,7 @@ export default function NotificationsScreen() {
                     </View>
                   </View>
 
-                  <View style={{ backgroundColor: "#FFFFFF" }}>
+                  <View style={{ backgroundColor: colors.surface }}>
                     {sec.items.map((item, idx) => renderRow(item, `${sec.key}-${item.id || idx}`))}
                   </View>
                 </View>
@@ -1577,7 +1601,7 @@ export default function NotificationsScreen() {
               lastMonthList.length === 0 &&
               lastYearList.length === 0 &&
               filteredNotifications.length > 0 && (
-                <View style={{ backgroundColor: "#FFFFFF" }}>
+                <View style={{ backgroundColor: colors.surface }}>
                   {filteredNotifications.map((item, idx) => renderRow(item, `all-${item.id || idx}`))}
                 </View>
               )}
@@ -1595,7 +1619,7 @@ export default function NotificationsScreen() {
         <Pressable
           style={{
             flex: 1,
-            backgroundColor: "rgba(0,0,0,0.3)",
+            backgroundColor: "rgba(0,0,0,0.5)",
             justifyContent: "flex-start",
             alignItems: "center",
             paddingTop: insets.top + 52,
@@ -1604,14 +1628,14 @@ export default function NotificationsScreen() {
         >
           <View
             style={{
-              backgroundColor: "#FFFFFF",
+              backgroundColor: colors.surface,
               borderRadius: 18,
               padding: 6,
               borderWidth: 1,
-              borderColor: "#E5E7EB",
+              borderColor: colors.border,
               shadowColor: "#000",
               shadowOffset: { width: 0, height: 6 },
-              shadowOpacity: 0.12,
+              shadowOpacity: isDark ? 0.3 : 0.12,
               shadowRadius: 14,
               elevation: 8,
               width: 220,
@@ -1622,7 +1646,7 @@ export default function NotificationsScreen() {
                 paddingHorizontal: 12,
                 paddingVertical: 6,
                 borderBottomWidth: 1,
-                borderBottomColor: "#F3F4F6",
+                borderBottomColor: colors.border,
                 marginBottom: 2,
               }}
             >
@@ -1630,7 +1654,7 @@ export default function NotificationsScreen() {
                 style={{
                   fontSize: 10,
                   fontFamily: "PlusJakartaSans-Bold",
-                  color: "#9CA3AF",
+                  color: colors.textMuted,
                   textTransform: "uppercase",
                   letterSpacing: 1.2,
                 }}
@@ -1663,12 +1687,12 @@ export default function NotificationsScreen() {
                     paddingVertical: 9,
                     paddingHorizontal: 10,
                     borderRadius: 12,
-                    backgroundColor: isSelected ? "rgba(26,107,60,0.08)" : "transparent",
+                    backgroundColor: isSelected ? colors.primarySoft : "transparent",
                   }}
                 >
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                     {isSelected ? (
-                      <Check size={14} color="#1A6B3C" strokeWidth={2.5} />
+                      <Check size={14} color={colors.primary} strokeWidth={2.5} />
                     ) : (
                       <View style={{ width: 14 }} />
                     )}
@@ -1676,7 +1700,7 @@ export default function NotificationsScreen() {
                       style={{
                         fontSize: 12.5,
                         fontFamily: isSelected ? "PlusJakartaSans-Bold" : "PlusJakartaSans",
-                        color: isSelected ? "#1A6B3C" : "#374151",
+                        color: isSelected ? colors.primary : colors.textPrimary,
                       }}
                     >
                       {option.label}
@@ -1684,7 +1708,7 @@ export default function NotificationsScreen() {
                   </View>
                   <View
                     style={{
-                      backgroundColor: isSelected ? "#1A6B3C" : "#F3F4F6",
+                      backgroundColor: isSelected ? colors.primary : colors.surfaceMuted,
                       paddingHorizontal: 7,
                       paddingVertical: 2,
                       borderRadius: 10,
@@ -1694,7 +1718,7 @@ export default function NotificationsScreen() {
                       style={{
                         fontSize: 10,
                         fontFamily: "PlusJakartaSans-Bold",
-                        color: isSelected ? "#FFFFFF" : "#6B7280",
+                        color: isSelected ? "#FFFFFF" : colors.textMuted,
                       }}
                     >
                       {option.count}
@@ -1707,7 +1731,7 @@ export default function NotificationsScreen() {
             <View
               style={{
                 borderTopWidth: 1,
-                borderTopColor: "#F3F4F6",
+                borderTopColor: colors.border,
                 marginTop: 4,
                 paddingTop: 8,
                 paddingBottom: 4,
@@ -1727,7 +1751,7 @@ export default function NotificationsScreen() {
                   style={{
                     fontSize: 12,
                     fontFamily: "PlusJakartaSans-Bold",
-                    color: "#1A6B3C",
+                    color: colors.primary,
                     textDecorationLine: "underline",
                     textAlign: "center",
                   }}

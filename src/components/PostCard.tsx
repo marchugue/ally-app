@@ -10,6 +10,7 @@ import {
   EyeOff,
   Flag,
   ChevronRight,
+  ShieldAlert,
 } from "lucide-react-native";
 import { resolveImageUri } from "./UserAvatar";
 import { ClickableAvatar } from "./ClickableAvatar";
@@ -18,6 +19,7 @@ import { AnimatedHeart } from "./AnimatedHeart";
 import type { FeedPost } from "@/types/feed";
 import { router } from "expo-router";
 import { useAuth } from "@/lib/auth/AuthContext";
+import { useTheme } from "@/context/ThemeContext";
 import { followUser, unfollowUser } from "@/lib/api/follow";
 import { deletePost } from "@/lib/api/feed";
 import { reportUser } from "@/lib/api/moderation";
@@ -58,6 +60,7 @@ export function PostCard({
   onToggleFollow,
 }: PostCardProps) {
   const { user, accessToken } = useAuth();
+  const { colors } = useTheme();
   const [isFollowing, setIsFollowing] = useState<boolean>(
     Boolean(post.author?.is_following)
   );
@@ -83,6 +86,12 @@ export function PostCard({
   const hasMedia = post.media && post.media.length > 0;
   const isOwnPost = user?.id === post.author?.id;
   const isAlly = Boolean(post.author?.is_ally || isOwnPost);
+  const isFlagged = Boolean(
+    post.is_flagged ||
+    post.is_restricted ||
+    post.content?.includes("<!--flagged") ||
+    post.content?.includes("<!--visibility:admin_and_user_only")
+  );
 
   const handleAuthorPress = () => {
     if (onPressAuthor && post.author?.id) {
@@ -177,11 +186,40 @@ export function PostCard({
   return (
     <View
       style={{
-        backgroundColor: "#FFFFFF",
+        backgroundColor: colors.surface,
         borderBottomWidth: 1,
-        borderBottomColor: "#E2DED7",
+        borderBottomColor: colors.border,
       }}
     >
+      {/* Moderation Warning / Restricted Visibility Banner */}
+      {isFlagged && (
+        <View
+          style={{
+            marginHorizontal: 16,
+            marginTop: 12,
+            marginBottom: 2,
+            padding: 12,
+            borderRadius: 12,
+            backgroundColor: "rgba(245, 158, 11, 0.12)",
+            borderWidth: 1,
+            borderColor: "rgba(245, 158, 11, 0.3)",
+            flexDirection: "row",
+            alignItems: "flex-start",
+            gap: 10,
+          }}
+        >
+          <ShieldAlert size={16} color="#D97706" style={{ marginTop: 2 }} />
+          <View style={{ flex: 1 }}>
+            <Text style={{ fontSize: 12, fontWeight: "700", color: "#D97706" }}>
+              Flagged Content (Restricted Visibility)
+            </Text>
+            <Text style={{ fontSize: 11, color: "#92400E", marginTop: 2, lineHeight: 15 }}>
+              This post received an administrative warning. Its visibility is restricted to you and administrators.
+            </Text>
+          </View>
+        </View>
+      )}
+
       {/* Author header */}
       <View
         style={{
@@ -208,14 +246,14 @@ export function PostCard({
 
           <View style={{ flex: 1 }}>
             <Text
-              style={{ fontSize: 14, fontWeight: "600", color: "#111827" }}
+              style={{ fontSize: 14, fontWeight: "600", color: colors.textPrimary }}
               numberOfLines={1}
             >
               {isAlly
                 ? (post.author?.full_name || `@${post.author?.username}`)
                 : "Anonymous Peer"}
             </Text>
-            <Text style={{ fontSize: 11, color: "#9CA3AF" }}>
+            <Text style={{ fontSize: 11, color: colors.textMuted }}>
               {isAlly && post.author?.username ? `@${post.author.username} · ` : ""}
               {timeAgo(post.created_at)}
             </Text>
@@ -232,12 +270,12 @@ export function PostCard({
               paddingVertical: 4.5,
               borderRadius: 14,
               backgroundColor: isFollowing
-                ? "#F3F4F6"
-                : "rgba(26, 107, 60, 0.08)",
+                ? colors.surfaceMuted
+                : colors.primarySoft,
               borderWidth: 1,
               borderColor: isFollowing
-                ? "#E5E7EB"
-                : "rgba(26, 107, 60, 0.25)",
+                ? colors.border
+                : colors.primaryBorder,
               marginRight: 2,
               opacity: followLoading ? 0.6 : pressed ? 0.75 : 1,
             })}
@@ -247,7 +285,7 @@ export function PostCard({
               style={{
                 fontSize: 11,
                 fontWeight: isFollowing ? "600" : "700",
-                color: isFollowing ? "#6B7280" : "#1A6B3C",
+                color: isFollowing ? colors.textSecondary : colors.primary,
               }}
             >
               {isFollowing ? "Following" : "+ Follow"}
@@ -257,7 +295,7 @@ export function PostCard({
 
         {/* Three dots Settings button (Always on right side) */}
         <Pressable onPress={handleOpenSettings} hitSlop={10} style={{ padding: 4 }}>
-          <MoreHorizontal size={18} color="#9CA3AF" />
+          <MoreHorizontal size={18} color={colors.textSecondary} />
         </Pressable>
       </View>
 
@@ -267,8 +305,9 @@ export function PostCard({
           <Pressable onPress={handlePostDetailPress}>
             <Text
               style={{
-                fontSize: 15,
-                color: "#111827",
+                fontSize: post.content === "This message was removed" ? 14 : 15,
+                color: post.content === "This message was removed" ? colors.textMuted : colors.textPrimary,
+                fontStyle: post.content === "This message was removed" ? "italic" : "normal",
                 lineHeight: 22,
               }}
               numberOfLines={isContentExpanded ? undefined : 1}
@@ -277,7 +316,7 @@ export function PostCard({
             </Text>
           </Pressable>
 
-          {post.content.length > 40 && (
+          {post.content.length > 40 && post.content !== "This message was removed" && (
             <Pressable
               onPress={() => setIsContentExpanded(!isContentExpanded)}
               hitSlop={6}
@@ -287,7 +326,7 @@ export function PostCard({
                 style={{
                   fontSize: 13,
                   fontWeight: "700",
-                  color: "#1A6B3C",
+                  color: colors.primary,
                 }}
               >
                 {isContentExpanded ? "Show less" : "...more"}
@@ -302,7 +341,36 @@ export function PostCard({
         <View style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
           {post.media.length === 1 ? (
             (() => {
-              const uri = resolveImageUri(post.media[0]);
+              const item = post.media[0];
+              if (item === "[removed]") {
+                return (
+                  <View
+                    style={{
+                      width: "100%",
+                      padding: 24,
+                      borderRadius: 14,
+                      backgroundColor: colors.surfaceMuted,
+                      borderWidth: 1,
+                      borderColor: colors.border,
+                      alignItems: "center",
+                      justifyContent: "center",
+                    }}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 13,
+                        color: colors.textMuted,
+                        fontWeight: "500",
+                        textAlign: "center",
+                        lineHeight: 18,
+                      }}
+                    >
+                      This photo was removed for violating community standards.
+                    </Text>
+                  </View>
+                );
+              }
+              const uri = resolveImageUri(item);
               return uri ? (
                 <Pressable onPress={() => handleMediaPress(0)}>
                   <Image
@@ -320,6 +388,37 @@ export function PostCard({
           ) : (
             <View style={{ flexDirection: "row", gap: 4, flexWrap: "wrap" }}>
               {post.media.slice(0, 4).map((url, idx) => {
+                if (url === "[removed]") {
+                  return (
+                    <View
+                      key={idx}
+                      style={{
+                        width: "48%",
+                        height: 140,
+                        borderRadius: 10,
+                        backgroundColor: colors.surfaceMuted,
+                        borderWidth: 1,
+                        borderColor: colors.border,
+                        alignItems: "center",
+                        justifyContent: "center",
+                        padding: 12,
+                        flexGrow: 1,
+                      }}
+                    >
+                      <Text
+                        style={{
+                          fontSize: 11,
+                          color: colors.textMuted,
+                          fontWeight: "500",
+                          textAlign: "center",
+                          lineHeight: 15,
+                        }}
+                      >
+                        This photo was removed for violating community standards.
+                      </Text>
+                    </View>
+                  );
+                }
                 const uri = resolveImageUri(url);
                 if (!uri) return null;
                 return (
@@ -372,14 +471,14 @@ export function PostCard({
           <AnimatedHeart
             isLiked={Boolean(post.liked_by_me)}
             size={18}
-            activeColor="#1A6B3C"
-            inactiveColor="#9CA3AF"
+            activeColor={colors.primary}
+            inactiveColor={colors.textSecondary}
           />
           <Text
             style={{
               fontSize: 13,
               fontWeight: "500",
-              color: post.liked_by_me ? "#1A6B3C" : "#6B7280",
+              color: post.liked_by_me ? colors.primary : colors.textSecondary,
             }}
           >
             {post.likes_count > 0 ? post.likes_count : ""}
@@ -395,8 +494,8 @@ export function PostCard({
           }}
           hitSlop={6}
         >
-          <MessageCircle size={18} color="#9CA3AF" />
-          <Text style={{ fontSize: 13, fontWeight: "500", color: "#6B7280" }}>
+          <MessageCircle size={18} color={colors.textSecondary} />
+          <Text style={{ fontSize: 13, fontWeight: "500", color: colors.textSecondary }}>
             {post.comments_count > 0 ? post.comments_count : ""}
           </Text>
         </Pressable>
@@ -410,13 +509,13 @@ export function PostCard({
         onRequestClose={() => setOptionsVisible(false)}
       >
         <Pressable
-          style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.3)" }}
+          style={{ flex: 1, backgroundColor: "rgba(0,0,0,0.5)" }}
           onPress={() => setOptionsVisible(false)}
         >
           <Pressable
             style={{
               marginTop: "auto",
-              backgroundColor: "#FFFFFF",
+              backgroundColor: colors.surface,
               borderTopLeftRadius: 24,
               borderTopRightRadius: 24,
               paddingHorizontal: 20,
@@ -431,7 +530,7 @@ export function PostCard({
                 width: 40,
                 height: 4,
                 borderRadius: 2,
-                backgroundColor: "#E5E7EB",
+                backgroundColor: colors.border,
                 alignSelf: "center",
                 marginBottom: 16,
               }}
@@ -441,7 +540,7 @@ export function PostCard({
               style={{
                 fontSize: 15,
                 fontWeight: "700",
-                color: "#111827",
+                color: colors.textPrimary,
                 marginBottom: 12,
                 textAlign: "center",
               }}

@@ -11,7 +11,7 @@ import {
   Modal,
   Image,
 } from "react-native";
-import { router } from "expo-router";
+import { router, useFocusEffect } from "expo-router";
 import { SafeAreaView } from "react-native-safe-area-context";
 import {
   Settings,
@@ -35,6 +35,7 @@ import { CreatePostSheet } from "@/components/CreatePostSheet";
 import { RelationshipListModal } from "@/components/RelationshipListModal";
 import { usePresence } from "@/context/PresenceContext";
 import { useAuth } from "@/lib/auth/AuthContext";
+import { useTheme } from "@/context/ThemeContext";
 import {
   getMyProfile,
   listProfiles,
@@ -49,17 +50,9 @@ import type { FeedPost } from "@/types/feed";
 
 const PAGE_SIZE = 10;
 
-const COLORS = {
-  forest: "#1A6B3C",
-  forestSoft: "#1A6B3C14",
-  gold: "#E8A838",
-  teal: "#3B8C7E",
-  bg: "#FFFFFF",
-};
-
-
 export default function ProfileScreen() {
   const { user, accessToken, signOut } = useAuth();
+  const { colors, isDark } = useTheme();
   const { isOnline } = usePresence();
 
   const [profile, setProfile] = useState<Profile | null>(null);
@@ -116,6 +109,13 @@ export default function ProfileScreen() {
     loadProfileData();
     loadPosts();
   }, [loadProfileData, loadPosts]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadProfileData();
+      void loadPosts();
+    }, [loadProfileData, loadPosts])
+  );
 
   const loadMore = useCallback(async () => {
     if (!user?.id || !accessToken || isLoadingMore || !hasMore || activeTab !== "feed") return;
@@ -189,15 +189,15 @@ export default function ProfileScreen() {
 
   if (profileLoading || !profile) {
     return (
-      <SafeAreaView className="flex-1 items-center justify-center" style={{ backgroundColor: COLORS.bg }}>
-        <ActivityIndicator size="large" color={COLORS.forest} />
+      <SafeAreaView className="flex-1 items-center justify-center" style={{ backgroundColor: colors.background }}>
+        <ActivityIndicator size="large" color={colors.primary} />
       </SafeAreaView>
     );
   }
 
   return (
-    <SafeAreaView className="flex-1" style={{ backgroundColor: COLORS.bg }} edges={["top"]}>
-      <ResponsiveContainer maxContentWidth={540} backgroundColor={COLORS.bg}>
+    <SafeAreaView className="flex-1" style={{ backgroundColor: colors.background }} edges={["top"]}>
+      <ResponsiveContainer maxContentWidth={540} backgroundColor={colors.background}>
         {/* ── Top Header Bar with Settings Icon ── */}
         <View
           style={{
@@ -207,9 +207,9 @@ export default function ProfileScreen() {
             paddingHorizontal: 16,
             paddingTop: 8,
             paddingBottom: 8,
-            backgroundColor: COLORS.bg,
+            backgroundColor: colors.surface,
             borderBottomWidth: 1,
-            borderBottomColor: "#F3F4F6",
+            borderBottomColor: colors.border,
           }}
         >
           <Text
@@ -217,7 +217,7 @@ export default function ProfileScreen() {
               fontSize: 18,
               fontWeight: "700",
               fontFamily: "PlusJakartaSans-Bold",
-              color: "#111827",
+              color: colors.textPrimary,
             }}
           >
             {profile.username ? `@${profile.username}` : "Profile"}
@@ -231,12 +231,12 @@ export default function ProfileScreen() {
               width: 38,
               height: 38,
               borderRadius: 19,
-              backgroundColor: "#F4F5F7",
+              backgroundColor: colors.surfaceMuted,
               alignItems: "center",
               justifyContent: "center",
             }}
           >
-            <Settings size={20} color="#1F2937" />
+            <Settings size={20} color={colors.textPrimary} />
           </TouchableOpacity>
         </View>
 
@@ -249,7 +249,7 @@ export default function ProfileScreen() {
           onEndReached={loadMore}
           onEndReachedThreshold={0.4}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={COLORS.forest} />
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
           }
           contentContainerStyle={{ paddingBottom: 40 }}
           ListHeaderComponent={
@@ -266,13 +266,13 @@ export default function ProfileScreen() {
                   <View
                     style={{
                       borderWidth: 3,
-                      borderColor: "#FFFFFF",
+                      borderColor: colors.surface,
                       borderRadius: 48,
-                      backgroundColor: "#FFFFFF",
+                      backgroundColor: colors.surface,
                       elevation: 3,
                       shadowColor: "#000",
                       shadowOffset: { width: 0, height: 2 },
-                      shadowOpacity: 0.1,
+                      shadowOpacity: isDark ? 0.3 : 0.1,
                       shadowRadius: 4,
                     }}
                   >
@@ -297,10 +297,10 @@ export default function ProfileScreen() {
                       }}
                       style={{ alignItems: "center", minWidth: 54 }}
                     >
-                      <Text style={{ fontSize: 16, fontWeight: "700", color: "#111827" }}>
+                      <Text style={{ fontSize: 16, fontWeight: "700", color: colors.textPrimary }}>
                         {relationship?.followersCount ?? 0}
                       </Text>
-                      <Text style={{ fontSize: 11, color: "#6B7280", marginTop: 2 }}>Followers</Text>
+                      <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 2 }}>Followers</Text>
                     </Pressable>
 
                     <Pressable
@@ -310,10 +310,10 @@ export default function ProfileScreen() {
                       }}
                       style={{ alignItems: "center", minWidth: 54 }}
                     >
-                      <Text style={{ fontSize: 16, fontWeight: "700", color: "#111827" }}>
+                      <Text style={{ fontSize: 16, fontWeight: "700", color: colors.textPrimary }}>
                         {relationship?.followingCount ?? 0}
                       </Text>
-                      <Text style={{ fontSize: 11, color: "#6B7280", marginTop: 2 }}>Following</Text>
+                      <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 2 }}>Following</Text>
                     </Pressable>
 
                     <Pressable
@@ -323,10 +323,10 @@ export default function ProfileScreen() {
                       }}
                       style={{ alignItems: "center", minWidth: 54 }}
                     >
-                      <Text style={{ fontSize: 16, fontWeight: "700", color: "#111827" }}>
+                      <Text style={{ fontSize: 16, fontWeight: "700", color: colors.textPrimary }}>
                         {relationship?.alliesCount ?? 0}
                       </Text>
-                      <Text style={{ fontSize: 11, color: "#6B7280", marginTop: 2 }}>Allies</Text>
+                      <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 2 }}>Allies</Text>
                     </Pressable>
                   </View>
                 </View>
@@ -343,7 +343,7 @@ export default function ProfileScreen() {
                 >
                   <View style={{ flex: 1 }}>
                     <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                      <Text style={{ fontSize: 22, fontWeight: "700", color: "#111827" }}>
+                      <Text style={{ fontSize: 22, fontWeight: "700", color: colors.textPrimary }}>
                         {profile.full_name || `@${profile.username}`}
                       </Text>
                       {profile.username && (
@@ -352,18 +352,18 @@ export default function ProfileScreen() {
                             flexDirection: "row",
                             alignItems: "center",
                             gap: 3,
-                            backgroundColor: "rgba(26, 107, 60, 0.08)",
+                            backgroundColor: colors.primarySoft,
                             paddingHorizontal: 8,
                             paddingVertical: 3,
                             borderRadius: 12,
                           }}
                         >
-                          <Shield size={11} color={COLORS.forest} />
+                          <Shield size={11} color={colors.primary} />
                           <Text
                             style={{
                               fontSize: 10,
                               fontWeight: "700",
-                              color: COLORS.forest,
+                              color: colors.primary,
                               letterSpacing: 0.3,
                             }}
                           >
@@ -373,14 +373,14 @@ export default function ProfileScreen() {
                       )}
                     </View>
 
-                    <Text style={{ fontSize: 13, color: "#6B7280", marginTop: 2 }}>
+                    <Text style={{ fontSize: 13, color: colors.textSecondary, marginTop: 2 }}>
                       @{profile.username} · {profile.course} · {profile.year_level}
                     </Text>
                   </View>
                 </View>
 
                 {profile.bio ? (
-                  <Text style={{ fontSize: 14, color: "#374151", lineHeight: 20, marginTop: 8 }}>
+                  <Text style={{ fontSize: 14, color: colors.textSecondary, lineHeight: 20, marginTop: 8 }}>
                     {profile.bio}
                   </Text>
                 ) : (
@@ -389,7 +389,7 @@ export default function ProfileScreen() {
                     style={{ marginTop: 8, paddingVertical: 2 }}
                     hitSlop={6}
                   >
-                    <Text style={{ fontSize: 13, color: "#9CA3AF", fontStyle: "italic" }}>
+                    <Text style={{ fontSize: 13, color: colors.textMuted, fontStyle: "italic" }}>
                       + Add bio to introduce yourself to campus allies...
                     </Text>
                   </Pressable>
@@ -408,12 +408,12 @@ export default function ProfileScreen() {
                       height: 40,
                       borderRadius: 12,
                       borderWidth: 1,
-                      borderColor: "rgba(26, 107, 60, 0.3)",
-                      backgroundColor: "#FFFFFF",
+                      borderColor: isDark ? "rgba(56, 193, 133, 0.4)" : "rgba(26, 107, 60, 0.3)",
+                      backgroundColor: colors.surface,
                     }}
                   >
-                    <Pencil size={15} color={COLORS.forest} />
-                    <Text style={{ fontSize: 13, fontWeight: "600", color: COLORS.forest }}>
+                    <Pencil size={15} color={colors.primary} />
+                    <Text style={{ fontSize: 13, fontWeight: "600", color: colors.primary }}>
                       Edit profile
                     </Text>
                   </Pressable>
@@ -427,7 +427,7 @@ export default function ProfileScreen() {
                   alignItems: "center",
                   marginTop: 3,
                   borderBottomWidth: 1,
-                  borderBottomColor: "#E8E6E1",
+                  borderBottomColor: colors.border,
                 }}
               >
                 <Pressable
@@ -438,7 +438,7 @@ export default function ProfileScreen() {
                     justifyContent: "center",
                     paddingVertical: 12,
                     borderBottomWidth: activeTab === "feed" ? 2.5 : 0,
-                    borderBottomColor: COLORS.forest,
+                    borderBottomColor: colors.primary,
                     marginBottom: -1,
                   }}
                 >
@@ -446,7 +446,7 @@ export default function ProfileScreen() {
                     style={{
                       fontSize: 15,
                       fontWeight: activeTab === "feed" ? "700" : "500",
-                      color: activeTab === "feed" ? COLORS.forest : "#6B7280",
+                      color: activeTab === "feed" ? colors.primary : colors.textSecondary,
                     }}
                   >
                     Feed
@@ -461,7 +461,7 @@ export default function ProfileScreen() {
                     justifyContent: "center",
                     paddingVertical: 12,
                     borderBottomWidth: activeTab === "media" ? 2.5 : 0,
-                    borderBottomColor: COLORS.forest,
+                    borderBottomColor: colors.primary,
                     marginBottom: -1,
                   }}
                 >
@@ -469,7 +469,7 @@ export default function ProfileScreen() {
                     style={{
                       fontSize: 15,
                       fontWeight: activeTab === "media" ? "700" : "500",
-                      color: activeTab === "media" ? COLORS.forest : "#6B7280",
+                      color: activeTab === "media" ? colors.primary : colors.textSecondary,
                     }}
                   >
                     Media
@@ -484,7 +484,7 @@ export default function ProfileScreen() {
                     justifyContent: "center",
                     paddingVertical: 12,
                     borderBottomWidth: activeTab === "about" ? 2.5 : 0,
-                    borderBottomColor: COLORS.forest,
+                    borderBottomColor: colors.primary,
                     marginBottom: -1,
                   }}
                 >
@@ -492,7 +492,7 @@ export default function ProfileScreen() {
                     style={{
                       fontSize: 15,
                       fontWeight: activeTab === "about" ? "700" : "500",
-                      color: activeTab === "about" ? COLORS.forest : "#6B7280",
+                      color: activeTab === "about" ? colors.primary : colors.textSecondary,
                     }}
                   >
                     About
@@ -534,7 +534,7 @@ export default function ProfileScreen() {
                     flex: 1 / 3,
                     aspectRatio: 1,
                     marginBottom: 2,
-                    backgroundColor: "#E5E7EB",
+                    backgroundColor: colors.surfaceMuted,
                     position: "relative",
                     overflow: "hidden",
                   }}
@@ -568,10 +568,10 @@ export default function ProfileScreen() {
           ListEmptyComponent={
             activeTab === "feed" && !postsLoading ? (
               <View style={{ alignItems: "center", paddingHorizontal: 24, paddingVertical: 36 }}>
-                <Text style={{ fontSize: 15, fontWeight: "600", color: "#6B7280" }}>
+                <Text style={{ fontSize: 15, fontWeight: "600", color: colors.textSecondary }}>
                   No posts yet
                 </Text>
-                <Text style={{ fontSize: 12, color: "#9CA3AF", marginTop: 4, textAlign: "center" }}>
+                <Text style={{ fontSize: 12, color: colors.textMuted, marginTop: 4, textAlign: "center" }}>
                   Share something with your campus community.
                 </Text>
 
@@ -581,7 +581,7 @@ export default function ProfileScreen() {
                     flexDirection: "row",
                     alignItems: "center",
                     gap: 6,
-                    backgroundColor: COLORS.forest,
+                    backgroundColor: colors.primary,
                     paddingHorizontal: 16,
                     paddingVertical: 10,
                     borderRadius: 20,
@@ -589,7 +589,7 @@ export default function ProfileScreen() {
                     elevation: 2,
                     shadowColor: "#000",
                     shadowOffset: { width: 0, height: 1 },
-                    shadowOpacity: 0.1,
+                    shadowOpacity: isDark ? 0.2 : 0.1,
                     shadowRadius: 3,
                   }}
                 >
@@ -601,10 +601,10 @@ export default function ProfileScreen() {
               </View>
             ) : activeTab === "media" && !postsLoading ? (
               <View style={{ alignItems: "center", paddingHorizontal: 24, paddingVertical: 36 }}>
-                <Text style={{ fontSize: 15, fontWeight: "600", color: "#6B7280" }}>
+                <Text style={{ fontSize: 15, fontWeight: "600", color: colors.textSecondary }}>
                   No media yet
                 </Text>
-                <Text style={{ fontSize: 12, color: "#9CA3AF", marginTop: 4, textAlign: "center" }}>
+                <Text style={{ fontSize: 12, color: colors.textMuted, marginTop: 4, textAlign: "center" }}>
                   Share photos with your campus community.
                 </Text>
 
@@ -614,7 +614,7 @@ export default function ProfileScreen() {
                     flexDirection: "row",
                     alignItems: "center",
                     gap: 6,
-                    backgroundColor: COLORS.forest,
+                    backgroundColor: colors.primary,
                     paddingHorizontal: 16,
                     paddingVertical: 10,
                     borderRadius: 20,
@@ -622,7 +622,7 @@ export default function ProfileScreen() {
                     elevation: 2,
                     shadowColor: "#000",
                     shadowOffset: { width: 0, height: 1 },
-                    shadowOpacity: 0.1,
+                    shadowOpacity: isDark ? 0.2 : 0.1,
                     shadowRadius: 3,
                   }}
                 >
@@ -637,7 +637,7 @@ export default function ProfileScreen() {
           ListFooterComponent={
             activeTab === "feed" && isLoadingMore ? (
               <View className="py-4 items-center">
-                <ActivityIndicator color={COLORS.forest} />
+                <ActivityIndicator color={colors.primary} />
               </View>
             ) : null
           }
@@ -683,6 +683,7 @@ export default function ProfileScreen() {
  * About Tab Details Component
  */
 function AboutTabSection({ profile }: { profile: Profile }) {
+  const { colors } = useTheme();
   const department = profile.department
     ? profile.department
     : "College of Computer Studies";
@@ -700,10 +701,10 @@ function AboutTabSection({ profile }: { profile: Profile }) {
       {/* College & Department */}
       <View
         style={{
-          backgroundColor: "#FFFFFF",
+          backgroundColor: colors.surface,
           borderRadius: 16,
           borderWidth: 1,
-          borderColor: "#E8E6E1",
+          borderColor: colors.border,
           padding: 16,
         }}
       >
@@ -711,7 +712,7 @@ function AboutTabSection({ profile }: { profile: Profile }) {
           style={{
             fontSize: 11,
             fontWeight: "700",
-            color: "#9CA3AF",
+            color: colors.textMuted,
             letterSpacing: 0.5,
             textTransform: "uppercase",
             marginBottom: 12,
@@ -725,18 +726,18 @@ function AboutTabSection({ profile }: { profile: Profile }) {
               width: 36,
               height: 36,
               borderRadius: 10,
-              backgroundColor: "rgba(26, 107, 60, 0.08)",
+              backgroundColor: colors.primarySoft,
               alignItems: "center",
               justifyContent: "center",
             }}
           >
-            <Building2 size={18} color={COLORS.forest} />
+            <Building2 size={18} color={colors.primary} />
           </View>
           <View style={{ flex: 1 }}>
-            <Text style={{ fontSize: 14, fontWeight: "600", color: "#111827" }}>
+            <Text style={{ fontSize: 14, fontWeight: "600", color: colors.textPrimary }}>
               {department}
             </Text>
-            <Text style={{ fontSize: 12, color: "#6B7280", marginTop: 2 }}>
+            <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>
               Carlos Hilado Memorial State University
             </Text>
           </View>
@@ -746,10 +747,10 @@ function AboutTabSection({ profile }: { profile: Profile }) {
       {/* Academic Details */}
       <View
         style={{
-          backgroundColor: "#FFFFFF",
+          backgroundColor: colors.surface,
           borderRadius: 16,
           borderWidth: 1,
-          borderColor: "#E8E6E1",
+          borderColor: colors.border,
           padding: 16,
         }}
       >
@@ -757,7 +758,7 @@ function AboutTabSection({ profile }: { profile: Profile }) {
           style={{
             fontSize: 11,
             fontWeight: "700",
-            color: "#9CA3AF",
+            color: colors.textMuted,
             letterSpacing: 0.5,
             textTransform: "uppercase",
             marginBottom: 12,
@@ -772,18 +773,18 @@ function AboutTabSection({ profile }: { profile: Profile }) {
                 width: 36,
                 height: 36,
                 borderRadius: 10,
-                backgroundColor: "rgba(26, 107, 60, 0.08)",
+                backgroundColor: colors.primarySoft,
                 alignItems: "center",
                 justifyContent: "center",
               }}
             >
-              <GraduationCap size={18} color={COLORS.forest} />
+              <GraduationCap size={18} color={colors.primary} />
             </View>
             <View>
-              <Text style={{ fontSize: 14, fontWeight: "600", color: "#111827" }}>
+              <Text style={{ fontSize: 14, fontWeight: "600", color: colors.textPrimary }}>
                 {profile.course || "BS Information Technology"}
               </Text>
-              <Text style={{ fontSize: 12, color: "#6B7280", marginTop: 2 }}>
+              <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>
                 {profile.year_level || "3rd Year"} Student
               </Text>
             </View>
@@ -795,18 +796,18 @@ function AboutTabSection({ profile }: { profile: Profile }) {
                 width: 36,
                 height: 36,
                 borderRadius: 10,
-                backgroundColor: "rgba(26, 107, 60, 0.08)",
+                backgroundColor: colors.primarySoft,
                 alignItems: "center",
                 justifyContent: "center",
               }}
             >
-              <BookOpen size={18} color={COLORS.forest} />
+              <BookOpen size={18} color={colors.primary} />
             </View>
             <View>
-              <Text style={{ fontSize: 14, fontWeight: "600", color: "#111827" }}>
+              <Text style={{ fontSize: 14, fontWeight: "600", color: colors.textPrimary }}>
                 Campus Ally Status
               </Text>
-              <Text style={{ fontSize: 12, color: "#6B7280", marginTop: 2 }}>
+              <Text style={{ fontSize: 12, color: colors.textSecondary, marginTop: 2 }}>
                 Verified Student Ally
               </Text>
             </View>
@@ -817,10 +818,10 @@ function AboutTabSection({ profile }: { profile: Profile }) {
       {/* Organizations */}
       <View
         style={{
-          backgroundColor: "#FFFFFF",
+          backgroundColor: colors.surface,
           borderRadius: 16,
           borderWidth: 1,
-          borderColor: "#E8E6E1",
+          borderColor: colors.border,
           padding: 16,
         }}
       >
@@ -828,7 +829,7 @@ function AboutTabSection({ profile }: { profile: Profile }) {
           style={{
             fontSize: 11,
             fontWeight: "700",
-            color: "#9CA3AF",
+            color: colors.textMuted,
             letterSpacing: 0.5,
             textTransform: "uppercase",
             marginBottom: 12,
@@ -844,14 +845,14 @@ function AboutTabSection({ profile }: { profile: Profile }) {
                   width: 32,
                   height: 32,
                   borderRadius: 8,
-                  backgroundColor: "#F3F4F6",
+                  backgroundColor: colors.surfaceMuted,
                   alignItems: "center",
                   justifyContent: "center",
                 }}
               >
-                <Users size={15} color={COLORS.forest} />
+                <Users size={15} color={colors.primary} />
               </View>
-              <Text style={{ fontSize: 13, fontWeight: "500", color: "#374151" }}>
+              <Text style={{ fontSize: 13, fontWeight: "500", color: colors.textPrimary }}>
                 {org}
               </Text>
             </View>
@@ -862,10 +863,10 @@ function AboutTabSection({ profile }: { profile: Profile }) {
       {/* Interests */}
       <View
         style={{
-          backgroundColor: "#FFFFFF",
+          backgroundColor: colors.surface,
           borderRadius: 16,
           borderWidth: 1,
-          borderColor: "#E8E6E1",
+          borderColor: colors.border,
           padding: 16,
         }}
       >
@@ -873,7 +874,7 @@ function AboutTabSection({ profile }: { profile: Profile }) {
           style={{
             fontSize: 11,
             fontWeight: "700",
-            color: "#9CA3AF",
+            color: colors.textMuted,
             letterSpacing: 0.5,
             textTransform: "uppercase",
             marginBottom: 12,
@@ -889,12 +890,12 @@ function AboutTabSection({ profile }: { profile: Profile }) {
                 paddingHorizontal: 12,
                 paddingVertical: 6,
                 borderRadius: 20,
-                backgroundColor: "#F9FAFB",
+                backgroundColor: colors.surfaceMuted,
                 borderWidth: 1,
-                borderColor: "#E5E7EB",
+                borderColor: colors.border,
               }}
             >
-              <Text style={{ fontSize: 12, fontWeight: "500", color: "#374151" }}>
+              <Text style={{ fontSize: 12, fontWeight: "500", color: colors.textSecondary }}>
                 {interest}
               </Text>
             </View>
@@ -919,19 +920,43 @@ function AccountSheet({
   onEdit: () => void;
   onSettings: () => void;
 }) {
+  const { colors } = useTheme();
+
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <Pressable className="flex-1 bg-black/30" onPress={onClose}>
-        <Pressable className="mt-auto bg-white rounded-t-3xl px-5 pt-5 pb-8" onPress={(e) => e.stopPropagation()}>
-          <View className="w-10 h-1 rounded-full bg-gray-200 self-center mb-5" />
+      <Pressable className="flex-1 bg-black/50" onPress={onClose}>
+        <Pressable
+          style={{
+            marginTop: "auto",
+            backgroundColor: colors.surface,
+            borderTopLeftRadius: 24,
+            borderTopRightRadius: 24,
+            paddingHorizontal: 20,
+            paddingTop: 20,
+            paddingBottom: 32,
+            borderTopWidth: 1,
+            borderColor: colors.border,
+          }}
+          onPress={(e) => e.stopPropagation()}
+        >
+          <View
+            style={{
+              width: 40,
+              height: 4,
+              borderRadius: 2,
+              backgroundColor: colors.border,
+              alignSelf: "center",
+              marginBottom: 20,
+            }}
+          />
 
-          <MenuRow icon={Pencil} label="Edit profile" onPress={onEdit} />
-          <MenuRow icon={Settings} label="Settings" onPress={onSettings} />
-          <MenuRow icon={Bookmark} label="Saved posts" onPress={onClose} />
+          <MenuRow icon={Pencil} label="Edit profile" onPress={onEdit} colors={colors} />
+          <MenuRow icon={Settings} label="Settings" onPress={onSettings} colors={colors} />
+          <MenuRow icon={Bookmark} label="Saved posts" onPress={onClose} colors={colors} />
 
-          <View className="h-3" />
+          <View style={{ height: 12 }} />
 
-          <MenuRow icon={LogOut} label="Log out" onPress={onSignOut} destructive />
+          <MenuRow icon={LogOut} label="Log out" onPress={onSignOut} destructive colors={colors} />
         </Pressable>
       </Pressable>
     </Modal>
@@ -943,21 +968,37 @@ function MenuRow({
   label,
   onPress,
   destructive,
+  colors,
 }: {
   icon: any;
   label: string;
   onPress: () => void;
   destructive?: boolean;
+  colors: any;
 }) {
   return (
-    <Pressable onPress={onPress} className="flex-row items-center justify-between py-3.5">
-      <View className="flex-row items-center gap-3">
-        <Icon size={17} color={destructive ? "#DC2626" : "#374151"} />
-        <Text className={destructive ? "text-red-600 font-medium" : "text-gray-800 font-medium"}>
+    <Pressable
+      onPress={onPress}
+      style={{
+        flexDirection: "row",
+        alignItems: "center",
+        justifyContent: "space-between",
+        paddingVertical: 14,
+      }}
+    >
+      <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+        <Icon size={18} color={destructive ? "#EF4444" : colors.textPrimary} />
+        <Text
+          style={{
+            fontSize: 15,
+            fontWeight: "500",
+            color: destructive ? "#EF4444" : colors.textPrimary,
+          }}
+        >
           {label}
         </Text>
       </View>
-      <ChevronRight size={16} color="#D1D5DB" />
+      <ChevronRight size={16} color={colors.textMuted} />
     </Pressable>
   );
 }

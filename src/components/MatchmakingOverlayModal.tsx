@@ -340,14 +340,15 @@ export function MatchmakingOverlayModal({
 }: MatchmakingOverlayModalProps) {
   const insets = useSafeAreaInsets();
 
-  if (!visible) return null;
-
   // Visual stage choreography (Litmatch style matching web):
   // 'searching' → 3-slot horizontal carousel cycling Left -> Center -> Right!
   // 'detected'  → Cycling locks onto matched avatar in the CENTER with shockwave!
   // 'revealed'  → Confirmation card animates in.
   const [stage, setStage] = useState<"searching" | "detected" | "revealed">(
     mm.phase === "pending" ? "revealed" : "searching"
+  );
+  const animatedMatchIdRef = useRef<string | null>(
+    mm.phase === "pending" ? mm.pendingMatch?.id || "initial-pending" : null
   );
 
   const partnerAlias =
@@ -362,16 +363,25 @@ export function MatchmakingOverlayModal({
 
   // Transition from searching -> detected -> revealed when pending match arrives
   useEffect(() => {
+    if (!visible) return;
     if (mm.phase === "pending") {
+      const matchId = mm.pendingMatch?.id || "pending-match";
+      // If this match was already animated to revealed, keep it revealed!
+      if (animatedMatchIdRef.current === matchId) {
+        setStage("revealed");
+        return;
+      }
+      animatedMatchIdRef.current = matchId;
       setStage("detected");
       const timer = setTimeout(() => {
         setStage("revealed");
-      }, 1250);
+      }, 1100);
       return () => clearTimeout(timer);
     } else if (mm.phase === "searching") {
+      animatedMatchIdRef.current = null;
       setStage("searching");
     }
-  }, [mm.phase, mm.pendingMatch?.id]);
+  }, [visible, mm.phase, mm.pendingMatch?.id]);
 
   // Consecutive Horizontal Avatar Cycling (720ms cadence matching web)
   const [cycleStep, setCycleStep] = useState(0);
@@ -409,28 +419,27 @@ export function MatchmakingOverlayModal({
   }, [visible, stage, telemetryFade]);
 
   // Card entrance animation when entering 'revealed' stage
-  const cardScaleAnim = useRef(new Animated.Value(0.94)).current;
-  const cardOpacityAnim = useRef(new Animated.Value(0)).current;
+  const cardScaleAnim = useRef(new Animated.Value(1)).current;
+  const cardOpacityAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    if (stage === "revealed") {
-      cardScaleAnim.setValue(0.94);
-      cardOpacityAnim.setValue(0);
-      Animated.parallel([
-        Animated.timing(cardScaleAnim, {
-          toValue: 1,
-          duration: 350,
-          easing: Easing.out(Easing.back(1.3)),
-          useNativeDriver: true,
-        }),
-        Animated.timing(cardOpacityAnim, {
-          toValue: 1,
-          duration: 280,
-          useNativeDriver: true,
-        }),
-      ]).start();
-    }
-  }, [stage, cardScaleAnim, cardOpacityAnim]);
+    if (!visible || stage !== "revealed") return;
+    cardScaleAnim.setValue(0.94);
+    cardOpacityAnim.setValue(0.2);
+    Animated.parallel([
+      Animated.timing(cardScaleAnim, {
+        toValue: 1,
+        duration: 350,
+        easing: Easing.out(Easing.back(1.3)),
+        useNativeDriver: true,
+      }),
+      Animated.timing(cardOpacityAnim, {
+        toValue: 1,
+        duration: 280,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, [visible, stage, cardScaleAnim, cardOpacityAnim]);
 
   // Handle Cancel / Dismiss with confirmation
   const handleClose = useCallback(() => {

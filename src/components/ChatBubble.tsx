@@ -225,8 +225,9 @@ export function ChatBubble({
     return [];
   }, [message.image_url, (message as any).imageUrl, (message as any).images, (message as any).media, message.content]);
 
+  const isMediaRemoved = images.some((img) => img === '[removed]') || message.image_url === '[removed]';
   const hasImage = images.length > 0;
-  const isImageOnly = hasImage && !message.content?.trim();
+  const isImageOnly = hasImage && !isMediaRemoved && !message.content?.trim();
   const isEmojiOnly = !hasImage && isOnlyEmoji(message.content);
   const isGameInvite = Boolean(message.game_invite || (message.content && message.content.includes('Game invite:')));
   const effectiveGameInvite = message.game_invite || (message.content && message.content.includes('Game invite:') ? {
@@ -297,8 +298,9 @@ export function ChatBubble({
 
   const extraBottom = hasReactions ? 18 : 0;
 
-  // ── Tombstone: deleted for everyone ──────────────────────────────────────
-  if (message.is_deleted || (message as any).isDeleted) {
+  // ── Tombstone: deleted for everyone or removed by moderation ──────────────
+  const isMsgRemoved = message.content === "This message was removed";
+  if (message.is_deleted || (message as any).isDeleted || isMsgRemoved) {
     if (isMine) {
       return (
         <View
@@ -318,7 +320,7 @@ export function ChatBubble({
           }}
         >
           <Text style={{ fontSize: 13, color: "#9CA3AF", fontStyle: "italic" }}>
-            This message was deleted
+            {isMsgRemoved ? "This message was removed" : "This message was deleted"}
           </Text>
         </View>
       );
@@ -370,7 +372,7 @@ export function ChatBubble({
           }}
         >
           <Text style={{ fontSize: 13, color: "#9CA3AF", fontStyle: "italic" }}>
-            This message was deleted
+            {isMsgRemoved ? "This message was removed" : "This message was deleted"}
           </Text>
         </View>
       </View>
@@ -414,6 +416,25 @@ export function ChatBubble({
             numberOfLines={3}
           >
             {message.replied_message.content || "📷 Photo"}
+          </Text>
+        </View>
+      )}
+
+      {/* Moderation Warning Flag */}
+      {(message.is_flagged || message.content?.includes("<!--flagged")) && (
+        <View
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 4,
+            marginBottom: 3,
+            alignSelf: isMine ? "flex-end" : "flex-start",
+            marginHorizontal: 4,
+          }}
+        >
+          <AlertCircle size={12} color="#D97706" />
+          <Text style={{ fontSize: 11, fontWeight: "600", color: "#D97706" }}>
+            Flagged by Moderation
           </Text>
         </View>
       )}
@@ -476,8 +497,37 @@ export function ChatBubble({
           />
         )}
 
+        {/* Removed Photo Placeholder */}
+        {hasImage && !imagesLocked && isMediaRemoved && (
+          <View
+            style={{
+              width: 220,
+              padding: 16,
+              borderRadius: 14,
+              backgroundColor: "#E5E7EB",
+              borderWidth: 1,
+              borderColor: "#D1D5DB",
+              alignItems: "center",
+              justifyContent: "center",
+              marginBottom: message.content ? 6 : 0,
+            }}
+          >
+            <Text
+              style={{
+                fontSize: 12,
+                color: "#6B7280",
+                fontWeight: "500",
+                textAlign: "center",
+                lineHeight: 16,
+              }}
+            >
+              This photo was removed for violating community standards.
+            </Text>
+          </View>
+        )}
+
         {/* Image attachment / Stacked cards UI */}
-        {hasImage && !imagesLocked && images.length === 1 && (
+        {hasImage && !imagesLocked && !isMediaRemoved && images.length === 1 && (
           <Pressable
             onPress={() => handleImagePress(0)}
             onLongPress={handleBubbleLongPress}
@@ -496,7 +546,7 @@ export function ChatBubble({
           </Pressable>
         )}
 
-        {hasImage && !imagesLocked && images.length > 1 && (
+        {hasImage && !imagesLocked && !isMediaRemoved && images.length > 1 && (
           <View
             style={{
               position: "relative",

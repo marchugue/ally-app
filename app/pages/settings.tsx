@@ -21,6 +21,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { useAuth } from "@/lib/auth/AuthContext";
 import { useNetwork } from "@/context/NetworkContext";
+import { useTheme } from "@/context/ThemeContext";
 
 // 4. API & Types
 import { changePassword } from "@/lib/api/auth";
@@ -96,6 +97,7 @@ export default function SettingsScreen() {
   const insets = useSafeAreaInsets();
   const { user, accessToken, deleteAccount, signOut } = useAuth();
   const { currentVersion, checkForUpdates } = useNetwork();
+  const { isDark, colors, setTheme } = useTheme();
 
   // Confirmation modals
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
@@ -108,9 +110,6 @@ export default function SettingsScreen() {
 
   // Privacy Controls Modal
   const [showPrivacyModal, setShowPrivacyModal] = useState(false);
-
-  // Dark Mode state (preview feature)
-  const [darkMode, setDarkMode] = useState(false);
 
   // Change password modal state
   const [showPasswordModal, setShowPasswordModal] = useState(false);
@@ -132,14 +131,8 @@ export default function SettingsScreen() {
     onSelect: (val: any) => void;
   } | null>(null);
 
-  // Load dark mode state & preferences on mount
+  // Load preferences on mount
   useEffect(() => {
-    AsyncStorage.getItem("ally_dark_mode")
-      .then((val) => {
-        if (val === "true") setDarkMode(true);
-      })
-      .catch(() => {});
-
     if (!accessToken) return;
     getMyPreferences(accessToken)
       .then((data) => {
@@ -171,17 +164,8 @@ export default function SettingsScreen() {
     [accessToken]
   );
 
-  const handleToggleDarkMode = async (val: boolean) => {
-    setDarkMode(val);
-    try {
-      await AsyncStorage.setItem("ally_dark_mode", val ? "true" : "false");
-    } catch {}
-    Alert.alert(
-      val ? "Dark Mode Enabled" : "Dark Mode Disabled",
-      val
-        ? "Dark mode theme preview has been toggled on."
-        : "Standard theme restored."
-    );
+  const handleToggleDarkMode = (val: boolean) => {
+    setTheme(val ? "dark" : "light");
   };
 
   const handleOpenPermissions = async () => {
@@ -272,7 +256,7 @@ export default function SettingsScreen() {
   const currentFeedAudienceText = feedAudienceLabels[preferences.feed_post_audience || "campus"] || "Campus Public";
 
   return (
-    <View style={{ flex: 1, backgroundColor: "#F7F8FA" }}>
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
       {/* Top Header with Back Navigation */}
       <View
         style={{
@@ -292,11 +276,11 @@ export default function SettingsScreen() {
             width: 38,
             height: 38,
             borderRadius: 19,
-            backgroundColor: "#FFFFFF",
+            backgroundColor: colors.surface,
             alignItems: "center",
             justifyContent: "center",
             borderWidth: 1,
-            borderColor: "#E5E7EB",
+            borderColor: colors.border,
             shadowColor: "#000",
             shadowOffset: { width: 0, height: 1 },
             shadowOpacity: 0.05,
@@ -304,7 +288,7 @@ export default function SettingsScreen() {
             elevation: 1,
           }}
         >
-          <ArrowLeft size={18} color="#111827" />
+          <ArrowLeft size={18} color={colors.textPrimary} />
         </TouchableOpacity>
       </View>
 
@@ -314,7 +298,7 @@ export default function SettingsScreen() {
           style={{
             fontSize: 32,
             fontFamily: "PlusJakartaSans-Bold",
-            color: "#111827",
+            color: colors.textPrimary,
             letterSpacing: -0.6,
           }}
         >
@@ -432,9 +416,9 @@ export default function SettingsScreen() {
 
         {/* Dark Mode */}
         <SettingToggleCard
-          icon={Sun}
+          icon={isDark ? Moon : Sun}
           title="Dark Mode"
-          value={darkMode}
+          value={isDark}
           onValueChange={handleToggleDarkMode}
         />
 
@@ -680,7 +664,7 @@ export default function SettingsScreen() {
         >
           <View
             style={{
-              backgroundColor: "#FFFFFF",
+              backgroundColor: colors.surface,
               borderTopLeftRadius: 28,
               borderTopRightRadius: 28,
               paddingHorizontal: 22,
@@ -690,7 +674,7 @@ export default function SettingsScreen() {
             onStartShouldSetResponder={() => true}
           >
             <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 6 }}>
-              <Text style={{ fontSize: 19, fontFamily: "PlusJakartaSans-Bold", color: "#111827" }}>
+              <Text style={{ fontSize: 19, fontFamily: "PlusJakartaSans-Bold", color: colors.textPrimary }}>
                 Privacy Controls
               </Text>
               <TouchableOpacity
@@ -699,12 +683,12 @@ export default function SettingsScreen() {
                 hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
                 style={{ padding: 4 }}
               >
-                <Text style={{ fontSize: 14, fontFamily: "PlusJakartaSans-Bold", color: "#6B7280" }}>
+                <Text style={{ fontSize: 14, fontFamily: "PlusJakartaSans-Bold", color: colors.textSecondary }}>
                   Done
                 </Text>
               </TouchableOpacity>
             </View>
-            <Text style={{ fontSize: 13, fontFamily: "PlusJakartaSans", color: "#6B7280", marginBottom: 20 }}>
+            <Text style={{ fontSize: 13, fontFamily: "PlusJakartaSans", color: colors.textSecondary, marginBottom: 20 }}>
               Manage how your profile and campus posts are visible to other students.
             </Text>
 
@@ -728,26 +712,26 @@ export default function SettingsScreen() {
                 }, 300);
               }}
               style={{
-                backgroundColor: "#F9F8F6",
+                backgroundColor: colors.surfaceMuted,
                 borderRadius: 18,
                 padding: 16,
                 marginBottom: 12,
                 borderWidth: 1,
-                borderColor: "#EAE7E1",
+                borderColor: colors.border,
                 flexDirection: "row",
                 alignItems: "center",
                 justifyContent: "space-between",
               }}
             >
               <View style={{ flex: 1, paddingRight: 12 }}>
-                <Text style={{ fontSize: 14.5, fontFamily: "PlusJakartaSans-Bold", color: "#111827" }}>
+                <Text style={{ fontSize: 14.5, fontFamily: "PlusJakartaSans-Bold", color: colors.textPrimary }}>
                   Profile Visibility
                 </Text>
-                <Text style={{ fontSize: 12.5, fontFamily: "PlusJakartaSans", color: "#1A6B3C", marginTop: 2 }}>
+                <Text style={{ fontSize: 12.5, fontFamily: "PlusJakartaSans", color: colors.primary, marginTop: 2 }}>
                   {currentVisibilityText}
                 </Text>
               </View>
-              <ChevronRight size={18} color="#9CA3AF" />
+              <ChevronRight size={18} color={colors.textSecondary} />
             </TouchableOpacity>
 
             {/* Default Feed Audience Row */}
@@ -770,25 +754,25 @@ export default function SettingsScreen() {
                 }, 300);
               }}
               style={{
-                backgroundColor: "#F9F8F6",
+                backgroundColor: colors.surfaceMuted,
                 borderRadius: 18,
                 padding: 16,
                 borderWidth: 1,
-                borderColor: "#EAE7E1",
+                borderColor: colors.border,
                 flexDirection: "row",
                 alignItems: "center",
                 justifyContent: "space-between",
               }}
             >
               <View style={{ flex: 1, paddingRight: 12 }}>
-                <Text style={{ fontSize: 14.5, fontFamily: "PlusJakartaSans-Bold", color: "#111827" }}>
+                <Text style={{ fontSize: 14.5, fontFamily: "PlusJakartaSans-Bold", color: colors.textPrimary }}>
                   Default Feed Audience
                 </Text>
-                <Text style={{ fontSize: 12.5, fontFamily: "PlusJakartaSans", color: "#1A6B3C", marginTop: 2 }}>
+                <Text style={{ fontSize: 12.5, fontFamily: "PlusJakartaSans", color: colors.primary, marginTop: 2 }}>
                   {currentFeedAudienceText}
                 </Text>
               </View>
-              <ChevronRight size={18} color="#9CA3AF" />
+              <ChevronRight size={18} color={colors.textSecondary} />
             </TouchableOpacity>
           </View>
         </TouchableOpacity>
@@ -813,7 +797,7 @@ export default function SettingsScreen() {
         >
           <View
             style={{
-              backgroundColor: "#FFFFFF",
+              backgroundColor: colors.surface,
               borderRadius: 24,
               padding: 22,
               maxHeight: "80%",
@@ -822,12 +806,14 @@ export default function SettingsScreen() {
               shadowOpacity: 0.15,
               shadowRadius: 24,
               elevation: 10,
+              borderWidth: 1,
+              borderColor: colors.border,
             }}
             onStartShouldSetResponder={() => true}
           >
             <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 12 }}>
-              <CircleHelp size={22} color="#1A6B3C" />
-              <Text style={{ fontSize: 18, fontFamily: "PlusJakartaSans-Bold", color: "#111827" }}>
+              <CircleHelp size={22} color={colors.primary} />
+              <Text style={{ fontSize: 18, fontFamily: "PlusJakartaSans-Bold", color: colors.textPrimary }}>
                 Help & FAQ
               </Text>
             </View>
@@ -911,7 +897,7 @@ export default function SettingsScreen() {
         >
           <View
             style={{
-              backgroundColor: "#FFFFFF",
+              backgroundColor: colors.surface,
               borderRadius: 24,
               padding: 24,
               shadowColor: "#000",
@@ -919,22 +905,24 @@ export default function SettingsScreen() {
               shadowOpacity: 0.15,
               shadowRadius: 24,
               elevation: 12,
+              borderWidth: 1,
+              borderColor: colors.border,
             }}
             onStartShouldSetResponder={() => true}
           >
             <View style={{ flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 4 }}>
-              <Lock size={20} color="#1A6B3C" />
-              <Text style={{ fontSize: 18, fontFamily: "PlusJakartaSans-Bold", color: "#111827" }}>
+              <Lock size={20} color={colors.primary} />
+              <Text style={{ fontSize: 18, fontFamily: "PlusJakartaSans-Bold", color: colors.textPrimary }}>
                 Change Password
               </Text>
             </View>
-            <Text style={{ fontSize: 12.5, fontFamily: "PlusJakartaSans", color: "#6B7280", marginBottom: 18 }}>
+            <Text style={{ fontSize: 12.5, fontFamily: "PlusJakartaSans", color: colors.textSecondary, marginBottom: 18 }}>
               Ensure your account uses a strong password with at least 8 characters.
             </Text>
 
             <View style={{ gap: 14 }}>
               <View>
-                <Text style={{ fontSize: 11, fontFamily: "PlusJakartaSans-Bold", color: "#4B5563", marginBottom: 6, textTransform: "uppercase" }}>
+                <Text style={{ fontSize: 11, fontFamily: "PlusJakartaSans-Bold", color: colors.textSecondary, marginBottom: 6, textTransform: "uppercase" }}>
                   Current Password
                 </Text>
                 <View style={{ position: "relative" }}>
@@ -943,17 +931,18 @@ export default function SettingsScreen() {
                     onChangeText={setCurrentPass}
                     secureTextEntry={!showPassText}
                     placeholder="••••••••"
-                    placeholderTextColor="#9CA3AF"
+                    placeholderTextColor={colors.textMuted}
                     style={{
                       borderWidth: 1,
-                      borderColor: "#D1D5DB",
+                      borderColor: colors.border,
+                      backgroundColor: colors.surfaceMuted,
                       borderRadius: 14,
                       paddingHorizontal: 14,
                       paddingVertical: 11,
                       paddingRight: 40,
                       fontSize: 14,
                       fontFamily: "PlusJakartaSans",
-                      color: "#111827",
+                      color: colors.textPrimary,
                     }}
                   />
                   <TouchableOpacity
@@ -961,13 +950,13 @@ export default function SettingsScreen() {
                     activeOpacity={0.7}
                     style={{ position: "absolute", right: 12, top: 12 }}
                   >
-                    {showPassText ? <EyeOff size={18} color="#9CA3AF" /> : <Eye size={18} color="#9CA3AF" />}
+                    {showPassText ? <EyeOff size={18} color={colors.textSecondary} /> : <Eye size={18} color={colors.textSecondary} />}
                   </TouchableOpacity>
                 </View>
               </View>
 
               <View>
-                <Text style={{ fontSize: 11, fontFamily: "PlusJakartaSans-Bold", color: "#4B5563", marginBottom: 6, textTransform: "uppercase" }}>
+                <Text style={{ fontSize: 11, fontFamily: "PlusJakartaSans-Bold", color: colors.textSecondary, marginBottom: 6, textTransform: "uppercase" }}>
                   New Password (min 8 chars)
                 </Text>
                 <TextInput
@@ -975,23 +964,24 @@ export default function SettingsScreen() {
                   onChangeText={setNewPass}
                   secureTextEntry={!showPassText}
                   placeholder="••••••••"
-                  placeholderTextColor="#9CA3AF"
+                  placeholderTextColor={colors.textMuted}
                   style={{
                     borderWidth: 1,
-                    borderColor: "#D1D5DB",
+                    borderColor: colors.border,
+                    backgroundColor: colors.surfaceMuted,
                     borderRadius: 14,
                     paddingHorizontal: 14,
                     paddingVertical: 11,
                     fontSize: 14,
                     fontFamily: "PlusJakartaSans",
-                    color: "#111827",
+                    color: colors.textPrimary,
                   }}
                 />
                 <PasswordStrengthMeter value={newPass} />
               </View>
 
               <View>
-                <Text style={{ fontSize: 11, fontFamily: "PlusJakartaSans-Bold", color: "#4B5563", marginBottom: 6, textTransform: "uppercase" }}>
+                <Text style={{ fontSize: 11, fontFamily: "PlusJakartaSans-Bold", color: colors.textSecondary, marginBottom: 6, textTransform: "uppercase" }}>
                   Confirm New Password
                 </Text>
                 <TextInput
@@ -999,16 +989,17 @@ export default function SettingsScreen() {
                   onChangeText={setConfirmPass}
                   secureTextEntry={!showPassText}
                   placeholder="••••••••"
-                  placeholderTextColor="#9CA3AF"
+                  placeholderTextColor={colors.textMuted}
                   style={{
                     borderWidth: 1,
-                    borderColor: "#D1D5DB",
+                    borderColor: colors.border,
+                    backgroundColor: colors.surfaceMuted,
                     borderRadius: 14,
                     paddingHorizontal: 14,
                     paddingVertical: 11,
                     fontSize: 14,
                     fontFamily: "PlusJakartaSans",
-                    color: "#111827",
+                    color: colors.textPrimary,
                   }}
                 />
               </View>
@@ -1023,10 +1014,10 @@ export default function SettingsScreen() {
                   paddingVertical: 10,
                   borderRadius: 12,
                   borderWidth: 1,
-                  borderColor: "#E5E7EB",
+                  borderColor: colors.border,
                 }}
               >
-                <Text style={{ fontSize: 13, fontFamily: "PlusJakartaSans-Bold", color: "#4B5563" }}>
+                <Text style={{ fontSize: 13, fontFamily: "PlusJakartaSans-Bold", color: colors.textSecondary }}>
                   Cancel
                 </Text>
               </TouchableOpacity>
@@ -1075,21 +1066,23 @@ export default function SettingsScreen() {
           >
             <View
               style={{
-                backgroundColor: "#FFFFFF",
+                backgroundColor: colors.surface,
                 borderTopLeftRadius: 28,
                 borderTopRightRadius: 28,
                 paddingHorizontal: 22,
                 paddingTop: 24,
                 paddingBottom: insets.bottom + 24,
                 maxHeight: "80%",
+                borderWidth: 1,
+                borderColor: colors.border,
               }}
               onStartShouldSetResponder={() => true}
             >
-              <Text style={{ fontSize: 18, fontFamily: "PlusJakartaSans-Bold", color: "#111827" }}>
+              <Text style={{ fontSize: 18, fontFamily: "PlusJakartaSans-Bold", color: colors.textPrimary }}>
                 {activePicker.title}
               </Text>
               {activePicker.description ? (
-                <Text style={{ fontSize: 13, fontFamily: "PlusJakartaSans", color: "#6B7280", marginTop: 4, marginBottom: 16 }}>
+                <Text style={{ fontSize: 13, fontFamily: "PlusJakartaSans", color: colors.textSecondary, marginTop: 4, marginBottom: 16 }}>
                   {activePicker.description}
                 </Text>
               ) : (
@@ -1114,9 +1107,9 @@ export default function SettingsScreen() {
                         paddingVertical: 14,
                         paddingHorizontal: 16,
                         borderRadius: 16,
-                        backgroundColor: isSelected ? "rgba(26,107,60,0.08)" : "#F9F8F6",
+                        backgroundColor: isSelected ? colors.primarySoft : colors.surfaceMuted,
                         borderWidth: 1,
-                        borderColor: isSelected ? "#1A6B3C" : "#EAE7E1",
+                        borderColor: isSelected ? colors.primary : colors.border,
                         marginBottom: 10,
                       }}
                     >
@@ -1125,18 +1118,18 @@ export default function SettingsScreen() {
                           style={{
                             fontSize: 14,
                             fontFamily: "PlusJakartaSans-Bold",
-                            color: isSelected ? "#1A6B3C" : "#111827",
+                            color: isSelected ? colors.primary : colors.textPrimary,
                           }}
                         >
                           {opt.label}
                         </Text>
                         {opt.sublabel && (
-                          <Text style={{ fontSize: 12, fontFamily: "PlusJakartaSans", color: "#6B7280", marginTop: 2 }}>
+                          <Text style={{ fontSize: 12, fontFamily: "PlusJakartaSans", color: colors.textSecondary, marginTop: 2 }}>
                             {opt.sublabel}
                           </Text>
                         )}
                       </View>
-                      {isSelected && <Check size={18} color="#1A6B3C" />}
+                      {isSelected && <Check size={18} color={colors.primary} />}
                     </TouchableOpacity>
                   );
                 })}
@@ -1173,12 +1166,13 @@ export default function SettingsScreen() {
  * Section title (e.g. "Account", "Privacy & Security", "Appearance & Alerts")
  */
 function SectionTitle({ title }: { title: string }) {
+  const { colors } = useTheme();
   return (
     <Text
       style={{
         fontSize: 14.5,
         fontFamily: "PlusJakartaSans-Bold",
-        color: "#1F2937",
+        color: colors.textSecondary,
         marginTop: 22,
         marginBottom: 10,
         marginLeft: 4,
@@ -1202,6 +1196,7 @@ function SlimSwitch({
   onValueChange: (val: boolean) => void;
   disabled?: boolean;
 }) {
+  const { colors, isDark } = useTheme();
   const animValue = useRef(new Animated.Value(value ? 1 : 0)).current;
 
   useEffect(() => {
@@ -1221,7 +1216,7 @@ function SlimSwitch({
 
   const backgroundColor = animValue.interpolate({
     inputRange: [0, 1],
-    outputRange: ["#E2E4E8", "#1A6B3C"],
+    outputRange: [isDark ? "#333333" : "#E2E4E8", colors.primary],
   });
 
   return (
@@ -1269,8 +1264,8 @@ function SettingCard({
   onPress,
   destructive = false,
   badgeText,
-  badgeColor = "#1A6B3C",
-  badgeBgColor = "rgba(26,107,60,0.1)",
+  badgeColor,
+  badgeBgColor,
   rightElement,
   loading = false,
 }: {
@@ -1284,13 +1279,17 @@ function SettingCard({
   rightElement?: React.ReactNode;
   loading?: boolean;
 }) {
+  const { colors } = useTheme();
+  const effectiveBadgeColor = badgeColor ?? colors.primary;
+  const effectiveBadgeBg = badgeBgColor ?? colors.primarySoft;
+
   return (
     <TouchableOpacity
       onPress={onPress}
       disabled={!onPress && !rightElement}
       activeOpacity={onPress ? 0.7 : 1}
       style={{
-        backgroundColor: "#FFFFFF",
+        backgroundColor: colors.surface,
         borderRadius: 20,
         paddingVertical: 15,
         paddingHorizontal: 18,
@@ -1298,7 +1297,7 @@ function SettingCard({
         alignItems: "center",
         marginBottom: 10,
         borderWidth: 1,
-        borderColor: "#F0F2F5",
+        borderColor: colors.border,
         shadowColor: "#000",
         shadowOffset: { width: 0, height: 1 },
         shadowOpacity: 0.03,
@@ -1307,7 +1306,7 @@ function SettingCard({
       }}
     >
       <View style={{ width: 24, alignItems: "center", justifyContent: "center" }}>
-        <Icon size={21} color={destructive ? "#DC2626" : "#374151"} strokeWidth={1.8} />
+        <Icon size={21} color={destructive ? "#DC2626" : colors.textSecondary} strokeWidth={1.8} />
       </View>
       <Text
         style={{
@@ -1315,31 +1314,31 @@ function SettingCard({
           marginLeft: 14,
           fontSize: 15.5,
           fontFamily: "PlusJakartaSans-Bold",
-          color: destructive ? "#DC2626" : "#111827",
+          color: destructive ? "#DC2626" : colors.textPrimary,
         }}
         numberOfLines={1}
       >
         {title}
       </Text>
       {loading ? (
-        <ActivityIndicator size="small" color="#1A6B3C" />
+        <ActivityIndicator size="small" color={colors.primary} />
       ) : rightElement ? (
         rightElement
       ) : badgeText ? (
         <View
           style={{
-            backgroundColor: badgeBgColor,
+            backgroundColor: effectiveBadgeBg,
             paddingHorizontal: 10,
             paddingVertical: 4,
             borderRadius: 12,
           }}
         >
-          <Text style={{ fontSize: 11.5, fontFamily: "PlusJakartaSans-Bold", color: badgeColor }}>
+          <Text style={{ fontSize: 11.5, fontFamily: "PlusJakartaSans-Bold", color: effectiveBadgeColor }}>
             {badgeText}
           </Text>
         </View>
       ) : onPress ? (
-        <ChevronRight size={19} color="#C4C8D0" strokeWidth={2.2} />
+        <ChevronRight size={19} color={colors.textSecondary} strokeWidth={2.2} />
       ) : null}
     </TouchableOpacity>
   );
@@ -1361,13 +1360,14 @@ function SettingToggleCard({
   onValueChange: (val: boolean) => void;
   disabled?: boolean;
 }) {
+  const { colors } = useTheme();
   return (
     <TouchableOpacity
       onPress={() => onValueChange(!value)}
       disabled={disabled}
       activeOpacity={0.7}
       style={{
-        backgroundColor: "#FFFFFF",
+        backgroundColor: colors.surface,
         borderRadius: 20,
         paddingVertical: 15,
         paddingHorizontal: 18,
@@ -1375,7 +1375,7 @@ function SettingToggleCard({
         alignItems: "center",
         marginBottom: 10,
         borderWidth: 1,
-        borderColor: "#F0F2F5",
+        borderColor: colors.border,
         shadowColor: "#000",
         shadowOffset: { width: 0, height: 1 },
         shadowOpacity: 0.03,
@@ -1385,7 +1385,7 @@ function SettingToggleCard({
       }}
     >
       <View style={{ width: 24, alignItems: "center", justifyContent: "center" }}>
-        <Icon size={21} color="#374151" strokeWidth={1.8} />
+        <Icon size={21} color={colors.textSecondary} strokeWidth={1.8} />
       </View>
       <Text
         style={{
@@ -1393,7 +1393,7 @@ function SettingToggleCard({
           marginLeft: 14,
           fontSize: 15.5,
           fontFamily: "PlusJakartaSans-Bold",
-          color: "#111827",
+          color: colors.textPrimary,
         }}
         numberOfLines={1}
       >
@@ -1412,32 +1412,33 @@ function SettingToggleCard({
  * FAQ Collapsible Item
  */
 function HelpItem({ question, answer }: { question: string; answer: string }) {
+  const { colors } = useTheme();
   const [open, setOpen] = useState(false);
   return (
     <TouchableOpacity
       onPress={() => setOpen(!open)}
       activeOpacity={0.7}
       style={{
-        backgroundColor: "#F9F8F6",
+        backgroundColor: colors.surfaceMuted,
         borderRadius: 14,
         padding: 14,
         marginBottom: 8,
         borderWidth: 1,
-        borderColor: "#EAE7E1",
+        borderColor: colors.border,
       }}
     >
       <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
-        <Text style={{ fontSize: 13.5, fontFamily: "PlusJakartaSans-Bold", color: "#111827", flex: 1, paddingRight: 8 }}>
+        <Text style={{ fontSize: 13.5, fontFamily: "PlusJakartaSans-Bold", color: colors.textPrimary, flex: 1, paddingRight: 8 }}>
           {question}
         </Text>
         <ChevronRight
           size={16}
-          color="#9CA3AF"
+          color={colors.textSecondary}
           style={{ transform: [{ rotate: open ? "90deg" : "0deg" }] }}
         />
       </View>
       {open && (
-        <Text style={{ fontSize: 12.5, fontFamily: "PlusJakartaSans", color: "#4B5563", marginTop: 8, lineHeight: 17 }}>
+        <Text style={{ fontSize: 12.5, fontFamily: "PlusJakartaSans", color: colors.textSecondary, marginTop: 8, lineHeight: 17 }}>
           {answer}
         </Text>
       )}

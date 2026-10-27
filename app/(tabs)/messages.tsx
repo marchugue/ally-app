@@ -36,6 +36,7 @@ import { ChatStreakBadge } from "@/components/ChatStreakBadge";
 import { FilterChip } from "@/components/FilterChip";
 import { EmptyState } from "@/components/EmptyState";
 import { useAuth } from "@/lib/auth/AuthContext";
+import { useTheme } from "@/context/ThemeContext";
 import { listConversations, hideConversation } from "@/lib/api/conversation";
 import { usePresence } from "@/context/PresenceContext";
 import { getSocket } from "@/lib/socket";
@@ -168,6 +169,7 @@ const SwipeableRow = React.memo(function SwipeableRow({
   isMovingUp = false,
 }: SwipeableRowProps) {
   const swipeRef = useRef<any>(null);
+  const { colors, isDark } = useTheme();
 
   useEffect(() => {
     swipeableRefs.current.set(item.id, swipeRef.current);
@@ -203,7 +205,7 @@ const SwipeableRow = React.memo(function SwipeableRow({
           shadowOffset: { width: 0, height: 0 },
           shadowOpacity: 0,
           shadowRadius: 0,
-          backgroundColor: "#FFFFFF",
+          backgroundColor: colors.surface,
         },
         animatedStyle,
       ]}
@@ -252,12 +254,12 @@ const SwipeableRow = React.memo(function SwipeableRow({
         style={({ pressed }) => ({
           opacity: isNavigatingThis ? 0.65 : 1,
           backgroundColor: isNavigatingThis
-            ? "#F3F4F6"
+            ? (isDark ? "#262626" : "#F3F4F6")
             : pressed
-              ? "#F9FAFB"
+              ? (isDark ? "#1F1F1F" : "#F9FAFB")
               : unreadInfo.isUnread
-                ? "#F0FDF4"
-                : "#FFFFFF",
+                ? (isDark ? "rgba(56, 193, 133, 0.12)" : "#F0FDF4")
+                : colors.surface,
         })}
       >
         <View
@@ -296,13 +298,17 @@ const SwipeableRow = React.memo(function SwipeableRow({
           >
             <View style={{ flexDirection: "row", alignItems: "center", gap: 5 }}>
               <Text
-                className={`text-[15px] ${unreadInfo.isUnread ? "font-extrabold text-[#111827]" : "font-bold text-[#111827]"}`}
+                style={{
+                  fontSize: 15,
+                  fontWeight: unreadInfo.isUnread ? "800" : "700",
+                  color: colors.textPrimary,
+                }}
                 numberOfLines={1}
                 ellipsizeMode="tail"
               >
                 {info.participantName}
               </Text>
-              {info.isAnonymous && <Drama size={13} color="#1A6B3C" />}
+              {info.isAnonymous && <Drama size={13} color={colors.primary} />}
               {info.dayStreak > 0 && (
                 <ChatStreakBadge
                   dayStreak={info.dayStreak}
@@ -316,7 +322,7 @@ const SwipeableRow = React.memo(function SwipeableRow({
                 return (
                   <Text
                     className="text-[13px] mt-0.5"
-                    style={{ color: "#9CA3AF", fontStyle: "italic" }}
+                    style={{ color: colors.textMuted, fontStyle: "italic" }}
                     numberOfLines={1}
                     ellipsizeMode="tail"
                   >
@@ -328,7 +334,7 @@ const SwipeableRow = React.memo(function SwipeableRow({
                 return (
                   <Text
                     className="text-[13px] mt-0.5"
-                    style={{ color: "#9CA3AF", fontStyle: "italic" }}
+                    style={{ color: colors.textMuted, fontStyle: "italic" }}
                     numberOfLines={1}
                     ellipsizeMode="tail"
                   >
@@ -352,7 +358,7 @@ const SwipeableRow = React.memo(function SwipeableRow({
                 <Text
                   className="text-[13px] mt-0.5"
                   style={{
-                    color: unreadInfo.isUnread ? "#111827" : "#6B7280",
+                    color: unreadInfo.isUnread ? colors.textPrimary : colors.textSecondary,
                     fontWeight: unreadInfo.isUnread ? "700" : "400",
                   }}
                   numberOfLines={1}
@@ -370,7 +376,7 @@ const SwipeableRow = React.memo(function SwipeableRow({
               <Text
                 style={{
                   fontSize: 11,
-                  color: unreadInfo.isUnread ? "#1A6B3C" : "#9CA3AF",
+                  color: unreadInfo.isUnread ? colors.primary : colors.textMuted,
                   fontWeight: unreadInfo.isUnread ? "700" : "400",
                   marginBottom: unreadInfo.isUnread ? 4 : 0,
                 }}
@@ -409,6 +415,7 @@ const PAGE_SIZE = 20; // conversations shown per page (client-side virtual pagin
 
 export default function MessagesScreen() {
   const { user, accessToken } = useAuth();
+  const { colors, isDark } = useTheme();
   const [conversations, setConversations] = useState<Conversation[]>(() =>
     user?.id ? getMemoryConversations(user.id) || [] : []
   );
@@ -871,14 +878,14 @@ export default function MessagesScreen() {
 
   if (loading && conversations.length === 0) {
     return (
-      <View className="flex-1 bg-background items-center justify-center">
-        <ActivityIndicator color="#1A6B3C" />
+      <View style={{ flex: 1, backgroundColor: colors.background, alignItems: "center", justifyContent: "center" }}>
+        <ActivityIndicator color={colors.primary} />
       </View>
     );
   }
 
   return (
-    <View className="flex-1 bg-surface">
+    <View style={{ flex: 1, backgroundColor: colors.surface }}>
       <ScreenHeader title="Messages" hideAccent hideDivider />
 
       {/* Delete Confirmation Modal */}
@@ -891,7 +898,7 @@ export default function MessagesScreen() {
         <Pressable
           style={{
             flex: 1,
-            backgroundColor: "rgba(0,0,0,0.45)",
+            backgroundColor: "rgba(0,0,0,0.5)",
             justifyContent: "center",
             alignItems: "center",
           }}
@@ -899,7 +906,7 @@ export default function MessagesScreen() {
         >
           <View
             style={{
-              backgroundColor: "#FFFFFF",
+              backgroundColor: colors.surface,
               borderRadius: 20,
               padding: 24,
               width: "90%",
@@ -909,6 +916,8 @@ export default function MessagesScreen() {
               shadowOpacity: 0.18,
               shadowRadius: 12,
               elevation: 8,
+              borderWidth: 1,
+              borderColor: colors.border,
             }}
           >
             <View
@@ -916,7 +925,7 @@ export default function MessagesScreen() {
                 width: 52,
                 height: 52,
                 borderRadius: 26,
-                backgroundColor: "#FEF2F2",
+                backgroundColor: isDark ? "rgba(239, 68, 68, 0.15)" : "#FEF2F2",
                 alignItems: "center",
                 justifyContent: "center",
                 alignSelf: "center",
@@ -930,7 +939,7 @@ export default function MessagesScreen() {
               style={{
                 fontSize: 17,
                 fontWeight: "700",
-                color: "#111827",
+                color: colors.textPrimary,
                 textAlign: "center",
                 marginBottom: 6,
               }}
@@ -940,14 +949,14 @@ export default function MessagesScreen() {
             <Text
               style={{
                 fontSize: 14,
-                color: "#6B7280",
+                color: colors.textSecondary,
                 textAlign: "center",
                 marginBottom: 24,
                 lineHeight: 20,
               }}
             >
               Remove your chat with{" "}
-              <Text style={{ fontWeight: "700", color: "#111827" }}>
+              <Text style={{ fontWeight: "700", color: colors.textPrimary }}>
                 {deleteTargetName}
               </Text>
               {"? This will hide it from your chat list."}
@@ -961,12 +970,12 @@ export default function MessagesScreen() {
                   paddingVertical: 13,
                   borderRadius: 12,
                   borderWidth: 1,
-                  borderColor: "#E5E7EB",
-                  backgroundColor: "#F9FAFB",
+                  borderColor: colors.border,
+                  backgroundColor: colors.surfaceMuted,
                   alignItems: "center",
                 }}
               >
-                <Text style={{ fontSize: 15, fontWeight: "600", color: "#374151" }}>
+                <Text style={{ fontSize: 15, fontWeight: "600", color: colors.textSecondary }}>
                   Cancel
                 </Text>
               </Pressable>
@@ -992,22 +1001,35 @@ export default function MessagesScreen() {
       {/* Search bar */}
       <View className="px-4 pt-3.5 pb-3">
         <View
-          className="flex-row items-center bg-gray-100 rounded-full px-3.5"
-          style={{ paddingVertical: 8 }}
+          style={{
+            flexDirection: "row",
+            alignItems: "center",
+            backgroundColor: colors.surfaceMuted,
+            borderRadius: 999,
+            paddingHorizontal: 14,
+            paddingVertical: 8,
+            borderWidth: 1,
+            borderColor: colors.border,
+          }}
         >
-          <Search size={16} color="#9CA3AF" />
+          <Search size={16} color={colors.textSecondary} />
           <TextInput
             ref={searchInputRef}
             value={searchQuery}
             onChangeText={setSearchQuery}
             placeholder="Search chats..."
-            placeholderTextColor="#9CA3AF"
-            className="flex-1 ml-2 text-textPrimary text-sm font-jakarta"
-            style={{ paddingVertical: 0 }}
+            placeholderTextColor={colors.textMuted}
+            style={{
+              flex: 1,
+              marginLeft: 8,
+              fontSize: 14,
+              color: colors.textPrimary,
+              paddingVertical: 0,
+            }}
           />
           {searchQuery.length > 0 && (
             <Pressable onPress={() => setSearchQuery("")} hitSlop={8}>
-              <X size={15} color="#9CA3AF" />
+              <X size={15} color={colors.textSecondary} />
             </Pressable>
           )}
         </View>

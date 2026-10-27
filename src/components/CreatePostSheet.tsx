@@ -19,6 +19,7 @@ import { X, Image as ImageIcon, Globe, Users } from "lucide-react-native";
 import * as ImagePicker from "expo-image-picker";
 import { Button } from "./Button";
 import { useAuth } from "@/lib/auth/AuthContext";
+import { useTheme } from "@/context/ThemeContext";
 import { createPost } from "@/lib/api/feed";
 import { uploadPostFiles, LocalFile } from "@/lib/api/media";
 import type { PostAudience } from "@/types/feed";
@@ -38,6 +39,7 @@ export function CreatePostSheet({
 }: CreatePostSheetProps) {
   const insets = useSafeAreaInsets();
   const { accessToken } = useAuth();
+  const { colors, isDark } = useTheme();
   const { isKeyboardVisible } = useKeyboard();
   const [content, setContent] = useState("");
   const [audience, setAudience] = useState<PostAudience>("public");
@@ -125,7 +127,7 @@ export function CreatePostSheet({
         <View
           style={{
             flex: 1,
-            backgroundColor: "#FDFCFB",
+            backgroundColor: colors.surface,
             paddingTop: insets.top + 8,
           }}
         >
@@ -138,14 +140,14 @@ export function CreatePostSheet({
             paddingHorizontal: 16,
             paddingBottom: 12,
             borderBottomWidth: 1,
-            borderBottomColor: "#E2DED7",
+            borderBottomColor: colors.border,
           }}
         >
           <Pressable onPress={onClose} hitSlop={10}>
-            <X size={22} color="#6B7280" />
+            <X size={22} color={colors.textSecondary} />
           </Pressable>
 
-          <Text style={{ fontSize: 16, fontWeight: "700", color: "#111827" }}>
+          <Text style={{ fontSize: 16, fontWeight: "700", color: colors.textPrimary }}>
             Create Post
           </Text>
 
@@ -185,13 +187,13 @@ export function CreatePostSheet({
               value={content}
               onChangeText={(t) => setContent(t.slice(0, MAX_LENGTH))}
               placeholder="What's happening on campus?"
-              placeholderTextColor="#9CA3AF"
+              placeholderTextColor={colors.textMuted}
               multiline
               autoFocus
               style={{
                 minHeight: 120,
                 fontSize: 17,
-                color: "#111827",
+                color: colors.textPrimary,
                 lineHeight: 24,
                 textAlignVertical: "top",
               }}
@@ -256,7 +258,7 @@ export function CreatePostSheet({
             paddingHorizontal: 16,
             paddingVertical: 12,
             borderTopWidth: 1,
-            borderTopColor: "#E2DED7",
+            borderTopColor: colors.border,
             paddingBottom: isKeyboardVisible
               ? (Platform.OS === "ios" ? 10 : 8)
               : Math.max(insets.bottom + 8, 12),
@@ -269,11 +271,11 @@ export function CreatePostSheet({
               disabled={selectedImages.length >= 4}
               style={{ opacity: selectedImages.length >= 4 ? 0.4 : 1 }}
             >
-              <ImageIcon size={24} color="#1A6B3C" />
+              <ImageIcon size={24} color={colors.primary} />
             </Pressable>
 
             {selectedImages.length > 0 && (
-              <Text style={{ fontSize: 12, fontWeight: "600", color: "#1A6B3C" }}>
+              <Text style={{ fontSize: 12, fontWeight: "600", color: colors.primary }}>
                 {selectedImages.length}/4 photo{selectedImages.length > 1 ? "s" : ""}
               </Text>
             )}
@@ -287,16 +289,16 @@ export function CreatePostSheet({
                 flexDirection: "row",
                 alignItems: "center",
                 gap: 4,
-                backgroundColor: "#F0EDE8",
+                backgroundColor: colors.surfaceMuted,
                 borderRadius: 14,
                 paddingHorizontal: 10,
                 paddingVertical: 5,
               }}
             >
               {audience === "public" ? (
-                <Globe size={13} color="#1A6B3C" />
+                <Globe size={13} color={colors.primary} />
               ) : (
-                <Users size={13} color="#1A6B3C" />
+                <Users size={13} color={colors.primary} />
               )}
               <Text
                 style={{

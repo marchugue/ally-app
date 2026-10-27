@@ -177,7 +177,7 @@ export function UpdateModal({
 
           {/* Version Pills */}
           <View style={{ flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 6, marginBottom: 16 }}>
-            <View style={{ paddingHorizontal: 10, paddingVertical: 4, backgroundColor: '#F0EDE8', borderRadius: 12 }}>
+            <View style={{ paddingHorizontal: 10, paddingVertical: 4, backgroundColor: '#F3F4F6', borderRadius: 12 }}>
               <Text style={{ fontSize: 12, color: '#6B7280', fontWeight: '600' }}>v{currentVersion}</Text>
             </View>
             <Text style={{ color: '#1A6B3C', fontWeight: '700' }}>→</Text>
@@ -218,7 +218,7 @@ export function UpdateModal({
             </View>
           ) : (
             /* Release Notes */
-            <View style={{ backgroundColor: '#F7F4EF', borderRadius: 16, padding: 14, marginBottom: 20 }}>
+            <View style={{ backgroundColor: '#F9FAFB', borderRadius: 16, padding: 14, marginBottom: 20, borderWidth: 1, borderColor: '#F3F4F6' }}>
               <Text style={{ fontSize: 11, fontWeight: '700', color: '#1A6B3C', marginBottom: 4, letterSpacing: 0.5 }}>
                 WHAT'S NEW
               </Text>

@@ -17,6 +17,7 @@ import { KeyboardGestureArea } from "react-native-keyboard-controller";
 import { useKeyboard } from "@/hooks/useKeyboard";
 import { KeyboardHugView } from "@/components/KeyboardHugView";
 import { useAuth } from "@/lib/auth/AuthContext";
+import { useTheme } from "@/context/ThemeContext";
 import {
   getPost,
   likePost,
@@ -48,6 +49,7 @@ export default function PostDetailScreen() {
   const insets = useSafeAreaInsets();
   const { postId } = useLocalSearchParams<{ postId: string }>();
   const { user, accessToken } = useAuth();
+  const { colors, isDark } = useTheme();
 
   const [post, setPost] = useState<FeedPost | null>(null);
   const [comments, setComments] = useState<Comment[]>([]);
@@ -193,25 +195,25 @@ export default function PostDetailScreen() {
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: "#F7F4EF" }}>
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
       {/* Header (pinned to top) */}
       <View
         style={{
           paddingTop: insets.top + 8,
           paddingBottom: 12,
           paddingHorizontal: 16,
-          backgroundColor: "#FFFFFF",
+          backgroundColor: colors.surface,
           borderBottomWidth: 1,
-          borderBottomColor: "#E2DED7",
+          borderBottomColor: colors.border,
           flexDirection: "row",
           alignItems: "center",
           gap: 12,
         }}
       >
         <Pressable onPress={() => router.back()} hitSlop={10}>
-          <ArrowLeft size={22} color="#111827" />
+          <ArrowLeft size={22} color={colors.textPrimary} />
         </Pressable>
-        <Text style={{ fontSize: 17, fontWeight: "700", color: "#111827" }}>
+        <Text style={{ fontSize: 17, fontWeight: "700", color: colors.textPrimary }}>
           Post
         </Text>
       </View>
@@ -219,7 +221,7 @@ export default function PostDetailScreen() {
       <KeyboardHugView
         style={{
           flex: 1,
-          backgroundColor: "#F7F4EF",
+          backgroundColor: colors.background,
         }}
         keyboardVerticalOffset={0}
       >
@@ -246,7 +248,7 @@ export default function PostDetailScreen() {
                 style={{
                   fontSize: 13,
                   fontWeight: "600",
-                  color: "#374151",
+                  color: colors.textSecondary,
                 }}
               >
                 Comments ({comments.length})
@@ -271,7 +273,7 @@ export default function PostDetailScreen() {
                 paddingHorizontal: 16,
                 paddingVertical: 12,
                 borderBottomWidth: 1,
-                borderBottomColor: "#F0EDE8",
+                borderBottomColor: colors.borderSubtle,
               }}
             >
               <ClickableAvatar
@@ -308,7 +310,7 @@ export default function PostDetailScreen() {
                     style={{ flexDirection: "row", alignItems: "center", gap: 6 }}
                   >
                     <Text
-                      style={{ fontSize: 13, fontWeight: "700", color: "#111827" }}
+                      style={{ fontSize: 13, fontWeight: "700", color: colors.textPrimary }}
                     >
                       {isCommentAlly ? `@${authorHandle}` : authorDisplayName}
                     </Text>
@@ -338,7 +340,7 @@ export default function PostDetailScreen() {
                 <Text
                   style={{
                     fontSize: 14,
-                    color: "#374151",
+                    color: colors.textPrimary,
                     lineHeight: 20,
                     marginTop: 3,
                   }}
@@ -425,7 +427,7 @@ export default function PostDetailScreen() {
       />
       </KeyboardGestureArea>
 
-      {/* Comment input */}
+      {/* Comment Input */}
       <View
         style={{
           flexDirection: "row",
@@ -433,8 +435,8 @@ export default function PostDetailScreen() {
           paddingHorizontal: 12,
           paddingVertical: 8,
           borderTopWidth: 1,
-          borderTopColor: "#E2DED7",
-          backgroundColor: "#FFFFFF",
+          borderTopColor: colors.border,
+          backgroundColor: colors.surface,
           paddingBottom: isKeyboardVisible
             ? 8
             : Math.max(insets.bottom + 4, 12),
@@ -444,10 +446,10 @@ export default function PostDetailScreen() {
         <View
           style={{
             flex: 1,
-            backgroundColor: "#F7F4EF",
+            backgroundColor: colors.surfaceMuted,
             borderRadius: 20,
             borderWidth: 1,
-            borderColor: "#E2DED7",
+            borderColor: colors.border,
             paddingHorizontal: 16,
             paddingVertical: 8,
           }}
@@ -456,11 +458,11 @@ export default function PostDetailScreen() {
             value={commentText}
             onChangeText={setCommentText}
             placeholder="Write a comment…"
-            placeholderTextColor="#9CA3AF"
+            placeholderTextColor={colors.textMuted}
             multiline
             style={{
               fontSize: 14,
-              color: "#111827",
+              color: colors.textPrimary,
               maxHeight: 80,
               lineHeight: 20,
             }}

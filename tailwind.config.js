@@ -1,5 +1,6 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
+  darkMode: "class",
   // Matches your existing content paths exactly
   content: ["./app/**/*.{js,jsx,ts,tsx}", "./src/**/*.{js,jsx,ts,tsx}"],
   presets: [require("nativewind/preset")],
@@ -8,12 +9,12 @@ module.exports = {
       colors: {
         // ── Ally-jis web palette (replaces dark theme) ───────────────────
         // Backgrounds
-        background:   "#F7F4EF",   // warm cream — main screen bg
+        background:   "#FFFFFF",   // clean white — main screen bg
         surface:      "#FFFFFF",   // white — cards, inputs
-        surfaceMuted: "#F0EDE8",   // slightly deeper cream — muted areas
+        surfaceMuted: "#F9FAFB",   // clean neutral light gray — muted areas
 
         // Borders
-        border: "#E2DED7",         // soft warm-gray
+        border: "#E5E7EB",         // clean neutral gray
 
         // Brand — forest green (replaces purple primary)
         // Flat value so `bg-primary` works without `.DEFAULT`
