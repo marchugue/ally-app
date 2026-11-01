@@ -87,6 +87,22 @@ export default function LoginScreen() {
         new Promise((resolve) => setTimeout(resolve, 1000)),
       ]);
 
+      const isBanned = Boolean(
+        session.user?.user_metadata?.is_banned === true ||
+        session.user?.user_metadata?.status === "banned" ||
+        session.user?.user_metadata?.is_suspended === true ||
+        session.user?.user_metadata?.status === "suspended" ||
+        (session.user as any)?.is_banned === true ||
+        (session.user as any)?.status === "banned" ||
+        (session.user as any)?.is_suspended === true ||
+        (session.user as any)?.status === "suspended"
+      );
+
+      if (isBanned) {
+        router.replace("/pages/banned" as any);
+        return;
+      }
+
       const emailType = session.user?.user_metadata?.email_type;
       const isChmsu =
         emailType === "chmsu" ||
@@ -104,6 +120,14 @@ export default function LoginScreen() {
         isPending ? ("/pages/pending-approval" as any) : "/(tabs)"
       );
     } catch (error: any) {
+      // Banned or suspended account — redirect directly to sanction page
+      if (
+        (error?.status === 403 || error?.status === 400) &&
+        (error?.isBanned || error?.message?.toLowerCase().includes("banned") || error?.message?.toLowerCase().includes("suspended"))
+      ) {
+        router.replace("/pages/banned" as any);
+        return;
+      }
       // OTP not yet verified — redirect to verify screen
       if (error?.requiresOtp && error?.userId) {
         router.replace(

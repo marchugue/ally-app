@@ -1,3 +1,4 @@
+import { getAnonymousDisplayName, isAnonymousHandle } from "@/lib/anonymousHandle";
 import React, { useState, useMemo, useEffect, useCallback, useRef } from "react";
 import {
   View,
@@ -25,7 +26,6 @@ import {
   MoreVertical,
   Heart,
   MessageCircle,
-  Bookmark,
   Send,
   X,
   Flag,
@@ -40,6 +40,7 @@ import { useKeyboard } from "@/hooks/useKeyboard";
 import { KeyboardHugView } from "@/components/KeyboardHugView";
 import { resolveImageUri, UserAvatar } from "@/components/UserAvatar";
 import { AnonymousAvatar } from "@/components/AnonymousAvatar";
+import { getDeterministicAnonymousAvatar } from "@/constants/matchOptions";
 import { useAuth } from "@/lib/auth/AuthContext";
 import {
   likePost,
@@ -69,6 +70,7 @@ export default function MediaPreviewScreen() {
     authorName,
     authorUsername,
     authorAvatar,
+    avatarKey: paramAvatarKey,
     authorId,
     isAlly,
     createdAt,
@@ -86,6 +88,7 @@ export default function MediaPreviewScreen() {
     authorName?: string;
     authorUsername?: string;
     authorAvatar?: string;
+    avatarKey?: string;
     authorId?: string;
     isAlly?: string;
     createdAt?: string;
@@ -129,12 +132,28 @@ export default function MediaPreviewScreen() {
 
   const hasMedia = parsedUrls.length > 0;
   const effectiveCaption = fetchedPost?.content || caption || "";
-  const effectiveAuthorName =
-    authorUsername && authorUsername !== "anonymous"
-      ? `@${authorUsername}`
-      : fetchedPost?.author?.full_name || fetchedPost?.author?.username || authorName || "Anonymous Peer";
-  const effectiveAuthorAvatar = fetchedPost?.author?.avatar_url || authorAvatar || "";
   const effectiveAuthorId = fetchedPost?.author?.id || authorId;
+  const effectiveIsAlly = fetchedPost?.author
+    ? Boolean(
+        (fetchedPost.author.is_ally &&
+          !fetchedPost.author.is_unrevealed_match &&
+          fetchedPost.author.username !== "anonymous") ||
+          fetchedPost.author.id === user?.id
+      )
+    : Boolean(isAlly === "true" && authorUsername && authorUsername !== "anonymous");
+  const effectiveAuthorName = effectiveIsAlly
+    ? fetchedPost?.author?.full_name ||
+      (fetchedPost?.author?.username && fetchedPost.author.username !== "anonymous"
+        ? `@${fetchedPost.author.username}`
+        : authorUsername && authorUsername !== "anonymous"
+        ? `@${authorUsername}`
+        : authorName || "Student")
+    : getAnonymousDisplayName(fetchedPost?.author, authorName, effectiveAuthorId);
+  const effectiveAuthorAvatar = effectiveIsAlly ? (fetchedPost?.author?.avatar_url || authorAvatar || "") : "";
+  const effectiveAvatarKey =
+    fetchedPost?.author?.avatarKey ||
+    paramAvatarKey ||
+    getDeterministicAnonymousAvatar(effectiveAuthorId);
   const isPostFlagged = Boolean(
     fetchedPost?.is_flagged ||
     fetchedPost?.is_restricted ||
@@ -169,10 +188,9 @@ export default function MediaPreviewScreen() {
     setActiveIndex(startIndex);
   }, [startIndex]);
 
-  // Like & Save state
+  // Like state
   const [liked, setLiked] = useState(rawLiked === "true");
   const [likesCount, setLikesCount] = useState(parseInt(rawLikes || "0", 10) || 0);
-  const [saved, setSaved] = useState(false);
 
   // Modals state
   const [showSettingsModal, setShowSettingsModal] = useState(false);
@@ -374,11 +392,6 @@ export default function MediaPreviewScreen() {
     }
   };
 
-  const handleToggleSave = () => {
-    setSaved(!saved);
-    Alert.alert(saved ? "Unsaved" : "Saved", saved ? "Post removed from saves." : "Post saved to your collection.");
-  };
-
   return (
     <View style={styles.container}>
       {/* ── Background Media Viewer / Text Content Slide ────────────────────── */}
@@ -546,18 +559,6 @@ export default function MediaPreviewScreen() {
               {comments.length > 0 ? comments.length : rawComments || "Comment"}
             </Text>
           </Pressable>
-
-          {/* Save */}
-          <Pressable onPress={handleToggleSave} style={styles.actionBtn} hitSlop={8}>
-            <View style={styles.actionIconWrapper}>
-              <Bookmark
-                size={28}
-                color={saved ? "#16A34A" : "#FFFFFF"}
-                fill={saved ? "#16A34A" : "#FFFFFF"}
-              />
-            </View>
-            <Text style={styles.actionLabel}>{saved ? "Saved" : "Save"}</Text>
-          </Pressable>
         </View>
       )}
 
@@ -663,15 +664,15 @@ export default function MediaPreviewScreen() {
                 params: {
                   userId: effectiveAuthorId,
                   avatarUrl: effectiveAuthorAvatar || "",
-                  avatarKey: effectiveAuthorAvatar || "",
+                  avatarKey: effectiveAvatarKey || "",
                   authorName: effectiveAuthorName,
                 },
               } as any);
             }
           }}
         >
-          {isAlly === "false" || (!effectiveAuthorAvatar && authorUsername === "anonymous") ? (
-            <AnonymousAvatar size={32} />
+          {!effectiveIsAlly || !effectiveAuthorAvatar ? (
+            <AnonymousAvatar avatarKey={effectiveAvatarKey} size={32} />
           ) : (
             <UserAvatar avatar={effectiveAuthorAvatar} size="sm" />
           )}
@@ -738,18 +739,6 @@ export default function MediaPreviewScreen() {
           <Pressable style={styles.bottomSheetContainer} onPress={(e) => e.stopPropagation()}>
             <View style={styles.pillHandle} />
             <Text style={styles.sheetTitle}>Post Settings</Text>
-
-            <Pressable
-              onPress={handleToggleSave}
-              style={styles.sheetRow}
-            >
-              <View style={styles.sheetRowLeft}>
-                <Bookmark size={20} color={saved ? "#1A6B3C" : "#374151"} />
-                <Text style={styles.sheetRowText}>
-                  {saved ? "Remove from Saved" : "Save Post"}
-                </Text>
-              </View>
-            </Pressable>
 
             <Pressable
               onPress={() => {
@@ -843,9 +832,18 @@ export default function MediaPreviewScreen() {
                     renderItem={({ item }) => {
                       const isReply = Boolean(item.parent_comment_id);
                       const isOwn = item.author?.id === user?.id;
-                      const isCommentAlly = Boolean(item.author?.is_ally || isOwn);
+                      const isCommentAlly = Boolean(
+                        (item.author?.is_ally &&
+                          !item.author?.is_unrevealed_match &&
+                          item.author?.username !== "anonymous") ||
+                          isOwn
+                      );
                       const authorHandle = isCommentAlly ? item.author?.username || "user" : "anonymous";
-                      const authorDisplayName = isCommentAlly ? (item.author?.full_name || `@${item.author?.username}`) : "Anonymous Peer";
+                      const authorDisplayName = isCommentAlly
+                        ? (item.author?.full_name || `@${item.author?.username}`)
+                        : getAnonymousDisplayName(item.author);
+                      const commentAvatarKey =
+                        item.author?.avatarKey || getDeterministicAnonymousAvatar(item.author?.id);
 
                       // Format content: convert legacy '#' mention to '@', highlight mentions
                       const contentParts = item.content.split(/([@#][a-zA-Z0-9_-]+)/g);
@@ -858,41 +856,39 @@ export default function MediaPreviewScreen() {
                           ]}
                         >
                           <TouchableOpacity
-                            disabled={!isCommentAlly}
                             activeOpacity={0.7}
                             onPress={() => {
-                              if (item.author?.id && isCommentAlly) {
+                              if (item.author?.id) {
                                 router.push({
                                   pathname: "/pages/user-profile",
                                   params: {
                                     userId: item.author.id,
-                                    avatarKey: item.author?.avatarKey || "",
-                                    avatarUrl: item.author?.avatar_url || "",
+                                    avatarKey: commentAvatarKey,
+                                    avatarUrl: isCommentAlly ? (item.author?.avatar_url || "") : "",
                                     authorName: isCommentAlly ? `@${authorHandle}` : authorDisplayName,
                                   },
                                 } as any);
                               }
                             }}
                           >
-                            {isCommentAlly ? (
+                            {isCommentAlly && item.author?.avatar_url ? (
                               <UserAvatar avatar={item.author?.avatar_url} size="sm" />
                             ) : (
-                              <AnonymousAvatar avatarKey={item.author?.avatarKey || "fox"} size={28} />
+                              <AnonymousAvatar avatarKey={commentAvatarKey} size={28} />
                             )}
                           </TouchableOpacity>
                           <View style={{ flex: 1 }}>
                             <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
                               <TouchableOpacity
-                                disabled={!isCommentAlly}
                                 activeOpacity={0.7}
                                 onPress={() => {
-                                  if (item.author?.id && isCommentAlly) {
+                                  if (item.author?.id) {
                                     router.push({
                                       pathname: "/pages/user-profile",
                                       params: {
                                         userId: item.author.id,
-                                        avatarKey: item.author?.avatarKey || "",
-                                        avatarUrl: item.author?.avatar_url || "",
+                                        avatarKey: commentAvatarKey,
+                                        avatarUrl: isCommentAlly ? (item.author?.avatar_url || "") : "",
                                         authorName: isCommentAlly ? `@${authorHandle}` : authorDisplayName,
                                       },
                                     } as any);

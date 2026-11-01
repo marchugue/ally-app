@@ -1,3 +1,4 @@
+import { getAnonymousDisplayName, getAnonymousAvatarKey, isAnonymousHandle } from "@/lib/anonymousHandle";
 import React, { Component, useCallback, useEffect, useState, useRef, useMemo } from "react";
 import {
   View,
@@ -85,7 +86,6 @@ import {
   isUserMuted,
 } from "@/lib/api/moderation";
 import { endMatch as apiEndMatch } from "@/lib/api/matchmaking";
-import { stageName, resolveStageForStreak } from "@/constants/matchOptions";
 import { getSocket } from "@/lib/socket";
 import * as ImagePicker from "expo-image-picker";
 import { uploadChatFile, type LocalFile } from "@/lib/api/media";
@@ -376,6 +376,15 @@ export default function ConversationScreen() {
     (partnerUserId && checkIsOnline(partnerUserId))
   );
   const [matchInfo, setMatchInfo] = useState<any>(null);
+  const partnerDisplayName: string = getAnonymousDisplayName(
+    {
+      id: partnerUserId || matchInfo?.partnerUserId || matchInfo?.partnerId,
+      anonymous_handle: matchInfo?.partnerAlias,
+      full_name: prefillName,
+    },
+    undefined,
+    partnerUserId
+  );
   const [convStreak, setConvStreak] = useState<number>(
     prefillDayStreak !== undefined ? parseInt(prefillDayStreak, 10) || 0 : 0
   );
@@ -428,7 +437,7 @@ export default function ConversationScreen() {
       matchInfo?.matchPoints ?? matchInfo?.stagePoints ?? 0,
       avatarReveal,
       {
-        partnerAvatar: matchInfo?.partnerAvatar || prefillAvatar || "fox",
+        partnerAvatar: getAnonymousAvatarKey(matchInfo || otherProfile, prefillAvatar, partnerUserId || otherProfile?.id),
         previewUrl: otherProfile?.avatar_url,
       }
     );
@@ -453,14 +462,18 @@ export default function ConversationScreen() {
   }, [sharedInterests, matchInfo?.sharedInterests]);
 
   const participantDisplayName = isAnonymous
-    ? matchInfo?.partnerAlias || prefillName || "Anonymous Ally"
-    : otherProfile?.full_name || otherProfile?.username || prefillName || "User";
+    ? partnerDisplayName
+    : ((otherProfile as any)?.username === "anonymous" || isAnonymousHandle(otherProfile?.full_name) || ((otherProfile as any)?.anonymous_handle && !otherProfile?.full_name))
+      ? getAnonymousDisplayName(otherProfile, prefillName)
+      : (otherProfile?.full_name || otherProfile?.username || prefillName || "User");
 
   const participantAvatarSrc = isAnonymous
-    ? matchInfo?.partnerAvatar || prefillAvatar || "fox"
-    : otherProfile?.avatar_url || prefillAvatar || null;
+    ? getAnonymousAvatarKey(matchInfo, prefillAvatar, partnerUserId)
+    : (!otherProfile || (otherProfile as any)?.username === "anonymous" || isAnonymousHandle(otherProfile?.full_name) || ((otherProfile as any)?.anonymous_handle && !otherProfile?.full_name))
+      ? getAnonymousAvatarKey(otherProfile, prefillAvatar, otherProfile?.id)
+      : (otherProfile?.avatar_url || prefillAvatar || null);
 
-  const partnerAvatarKey = matchInfo?.partnerAvatar || prefillAvatar || "fox";
+  const partnerAvatarKey = getAnonymousAvatarKey(matchInfo || otherProfile, prefillAvatar, partnerUserId || otherProfile?.id);
 
   // Media sharing is always unlocked (streak is used as multiplier only)
   const isImagesLocked = false;
@@ -835,8 +848,12 @@ export default function ConversationScreen() {
         }
         setOtherProfile({
           id: conv.matchInfo?.id || "anonymous",
-          full_name: conv.matchInfo?.partnerAlias || prefillName || "Anonymous Ally",
-          avatar_url: conv.matchInfo?.partnerAvatar || prefillAvatar || "fox",
+          full_name: getAnonymousDisplayName({
+            id: otherMember?.user_id || conv.matchInfo?.id,
+            anonymous_handle: conv.matchInfo?.partnerAlias,
+            full_name: prefillName,
+          }),
+          avatar_url: getAnonymousAvatarKey(conv.matchInfo, prefillAvatar, otherMember?.user_id),
         } as any);
         return;
       }
@@ -935,10 +952,14 @@ export default function ConversationScreen() {
         setMatchInfo((prev: any) => ({
           ...prev,
           stage: payload.stage ?? prev?.stage,
+          stageName: payload.stageName ?? prev?.stageName,
+          effectiveMultiplier: payload.effectiveMultiplier ?? prev?.effectiveMultiplier,
           stagePoints: payload.downgraded ? (prev?.stagePoints ?? 0) : (payload.stagePoints ?? 0),
           dayStreak: payload.dayStreak ?? prev?.dayStreak,
           streakActiveToday: payload.downgraded ? false : true,
         }));
+        const mid = payload?.matchId || matchInfo?.matchId || matchInfo?.id;
+        if (mid) void fetchAvatarReveal(mid);
       }
     };
 
@@ -951,7 +972,11 @@ export default function ConversationScreen() {
           ...prev,
           stagePoints: payload.stagePoints ?? prev?.stagePoints,
           matchPoints: payload.matchPoints ?? prev?.matchPoints,
+          profileUnlockTarget: payload.profileUnlockTarget ?? prev?.profileUnlockTarget,
+          isProfileUnlocked: payload.isProfileUnlocked ?? prev?.isProfileUnlocked,
           stage: payload.stage ?? prev?.stage,
+          stageName: payload.stageName ?? prev?.stageName,
+          effectiveMultiplier: payload.effectiveMultiplier ?? prev?.effectiveMultiplier,
         }));
         void fetchAvatarReveal(payload.matchId);
       }
@@ -976,6 +1001,9 @@ export default function ConversationScreen() {
           setStreakState((prev) => prev ? {
             ...prev,
             dayStreak: streak,
+            stage: payload.stage ?? prev.stage,
+            stageName: payload.stageName ?? prev.stageName,
+            effectiveMultiplier: payload.effectiveMultiplier ?? prev.effectiveMultiplier,
             streakActiveToday: activeToday,
             streakStatus: payload.streakStatus ?? (isInactive ? 'lapsed' : 'active'),
             streakRestoreDeadline: isRestored ? null : (payload.streakRestoreDeadline !== undefined ? payload.streakRestoreDeadline : prev.streakRestoreDeadline),
@@ -984,13 +1012,13 @@ export default function ConversationScreen() {
         }
         setMatchInfo((prev: any) => {
           if (!prev) return prev;
-          const nextStreak = streak;
-          const nextStage = resolveStageForStreak(prev.stage, nextStreak);
           return {
             ...prev,
-            dayStreak: nextStreak,
+            dayStreak: streak,
             streakActiveToday: activeToday,
-            stage: nextStage,
+            stage: payload.stage ?? (isInactive ? 1 : prev.stage),
+            stageName: payload.stageName ?? prev.stageName,
+            effectiveMultiplier: payload.effectiveMultiplier ?? (isInactive ? 1 : prev.effectiveMultiplier),
           };
         });
       }
@@ -1003,6 +1031,8 @@ export default function ConversationScreen() {
           setStreakState((prev) => prev ? {
             ...prev,
             dayStreak: 0,
+            stage: 1,
+            effectiveMultiplier: 1,
             streakActiveToday: false,
             streakStatus: 'lapsed',
             streakRestoreDeadline: payload.restore_deadline,
@@ -1015,7 +1045,8 @@ export default function ConversationScreen() {
             ...prev,
             dayStreak: 0,
             streakActiveToday: false,
-            stage: resolveStageForStreak(prev.stage, 0),
+            stage: 1,
+            effectiveMultiplier: 1,
           } : prev);
         } else if (payload.event_type === 'restored') {
           setStreakState((prev) => prev ? {
@@ -1033,7 +1064,6 @@ export default function ConversationScreen() {
             ...prev,
             dayStreak: payload.streak_count,
             streakActiveToday: true,
-            stage: resolveStageForStreak(prev.stage, payload.streak_count),
           } : prev);
         }
       }
@@ -1138,13 +1168,16 @@ export default function ConversationScreen() {
     if (!conversationId || !accessToken) return;
     try {
       const result = await restoreConversationStreak(conversationId, accessToken);
-      // Optimistically update local state — socket will confirm shortly
+      // Update local state from authoritative backend response
       setConvStreak(result.newStreak);
       setConvStreakActiveToday(true);
       setStreakRestoreDeadline(null); // window consumed
       setStreakState((prev) => prev ? {
         ...prev,
         dayStreak: result.newStreak,
+        stage: result.stage ?? prev.stage,
+        stageName: result.stageName ?? prev.stageName,
+        effectiveMultiplier: result.effectiveMultiplier ?? prev.effectiveMultiplier,
         streakActiveToday: true,
         streakStatus: 'active',
         streakRestoreDeadline: null,
@@ -1157,7 +1190,9 @@ export default function ConversationScreen() {
               ...prev,
               dayStreak: result.newStreak,
               streakActiveToday: true,
-              stage: resolveStageForStreak(prev.stage, result.newStreak),
+              stage: result.stage ?? prev.stage,
+              stageName: result.stageName ?? prev.stageName,
+              effectiveMultiplier: result.effectiveMultiplier ?? prev.effectiveMultiplier,
             }
           : prev
       );
@@ -1269,10 +1304,6 @@ export default function ConversationScreen() {
   // ── Pick media & take photo handlers (up to 6 images) ────────────────
   const handlePickMedia = useCallback(async () => {
     if (!conversationId || !accessToken) return;
-    if (isImagesLocked) {
-      Alert.alert("Feature Locked", "Photo and media sharing unlocks at Stage 3 of your roadmap.");
-      return;
-    }
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== "granted") {
@@ -1311,10 +1342,6 @@ export default function ConversationScreen() {
 
   const handleTakePhoto = useCallback(async () => {
     if (!conversationId || !accessToken) return;
-    if (isImagesLocked) {
-      Alert.alert("Feature Locked", "Photo and media sharing unlocks at Stage 3 of your roadmap.");
-      return;
-    }
     try {
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
       if (status !== "granted") {
@@ -1575,10 +1602,12 @@ export default function ConversationScreen() {
       else if (hasOlder && !hasNewer) groupPosition = "last";
 
       const isMine = item.data.sender_id === user?.id;
-      const partnerDisplayName = isAnonymous
-        ? (matchInfo?.partnerAlias || prefillName || "Anonymous Ally")
-        : (otherProfile?.username || otherProfile?.full_name || prefillName || "User");
-      const senderName = isMine ? "Me" : partnerDisplayName;
+      const resolvedPartnerName = isAnonymous
+        ? partnerDisplayName
+        : ((otherProfile as any)?.username === "anonymous" || isAnonymousHandle(otherProfile?.full_name) || ((otherProfile as any)?.anonymous_handle && !otherProfile?.full_name))
+          ? getAnonymousDisplayName(otherProfile, prefillName)
+          : (otherProfile?.username || otherProfile?.full_name || prefillName || "User");
+      const senderName = isMine ? "Me" : resolvedPartnerName;
 
       return (
         <SwipeableChatBubble
@@ -1598,8 +1627,8 @@ export default function ConversationScreen() {
           imagesLocked={isImagesLocked}
           isAnonymous={isAnonymous}
           avatarReveal={effectiveAvatarReveal}
-          partnerAvatar={matchInfo?.partnerAvatar || prefillAvatar || "fox"}
-          partnerProfileImage={otherProfile?.avatar_url}
+          partnerAvatar={partnerAvatarKey}
+          partnerProfileImage={participantAvatarSrc}
         />
       );
     },
@@ -1663,7 +1692,7 @@ export default function ConversationScreen() {
 
         {isAnonymous ? (
           <Pressable
-            onPress={() => router.push({ pathname: "/pages/roadmap" as any, params: { matchId: matchInfo?.matchId || matchInfo?.id || conversationId, stage: String(matchInfo?.stage ?? 1), stagePoints: String(matchInfo?.stagePoints ?? 0), dayStreak: String(convStreak || matchInfo?.dayStreak || 0), partnerAlias: matchInfo?.partnerAlias || prefillName || "Anonymous Ally", partnerAvatar: matchInfo?.partnerAvatar || prefillAvatar || "fox" } })}
+            onPress={() => router.push({ pathname: "/pages/roadmap" as any, params: { matchId: matchInfo?.matchId || matchInfo?.id || conversationId, stage: String(matchInfo?.stage ?? 1), stageName: matchInfo?.stageName || "", stagePoints: String(matchInfo?.stagePoints ?? 0), matchPoints: String(matchInfo?.matchPoints ?? matchInfo?.stagePoints ?? 0), profileUnlockTarget: String(matchInfo?.profileUnlockTarget ?? ""), dayStreak: String(convStreak || matchInfo?.dayStreak || 0), partnerAlias: partnerDisplayName, partnerAvatar: matchInfo?.partnerAvatar || prefillAvatar || "fox" } })}
             style={{ flex: 1, flexDirection: "row", alignItems: "center", gap: 10 }}
           >
             <RevealAvatar
@@ -1680,7 +1709,7 @@ export default function ConversationScreen() {
                   style={{ fontSize: 16, fontWeight: "700", color: "#111827", maxWidth: 160 }}
                   numberOfLines={1}
                 >
-                  {matchInfo?.partnerAlias || prefillName || "Anonymous Ally"}
+                  {partnerDisplayName}
                 </Text>
                 <Drama size={15} color="#1A6B3C" />
 
@@ -1719,7 +1748,7 @@ export default function ConversationScreen() {
         ) : (
           <>
             <UserAvatar
-              avatar={otherProfile?.avatar_url}
+              avatar={participantAvatarSrc}
               size="md"
               online={isOnline}
             />
@@ -1729,7 +1758,7 @@ export default function ConversationScreen() {
                   style={{ fontSize: 16, fontWeight: "700", color: "#111827", maxWidth: 160 }}
                   numberOfLines={1}
                 >
-                  {otherProfile?.full_name || otherProfile?.username || "User"}
+                  {participantDisplayName}
                 </Text>
 
                 {/* Streak badge — mirrors web */}
@@ -1774,10 +1803,14 @@ export default function ConversationScreen() {
             stage={matchInfo?.stage ?? 1}
             stagePoints={matchInfo?.stagePoints ?? 0}
             matchPoints={matchInfo?.matchPoints ?? 0}
+            profileUnlockTarget={matchInfo?.profileUnlockTarget}
+            progressPercent={matchInfo?.progressPercent}
+            isProfileUnlocked={matchInfo?.isProfileUnlocked}
+            effectiveMultiplier={matchInfo?.effectiveMultiplier}
             dayStreak={convStreak || matchInfo?.dayStreak || 0}
             avatarKey={matchInfo?.partnerAvatar || prefillAvatar || "fox"}
             avatarReveal={effectiveAvatarReveal}
-            onPress={() => router.push({ pathname: "/pages/roadmap" as any, params: { matchId: matchInfo?.matchId || matchInfo?.id || conversationId, stage: String(matchInfo?.stage ?? 1), stagePoints: String(matchInfo?.stagePoints ?? 0), dayStreak: String(convStreak || matchInfo?.dayStreak || 0), partnerAlias: matchInfo?.partnerAlias || prefillName || "Anonymous Ally", partnerAvatar: matchInfo?.partnerAvatar || prefillAvatar || "fox" } })}
+            onPress={() => router.push({ pathname: "/pages/roadmap" as any, params: { matchId: matchInfo?.matchId || matchInfo?.id || conversationId, stage: String(matchInfo?.stage ?? 1), stageName: matchInfo?.stageName || "", stagePoints: String(matchInfo?.stagePoints ?? 0), matchPoints: String(matchInfo?.matchPoints ?? matchInfo?.stagePoints ?? 0), profileUnlockTarget: String(matchInfo?.profileUnlockTarget ?? ""), dayStreak: String(convStreak || matchInfo?.dayStreak || 0), partnerAlias: partnerDisplayName, partnerAvatar: matchInfo?.partnerAvatar || prefillAvatar || "fox" } })}
             style={{ position: "absolute", top: 10, right: 14, zIndex: 30 }}
           />
         )}
@@ -2403,10 +2436,10 @@ export default function ConversationScreen() {
                 />
                 <View style={{ flex: 1 }}>
                   <Text style={{ fontSize: 16, fontWeight: "700", color: "#111827" }}>
-                    {matchInfo?.partnerAlias || prefillName || "Anonymous Ally"}
+                    {partnerDisplayName}
                   </Text>
                   <Text style={{ fontSize: 12, color: "#1A6B3C", fontWeight: "600" }}>
-                    {stageName(matchInfo?.stage ?? 0)} • {matchInfo?.dayStreak ?? 0}d streak
+                    {matchInfo?.stageName || "Anonymous Chat"} • {matchInfo?.dayStreak ?? 0}d streak
                   </Text>
                 </View>
               </View>
@@ -2440,7 +2473,7 @@ export default function ConversationScreen() {
                 label="View Clues & Roadmap"
                 onPress={() => {
                   setShowOverflow(false);
-                  router.push({ pathname: "/pages/roadmap" as any, params: { matchId: matchInfo?.matchId || matchInfo?.id || conversationId, stage: String(matchInfo?.stage ?? 1), stagePoints: String(matchInfo?.stagePoints ?? 0), dayStreak: String(convStreak || matchInfo?.dayStreak || 0), partnerAlias: matchInfo?.partnerAlias || prefillName || "Anonymous Ally", partnerAvatar: matchInfo?.partnerAvatar || prefillAvatar || "fox" } });
+                  router.push({ pathname: "/pages/roadmap" as any, params: { matchId: matchInfo?.matchId || matchInfo?.id || conversationId, stage: String(matchInfo?.stage ?? 1), stageName: matchInfo?.stageName || "", stagePoints: String(matchInfo?.stagePoints ?? 0), matchPoints: String(matchInfo?.matchPoints ?? matchInfo?.stagePoints ?? 0), profileUnlockTarget: String(matchInfo?.profileUnlockTarget ?? ""), dayStreak: String(convStreak || matchInfo?.dayStreak || 0), partnerAlias: partnerDisplayName, partnerAvatar: matchInfo?.partnerAvatar || prefillAvatar || "fox" } });
                 }}
               />
             )}
@@ -2583,7 +2616,7 @@ export default function ConversationScreen() {
           avatarUrl={effectiveAvatarReveal?.previewUrl}
           avatarKey={matchInfo?.partnerAvatar || prefillAvatar || "fox"}
           fullName={otherProfile?.full_name}
-          partnerAlias={matchInfo?.partnerAlias || prefillName || "Anonymous Ally"}
+          partnerAlias={partnerDisplayName}
         />
       )}
     </View>

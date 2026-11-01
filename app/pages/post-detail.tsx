@@ -1,3 +1,4 @@
+import { getAnonymousDisplayName, isAnonymousHandle } from "@/lib/anonymousHandle";
 import { useCallback, useEffect, useState, useRef } from "react";
 import {
   View,
@@ -236,7 +237,12 @@ export default function PostDetailScreen() {
             contentContainerStyle={{ paddingBottom: 20 }}
         ListHeaderComponent={
           <View>
-            <PostCard post={post} onToggleLike={toggleLike} />
+            <PostCard
+              post={post}
+              onToggleLike={toggleLike}
+              onUpdatePost={(updated) => setPost(updated)}
+              onDeletePost={() => router.back()}
+            />
             <View
               style={{
                 paddingHorizontal: 16,
@@ -258,9 +264,9 @@ export default function PostDetailScreen() {
         }
         renderItem={({ item }) => {
           const isOwn = item.author?.id === user?.id;
-          const isCommentAlly = Boolean(item.author?.is_ally || isOwn);
+          const isCommentAlly = Boolean((item.author?.is_ally && !item.author?.is_unrevealed_match && item.author?.username !== "anonymous") || isOwn);
           const authorHandle = isCommentAlly ? item.author?.username || "user" : "anonymous";
-          const authorDisplayName = isCommentAlly ? (item.author?.full_name || `@${item.author?.username}`) : "Anonymous Peer";
+          const authorDisplayName = isCommentAlly ? (item.author?.full_name || `@${item.author?.username}`) : getAnonymousDisplayName(item.author);
 
           // Format content: convert '#' to '@' and highlight mentions
           const contentParts = item.content.split(/([@#][a-zA-Z0-9_-]+)/g);
@@ -302,7 +308,7 @@ export default function PostDetailScreen() {
                             userId: item.author.id,
                             avatarKey: item.author?.avatarKey || "",
                             avatarUrl: item.author?.avatar_url || "",
-                            authorName: isCommentAlly ? (item.author.full_name || `@${item.author.username}`) : "Anonymous Peer",
+                            authorName: isCommentAlly ? (item.author.full_name || `@${item.author.username}`) : getAnonymousDisplayName(item.author),
                           },
                         } as any);
                       }

@@ -133,6 +133,7 @@ export interface RevealPartnerView {
   // Profile Unlocked (250 points reached)
   userId?: string | null;
   fullName?: string | null;
+  anonymousHandle?: string | null;
   username?: string | null;
   avatarUrl?: string | null;
   bio?: string | null;
@@ -145,9 +146,21 @@ export interface DailyTaskStatus {
   label: string;
   description: string;
   basePoints: number;
+  points: number;
   myCompleted: boolean;
   partnerCompleted: boolean;
+  isCompleted: boolean;
   myPointsAwarded: number;
+}
+
+export interface StreakMilestoneInfo {
+  stage: number;
+  stageName: string;
+  thresholdDays: number;
+  multiplier: number;
+  unlocked: boolean;
+  isCurrent: boolean;
+  description: string;
 }
 
 export interface StageTask {
@@ -177,12 +190,16 @@ export interface RevealData {
   stageName: string;
   dayStreak: number;
   targetStreak?: number;
+  daysToNextStage?: number;
+  isMaxStage?: boolean;
   streakProgressPercent?: number;
-  // Points progression & 250-pt profile unlock
+  streakMilestones?: StreakMilestoneInfo[];
+  // Points progression & profile unlock
   matchPoints: number;
   stagePoints: number;
   profileUnlockTarget?: number;
   pointsToProfileUnlock?: number;
+  progressPercent?: number;
   isProfileUnlocked?: boolean;
   pointsToNextStage: number;
   effectiveMultiplier: number;

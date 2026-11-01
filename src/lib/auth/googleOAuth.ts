@@ -282,6 +282,7 @@ export function userNeedsOnboarding(user: AuthUser): boolean {
 
 export type OAuthNavigationTarget =
   | { kind: "tabs" }
+  | { kind: "banned" }
   | { kind: "pending-approval" }
   | { kind: "id-upload" }
   | {
@@ -300,6 +301,20 @@ export function resolveOAuthNavigationTarget(
     cachedBackUri?: string | null;
   }
 ): OAuthNavigationTarget {
+  const isBanned = Boolean(
+    session.user?.user_metadata?.is_banned === true ||
+    session.user?.user_metadata?.status === "banned" ||
+    session.user?.user_metadata?.is_suspended === true ||
+    session.user?.user_metadata?.status === "suspended" ||
+    (session.user as any)?.is_banned === true ||
+    (session.user as any)?.status === "banned" ||
+    (session.user as any)?.is_suspended === true ||
+    (session.user as any)?.status === "suspended"
+  );
+  if (isBanned) {
+    return { kind: "banned" };
+  }
+
   const emailType = session.user?.user_metadata?.email_type;
   const isChmsu =
     emailType === "chmsu" ||

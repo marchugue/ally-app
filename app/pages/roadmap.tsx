@@ -17,8 +17,8 @@ import {
   getMatchReveal,
   RevealData,
   DailyTaskStatus,
+  StreakMilestoneInfo,
 } from "@/lib/api/matchmaking";
-import { stageName, TOTAL_POINTS_FOR_PROFILE_UNLOCK } from "@/constants/matchOptions";
 import { AvatarRevealCard } from "@/components/AvatarRevealCard";
 import { AvatarRevealCeremony } from "@/components/AvatarRevealCeremony";
 import {
@@ -28,42 +28,6 @@ import {
 } from "@/lib/avatarRevealCache";
 
 const { width: SCREEN_W, height: SCREEN_H } = Dimensions.get("window");
-
-// ── Stage config ─────────────────────────────────────────────────────────────
-const STAGES = [1, 2, 3, 4] as const;
-const STAGE_STREAK_REQS = [0, 0, 3, 7, 10]; // days needed to unlock each stage
-
-interface RoadmapTaskDef {
-  taskId: string;
-  label: string;
-  description: string;
-  basePoints: number;
-  unlockedAtStage: number;
-}
-
-const MASTER_DAILY_TASKS: RoadmapTaskDef[] = [
-  {
-    taskId: "send_message",
-    label: "Send a message",
-    description: "Both of you send at least 1 message today",
-    basePoints: 1,
-    unlockedAtStage: 1,
-  },
-  {
-    taskId: "play_game",
-    label: "Play a game together",
-    description: "Play a campus mini-game together (5+ min)",
-    basePoints: 2,
-    unlockedAtStage: 2,
-  },
-  {
-    taskId: "send_photo",
-    label: "Share a photo",
-    description: "Each of you share at least 1 photo in chat",
-    basePoints: 3,
-    unlockedAtStage: 3,
-  },
-];
 
 // ─────────────────────────────────────────────────────────────────────────────
 // 📏 ROAD & CARD LAYOUT CONFIG
@@ -99,7 +63,10 @@ export default function RoadmapPage() {
   const params = useLocalSearchParams<{
     matchId: string;
     stage?: string;
+    stageName?: string;
     stagePoints?: string;
+    matchPoints?: string;
+    profileUnlockTarget?: string;
     dayStreak?: string;
     partnerAlias?: string;
     partnerAvatar?: string;
@@ -111,38 +78,35 @@ export default function RoadmapPage() {
   const matchId = params.matchId;
   const initialStage = parseInt(params.stage ?? "1", 10);
   const initialStreak = parseInt(params.dayStreak ?? "0", 10);
+  const initialGoal = params.profileUnlockTarget
+    ? parseInt(params.profileUnlockTarget, 10)
+    : 0;
 
   const stage = revealData?.stage ?? initialStage;
   const dayStreak = revealData?.dayStreak ?? initialStreak;
-  const effectiveMultiplier = revealData?.effectiveMultiplier ?? 1;
   const dailyTasks: DailyTaskStatus[] = revealData?.dailyTasks ?? [];
+  const streakMilestones: StreakMilestoneInfo[] = revealData?.streakMilestones ?? [];
+  const resolvedStageName =
+    revealData?.stageName ||
+    params.stageName ||
+    streakMilestones.find((m) => m.stage === stage)?.stageName ||
+    "Anonymous Chat";
   const matchPoints =
     revealData?.matchPoints ??
-    (params.stagePoints ? parseInt(params.stagePoints, 10) : 0);
-  const goalPoints =
-    revealData?.profileUnlockTarget ?? TOTAL_POINTS_FOR_PROFILE_UNLOCK;
-  const progressPercent = Math.min(
-    100,
-    Math.max(0, (matchPoints / goalPoints) * 100)
-  );
+    (params.matchPoints
+      ? parseInt(params.matchPoints, 10)
+      : params.stagePoints
+      ? parseInt(params.stagePoints, 10)
+      : 0);
+  const goalPoints = revealData?.profileUnlockTarget ?? initialGoal;
+  const progressPercent =
+    revealData?.progressPercent ??
+    (goalPoints > 0
+      ? Math.min(100, Math.max(0, Math.round((matchPoints / goalPoints) * 100)))
+      : 0);
 
   const partnerAlias = params.partnerAlias || "Your ally";
   const partnerAvatar = params.partnerAvatar || "fox";
-
-  const tasksToDisplay = MASTER_DAILY_TASKS.map((def) => {
-    const serverTask = dailyTasks.find((t) => t.taskId === def.taskId);
-    const isAvailable = stage >= def.unlockedAtStage;
-    const isDone =
-      isAvailable &&
-      (serverTask ? serverTask.myCompleted && serverTask.partnerCompleted : false);
-    const basePoints = serverTask?.basePoints ?? def.basePoints;
-    return {
-      ...def,
-      basePoints,
-      isAvailable,
-      isDone,
-    };
-  });
 
   const fetchReveal = useCallback(async () => {
     if (!matchId) { setLoading(false); return; }
@@ -224,7 +188,7 @@ export default function RoadmapPage() {
               ]}
             />
             <Text style={styles.progressBarText}>
-              {matchPoints}/{goalPoints}
+              {goalPoints > 0 ? `${matchPoints}/${goalPoints}` : `${matchPoints} pts`}
             </Text>
           </View>
         </View>
@@ -253,24 +217,20 @@ export default function RoadmapPage() {
                 style={{ marginBottom: 20 }}
               />
 
-              {/* ── Daily Tasks (Vertically aligned list, horizontal rows) ─ */}
+              {/* ── Daily Tasks (Backend-driven list) ─ */}
               <Text style={styles.sectionLabel}>Daily Tasks</Text>
 
               <View>
-                {tasksToDisplay.map((task, idx) => {
+                {dailyTasks.map((task, idx) => {
+                  const isDone = Boolean(
+                    task.isCompleted ?? (task.myCompleted && task.partnerCompleted)
+                  );
                   return (
                     <React.Fragment key={task.taskId}>
-                      <View
-                        style={[
-                          styles.taskRow,
-                          !task.isAvailable && styles.taskRowLocked,
-                        ]}
-                      >
+                      <View style={styles.taskRow}>
                         {/* Icon on left */}
                         <View style={styles.iconWrap}>
-                          {!task.isAvailable ? (
-                            <Lock size={18} color="#94A3B8" strokeWidth={2} />
-                          ) : task.isDone ? (
+                          {isDone ? (
                             <CheckCircle2
                               size={22}
                               color="#16A34A"
@@ -286,21 +246,16 @@ export default function RoadmapPage() {
                           <Text
                             style={[
                               styles.taskLabel,
-                              task.isDone && { color: "#16A34A" },
-                              !task.isAvailable && { color: "#94A3B8" },
+                              isDone && { color: "#16A34A" },
                             ]}
                           >
                             {task.label}
                           </Text>
-                          <Text
-                            style={[
-                              styles.taskDesc,
-                              !task.isAvailable && { color: "#CBD5E1" },
-                            ]}
-                          >
-                            {!task.isAvailable
-                              ? `Unlocks at Stage ${task.unlockedAtStage} · ${stageName(task.unlockedAtStage)}`
-                              : task.description}
+                          <Text style={styles.taskDesc}>
+                            {task.description}
+                          </Text>
+                          <Text style={{ fontSize: 10, color: "#94A3B8", marginTop: 3 }}>
+                            You: {task.myCompleted ? "✓" : "○"} · {partnerAlias}: {task.partnerCompleted ? "✓" : "○"}
                           </Text>
                         </View>
 
@@ -309,23 +264,17 @@ export default function RoadmapPage() {
                           <Text
                             style={[
                               styles.taskPtsValue,
-                              task.isDone && { color: "#16A34A" },
-                              !task.isAvailable && { color: "#CBD5E1" },
+                              isDone && { color: "#16A34A" },
                             ]}
                           >
-                            +{Math.round(task.basePoints * effectiveMultiplier)}
+                            +{task.points}
                           </Text>
-                          <Text
-                            style={[
-                              styles.taskPtsSub,
-                              !task.isAvailable && { color: "#CBD5E1" },
-                            ]}
-                          >
+                          <Text style={styles.taskPtsSub}>
                             pts
                           </Text>
                         </View>
                       </View>
-                      {idx < tasksToDisplay.length - 1 && (
+                      {idx < dailyTasks.length - 1 && (
                         <View style={styles.rowDivider} />
                       )}
                     </React.Fragment>
@@ -333,75 +282,71 @@ export default function RoadmapPage() {
                 })}
               </View>
 
-              {/* ── Streak Milestones (Horizontally aligned with gaps) ──── */}
-              <View style={styles.milestoneHeader}>
-                <Text style={styles.sectionLabel}>Streak Milestones</Text>
-              </View>
+              {/* ── Streak Milestones (Backend-driven horizontal track) ──── */}
+              {streakMilestones.length > 0 && (
+                <>
+                  <View style={styles.milestoneHeader}>
+                    <Text style={styles.sectionLabel}>Streak Milestones</Text>
+                  </View>
 
-              <View style={styles.streakTrackContainer}>
-                {STAGES.map((s, idx) => {
-                  const reqDays = STAGE_STREAK_REQS[s];
-                  const unlocked = dayStreak >= reqDays;
-                  const nextReqDays = STAGE_STREAK_REQS[s + 1] ?? 999;
-                  const isConnectorActive =
-                    idx < STAGES.length - 1 && dayStreak >= nextReqDays;
+                  <View style={styles.streakTrackContainer}>
+                    {streakMilestones.map((milestone, idx) => {
+                      const nextMilestone = streakMilestones[idx + 1];
+                      const isConnectorActive = Boolean(nextMilestone?.unlocked);
 
-                  return (
-                    <React.Fragment key={s}>
-                      {/* Milestone Node: top streak icon, bottom days */}
-                      <View style={styles.milestoneNode}>
-                        {/* Top: Streak icon */}
-                        <View
-                          style={[
-                            styles.milestoneIconWrap,
-                            unlocked
-                              ? styles.milestoneIconUnlocked
-                              : styles.milestoneIconLocked,
-                          ]}
-                        >
-                          {unlocked ? (
-                            <Text style={styles.milestoneEmoji}>🔥</Text>
-                          ) : (
-                            <View style={styles.milestoneLockedInner}>
-                              <Text style={styles.milestoneEmojiLocked}>🔥</Text>
-                              <View style={styles.milestoneLockBadge}>
-                                <Lock
-                                  size={9}
-                                  color="#64748B"
-                                  strokeWidth={2.5}
-                                />
-                              </View>
+                      return (
+                        <React.Fragment key={milestone.stage}>
+                          <View style={styles.milestoneNode}>
+                            <View
+                              style={[
+                                styles.milestoneIconWrap,
+                                milestone.unlocked
+                                  ? styles.milestoneIconUnlocked
+                                  : styles.milestoneIconLocked,
+                              ]}
+                            >
+                              {milestone.unlocked ? (
+                                <Text style={styles.milestoneEmoji}>🔥</Text>
+                              ) : (
+                                <View style={styles.milestoneLockedInner}>
+                                  <Text style={styles.milestoneEmojiLocked}>🔥</Text>
+                                  <View style={styles.milestoneLockBadge}>
+                                    <Lock
+                                      size={9}
+                                      color="#64748B"
+                                      strokeWidth={2.5}
+                                    />
+                                  </View>
+                                </View>
+                              )}
                             </View>
+
+                            <Text
+                              style={[
+                                styles.milestoneDays,
+                                milestone.unlocked
+                                  ? styles.milestoneDaysUnlocked
+                                  : styles.milestoneDaysLocked,
+                              ]}
+                            >
+                              {milestone.thresholdDays}d
+                            </Text>
+                          </View>
+
+                          {idx < streakMilestones.length - 1 && (
+                            <View
+                              style={[
+                                styles.milestoneConnector,
+                                isConnectorActive && styles.milestoneConnectorActive,
+                              ]}
+                            />
                           )}
-                        </View>
-
-                        {/* Bottom: Days e.g. 0d, 3d, 7d, 10d */}
-                        <Text
-                          style={[
-                            styles.milestoneDays,
-                            unlocked
-                              ? styles.milestoneDaysUnlocked
-                              : styles.milestoneDaysLocked,
-                          ]}
-                        >
-                          {reqDays}d
-                        </Text>
-
-                      </View>
-
-                      {/* Horizontal connector line with gaps */}
-                      {idx < STAGES.length - 1 && (
-                        <View
-                          style={[
-                            styles.milestoneConnector,
-                            isConnectorActive && styles.milestoneConnectorActive,
-                          ]}
-                        />
-                      )}
-                    </React.Fragment>
-                  );
-                })}
-              </View>
+                        </React.Fragment>
+                      );
+                    })}
+                  </View>
+                </>
+              )}
             </>
           )}
 
@@ -430,14 +375,18 @@ export default function RoadmapPage() {
 
       <View style={[styles.stageTitleBadge, { top: insets.top + 10 }]}>
         <Text style={styles.stageTitleText}>
-          Stage {stage} · {stageName(stage)}
+          Stage {stage} · {resolvedStageName}
         </Text>
       </View>
 
       {/* ── 100% Reveal Ceremony Modal ── */}
       <AvatarRevealCeremony
         matchId={matchId}
-        isRevealed={Boolean((stage >= 4 && matchPoints >= goalPoints) || (effectiveReveal?.tier ?? 0) >= 5)}
+        isRevealed={Boolean(
+          revealData?.isProfileUnlocked ||
+          (goalPoints > 0 && matchPoints >= goalPoints) ||
+          (effectiveReveal?.tier ?? 0) >= 5
+        )}
         avatarUrl={effectiveReveal?.previewUrl || (revealData?.partner as any)?.avatarUrl}
         avatarKey={partnerAvatar}
         fullName={revealData?.partner?.fullName || partnerAlias}

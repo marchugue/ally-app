@@ -6,7 +6,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { FeedPost } from '@/types/feed';
 
-const FEED_CACHE_KEY_PREFIX = 'ally_newsfeed_cache_v1_';
+const FEED_CACHE_KEY_PREFIX = 'ally_newsfeed_cache_v5_';
 const MAX_CACHED_POSTS = 20;
 const MAX_CACHE_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
 

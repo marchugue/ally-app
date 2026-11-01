@@ -4,9 +4,12 @@ export interface PostAuthor {
   id: string;
   username: string;
   full_name: string;
+  anonymous_handle?: string | null;
+  anonymousHandle?: string | null;
   avatar_url: string | null;
   is_following?: boolean;
   is_ally?: boolean;
+  is_unrevealed_match?: boolean;
   avatarKey?: string | null;
 }
 

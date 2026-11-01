@@ -80,6 +80,9 @@ export function navigateAfterOAuth(
     case "tabs":
       router.replace("/(tabs)");
       break;
+    case "banned":
+      router.replace("/pages/banned" as any);
+      break;
     case "pending-approval":
       router.replace("/pages/pending-approval" as any);
       break;

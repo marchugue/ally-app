@@ -1,3 +1,4 @@
+import { getAnonymousDisplayName, isAnonymousHandle } from "@/lib/anonymousHandle";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
   View,
@@ -44,7 +45,7 @@ import {
   unfollowUser,
   type ProfileRelationshipSummary,
 } from "@/lib/api/profiles";
-import { getOrCreateConversationWithUser } from "@/lib/api/conversation";
+import { createConversation } from "@/lib/api/conversation";
 import { listFeedByUser, likePost, unlikePost } from "@/lib/api/feed";
 import type { Profile, ProfileSummary } from "@/types/profile";
 import type { FeedPost } from "@/types/feed";
@@ -182,6 +183,7 @@ export default function UserProfileScreen() {
 
   const resolvedAvatarUrl = profile?.avatar_url || paramAvatarUrl || null;
   const showRealAvatar = isIdentityRevealed && Boolean(resolvedAvatarUrl);
+  const maskedDisplayName = getAnonymousDisplayName(profile, paramAuthorName, viewedUserId);
 
   // Public accounts show posts to everyone (identity stays anonymous unless allied);
   // private accounts only show posts to allies.
@@ -192,19 +194,24 @@ export default function UserProfileScreen() {
     if (!viewedUserId || !accessToken || actionLoading) return;
     try {
       setActionLoading(true);
-      const conversation = await getOrCreateConversationWithUser(
+      const conversation = await createConversation(
         viewedUserId,
         accessToken
       );
       router.push({
-        pathname: "/pages/chat",
+        pathname: "/pages/conversation",
         params: {
           id: (conversation as any).id || (conversation as any).conversationId,
+          conversationId: (conversation as any).conversationId || (conversation as any).id,
+          prefillName: isIdentityRevealed
+            ? (profile?.full_name || `@${profile?.username}`)
+            : maskedDisplayName,
+          prefillAvatar: isIdentityRevealed ? (resolvedAvatarUrl || "") : resolvedAvatarKey,
+          prefillUserId: isIdentityRevealed ? viewedUserId : "",
+          isAnonymous: isIdentityRevealed ? "false" : "true",
           name: isIdentityRevealed
             ? (profile?.full_name || `@${profile?.username}`)
-            : isUnrevealedMatch
-            ? (profile?.full_name || paramAuthorName || "Anonymous Ally")
-            : "Anonymous Peer",
+            : maskedDisplayName,
           avatar: isIdentityRevealed ? (resolvedAvatarUrl || "") : "",
           avatarKey: resolvedAvatarKey,
           type: "direct",
@@ -255,6 +262,14 @@ export default function UserProfileScreen() {
     },
     [accessToken]
   );
+
+  const handleUpdatePost = useCallback((updatedPost: FeedPost) => {
+    setPosts((prev) => prev.map((p) => (p.id === updatedPost.id ? updatedPost : p)));
+  }, []);
+
+  const handleDeletePost = useCallback((postId: string) => {
+    setPosts((prev) => prev.filter((p) => p.id !== postId));
+  }, []);
 
   const mediaPosts = useMemo(() => {
     return posts.filter(
@@ -460,9 +475,7 @@ export default function UserProfileScreen() {
                   >
                     {isIdentityRevealed
                       ? (profile.full_name || `@${profile.username}`)
-                      : isUnrevealedMatch
-                      ? (profile.full_name || paramAuthorName || "Anonymous Ally")
-                      : "Anonymous Peer"}
+                      : maskedDisplayName}
                   </Text>
 
                   {isIdentityRevealed && profile.username && (
@@ -802,6 +815,8 @@ export default function UserProfileScreen() {
               <PostCard
                 post={item}
                 onToggleLike={() => handleToggleLike(item)}
+                onUpdatePost={handleUpdatePost}
+                onDeletePost={handleDeletePost}
               />
             );
           }}
@@ -866,7 +881,7 @@ export default function UserProfileScreen() {
           onClose={() => setRelationModalOpen(false)}
           userId={profile.id}
           initialKind={relationModalKind}
-          userName={profile.username || undefined}
+          userName={isIdentityRevealed ? (profile.username || undefined) : maskedDisplayName}
         />
       )}
 
@@ -879,9 +894,7 @@ export default function UserProfileScreen() {
           targetName={
             isIdentityRevealed
               ? (profile?.full_name || (profile?.username ? `@${profile.username}` : undefined))
-              : isUnrevealedMatch
-              ? (profile?.full_name || paramAuthorName || "Anonymous Ally")
-              : "Anonymous Peer"
+              : maskedDisplayName
           }
         />
       )}

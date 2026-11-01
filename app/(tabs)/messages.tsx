@@ -1,3 +1,4 @@
+import { getAnonymousDisplayName, getAnonymousAvatarKey, isAnonymousHandle } from "@/lib/anonymousHandle";
 import React, { useCallback, useEffect, useState, useRef, useMemo } from "react";
 import {
   View,
@@ -54,8 +55,14 @@ function getParticipantInfo(conv: any, myId: string) {
   if (isAnonymous) {
     return {
       participantId: conv.matchInfo?.id || conv.matchInfo?.matchId || conv.id || "anonymous",
-      participantName: conv.matchInfo?.partnerAlias || "Anonymous Ally",
-      participantAvatar: conv.matchInfo?.partnerAvatar || "fox",
+      participantName: getAnonymousDisplayName(
+        {
+          id: conv.matchInfo?.partnerUserId || conv.matchInfo?.partnerId || conv.matchInfo?.id || conv.id,
+          anonymous_handle: conv.matchInfo?.partnerAlias,
+        },
+        undefined
+      ),
+      participantAvatar: getAnonymousAvatarKey(conv.matchInfo, undefined, conv.matchInfo?.partnerUserId || conv.matchInfo?.partnerId),
       isAnonymous: true,
       stage: conv.matchInfo?.stage ?? 0,
       dayStreak,
@@ -76,8 +83,14 @@ function getParticipantInfo(conv: any, myId: string) {
 
   return {
     participantId: profile?.id || profile?.user_id || conv.id,
-    participantName: profile?.full_name || (profile?.username ? `@${profile.username}` : "Student"),
-    participantAvatar: profile?.avatar_url || profile?.avatarUrl || profile?.avatar || null,
+    participantName:
+      !profile || profile.username === "anonymous" || isAnonymousHandle(profile.full_name) || (profile.anonymous_handle && !profile.full_name)
+        ? getAnonymousDisplayName(profile)
+        : (profile?.full_name || (profile?.username ? `@${profile.username}` : "Student")),
+    participantAvatar:
+      !profile || profile.username === "anonymous" || isAnonymousHandle(profile.full_name) || (profile.anonymous_handle && !profile.full_name)
+        ? getAnonymousAvatarKey(profile, undefined, profile?.id || profile?.user_id)
+        : (profile?.avatar_url || profile?.avatarUrl || profile?.avatar || null),
     isAnonymous: false,
     dayStreak,
     streakActiveToday,

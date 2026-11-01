@@ -2,10 +2,12 @@ export interface Profile {
   id: string;
   email: string;
   full_name: string;
+  anonymous_handle?: string | null;
   username: string;
   avatar_url: string | null;
   avatarKey?: string | null;
   avatar_preset_id?: string | null;
+  is_verified?: boolean;
   is_ally?: boolean;
   is_unrevealed_match?: boolean;
   bio: string | null;
@@ -21,12 +23,14 @@ export interface ProfileSummary {
   id: string;
   username: string;
   full_name: string;
+  anonymous_handle?: string | null;
   avatar_url?: string | null;
   course?: string | null;
 }
 
 export interface UpdateProfilePayload {
   full_name?: string;
+  anonymous_handle?: string | null;
   username?: string;
   avatar_url?: string | null;
   bio?: string | null;

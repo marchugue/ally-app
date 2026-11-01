@@ -1,3 +1,4 @@
+import { getAnonymousDisplayName, isAnonymousHandle } from "@/lib/anonymousHandle";
 import React, { useState, useEffect } from "react";
 import { View, Text, Pressable, Image, Modal, Alert } from "react-native";
 import {
@@ -5,16 +6,17 @@ import {
   MessageCircle,
   MoreHorizontal,
   Trash2,
-  Bookmark,
   Link2,
   EyeOff,
   Flag,
   ChevronRight,
   ShieldAlert,
+  Pencil,
 } from "lucide-react-native";
 import { resolveImageUri } from "./UserAvatar";
 import { ClickableAvatar } from "./ClickableAvatar";
 import { ReportModal } from "./ReportModal";
+import { EditPostSheet } from "./EditPostSheet";
 import { AnimatedHeart } from "./AnimatedHeart";
 import type { FeedPost } from "@/types/feed";
 import { router } from "expo-router";
@@ -30,6 +32,7 @@ interface PostCardProps {
   onComment?: (post: FeedPost) => void;
   onMore?: (post: FeedPost) => void;
   onDeletePost?: (postId: string) => void;
+  onUpdatePost?: (updatedPost: FeedPost) => void;
   onPressAuthor?: (authorId: string) => void;
   onToggleFollow?: (authorId: string, isFollowing: boolean) => void;
 }
@@ -56,21 +59,28 @@ export function PostCard({
   onComment,
   onMore,
   onDeletePost,
+  onUpdatePost,
   onPressAuthor,
   onToggleFollow,
 }: PostCardProps) {
   const { user, accessToken } = useAuth();
   const { colors } = useTheme();
+  const [currentPost, setCurrentPost] = useState<FeedPost>(post);
   const [isFollowing, setIsFollowing] = useState<boolean>(
     Boolean(post.author?.is_following)
   );
   const [followLoading, setFollowLoading] = useState(false);
 
   useEffect(() => {
-    setIsFollowing(Boolean(post.author?.is_following));
-  }, [post.author?.is_following]);
+    setCurrentPost(post);
+  }, [post]);
+
+  useEffect(() => {
+    setIsFollowing(Boolean(currentPost.author?.is_following));
+  }, [currentPost.author?.is_following]);
 
   const [optionsVisible, setOptionsVisible] = useState(false);
+  const [editVisible, setEditVisible] = useState(false);
   const [reportVisible, setReportVisible] = useState(false);
   const [deleting, setDeleting] = useState(false);
   const [isContentExpanded, setIsContentExpanded] = useState(false);
@@ -83,14 +93,19 @@ export function PostCard({
     });
   };
 
-  const hasMedia = post.media && post.media.length > 0;
-  const isOwnPost = user?.id === post.author?.id;
-  const isAlly = Boolean(post.author?.is_ally || isOwnPost);
+  const hasMedia = currentPost.media && currentPost.media.length > 0;
+  const isOwnPost = user?.id === currentPost.author?.id;
+  const isAlly = Boolean((currentPost.author?.is_ally && !currentPost.author?.is_unrevealed_match && currentPost.author?.username !== "anonymous") || isOwnPost);
   const isFlagged = Boolean(
-    post.is_flagged ||
-    post.is_restricted ||
-    post.content?.includes("<!--flagged") ||
-    post.content?.includes("<!--visibility:admin_and_user_only")
+    currentPost.is_flagged ||
+    currentPost.is_restricted ||
+    currentPost.content?.includes("<!--flagged") ||
+    currentPost.content?.includes("<!--visibility:admin_and_user_only")
+  );
+  const isEdited = Boolean(
+    currentPost.updated_at &&
+    currentPost.created_at &&
+    new Date(currentPost.updated_at).getTime() - new Date(currentPost.created_at).getTime() > 1000
   );
 
   const handleAuthorPress = () => {
@@ -103,7 +118,7 @@ export function PostCard({
           userId: post.author.id,
           avatarKey: post.author?.avatarKey || "",
           avatarUrl: post.author?.avatar_url || "",
-          authorName: isAlly ? (post.author?.full_name || `@${post.author?.username}`) : "Anonymous Peer",
+          authorName: isAlly ? (post.author?.full_name || `@${post.author?.username}`) : getAnonymousDisplayName(post.author),
         },
       } as any);
     }
@@ -165,9 +180,10 @@ export function PostCard({
         initialIndex: String(index),
         postId: post.id,
         caption: post.content || "",
-        authorName: isAlly ? (post.author.full_name || `@${post.author.username}`) : "Anonymous Peer",
+        authorName: isAlly ? (post.author.full_name || `@${post.author.username}`) : getAnonymousDisplayName(post.author),
         authorUsername: isAlly ? (post.author.username || "") : "anonymous",
         authorAvatar: isAlly ? (post.author.avatar_url || "") : "",
+        avatarKey: post.author?.avatarKey || "",
         authorId: post.author.id,
         isAlly: isAlly ? "true" : "false",
         createdAt: post.created_at || "",
@@ -251,11 +267,12 @@ export function PostCard({
             >
               {isAlly
                 ? (post.author?.full_name || `@${post.author?.username}`)
-                : "Anonymous Peer"}
+                : getAnonymousDisplayName(post.author)}
             </Text>
             <Text style={{ fontSize: 11, color: colors.textMuted }}>
-              {isAlly && post.author?.username ? `@${post.author.username} · ` : ""}
-              {timeAgo(post.created_at)}
+              {isAlly && currentPost.author?.username ? `@${currentPost.author.username} · ` : ""}
+              {timeAgo(currentPost.created_at)}
+              {isEdited ? " · edited" : ""}
             </Text>
           </View>
         </Pressable>
@@ -300,23 +317,23 @@ export function PostCard({
       </View>
 
       {/* Content */}
-      {post.content ? (
+      {currentPost.content ? (
         <View style={{ paddingHorizontal: 16, paddingBottom: hasMedia ? 10 : 8 }}>
           <Pressable onPress={handlePostDetailPress}>
             <Text
               style={{
-                fontSize: post.content === "This message was removed" ? 14 : 15,
-                color: post.content === "This message was removed" ? colors.textMuted : colors.textPrimary,
-                fontStyle: post.content === "This message was removed" ? "italic" : "normal",
+                fontSize: currentPost.content === "This message was removed" ? 14 : 15,
+                color: currentPost.content === "This message was removed" ? colors.textMuted : colors.textPrimary,
+                fontStyle: currentPost.content === "This message was removed" ? "italic" : "normal",
                 lineHeight: 22,
               }}
               numberOfLines={isContentExpanded ? undefined : 1}
             >
-              {post.content}
+              {currentPost.content}
             </Text>
           </Pressable>
 
-          {post.content.length > 40 && post.content !== "This message was removed" && (
+          {currentPost.content.length > 40 && currentPost.content !== "This message was removed" && (
             <Pressable
               onPress={() => setIsContentExpanded(!isContentExpanded)}
               hitSlop={6}
@@ -551,6 +568,27 @@ export function PostCard({
             {isOwnPost ? (
               <>
                 <Pressable
+                  onPress={() => {
+                    setOptionsVisible(false);
+                    setEditVisible(true);
+                  }}
+                  style={{
+                    flexDirection: "row",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                    paddingVertical: 14,
+                  }}
+                >
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
+                    <Pencil size={18} color={colors.textPrimary} />
+                    <Text style={{ fontSize: 15, fontWeight: "500", color: colors.textPrimary }}>
+                      Edit post
+                    </Text>
+                  </View>
+                  <ChevronRight size={16} color="#D1D5DB" />
+                </Pressable>
+
+                <Pressable
                   onPress={handleDelete}
                   disabled={deleting}
                   style={{
@@ -579,24 +617,6 @@ export function PostCard({
                   }}
                 >
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-                    <Bookmark size={18} color="#374151" />
-                    <Text style={{ fontSize: 15, fontWeight: "500", color: "#374151" }}>
-                      Save post
-                    </Text>
-                  </View>
-                  <ChevronRight size={16} color="#D1D5DB" />
-                </Pressable>
-
-                <Pressable
-                  onPress={() => setOptionsVisible(false)}
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    paddingVertical: 14,
-                  }}
-                >
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
                     <Link2 size={18} color="#374151" />
                     <Text style={{ fontSize: 15, fontWeight: "500", color: "#374151" }}>
                       Copy link
@@ -607,24 +627,6 @@ export function PostCard({
               </>
             ) : (
               <>
-                <Pressable
-                  onPress={() => setOptionsVisible(false)}
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    paddingVertical: 14,
-                  }}
-                >
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-                    <Bookmark size={18} color="#374151" />
-                    <Text style={{ fontSize: 15, fontWeight: "500", color: "#374151" }}>
-                      Save post
-                    </Text>
-                  </View>
-                  <ChevronRight size={16} color="#D1D5DB" />
-                </Pressable>
-
                 <Pressable
                   onPress={() => setOptionsVisible(false)}
                   style={{
@@ -693,7 +695,18 @@ export function PostCard({
         onClose={() => setReportVisible(false)}
         onSubmitReport={handleReportSubmit}
         targetType="post"
-        previewText={post.content || (hasMedia ? "[Image post]" : "")}
+        previewText={currentPost.content || (hasMedia ? "[Image post]" : "")}
+      />
+
+      {/* Edit Post Sheet */}
+      <EditPostSheet
+        visible={editVisible}
+        onClose={() => setEditVisible(false)}
+        post={currentPost}
+        onPostUpdated={(updated) => {
+          setCurrentPost(updated);
+          onUpdatePost?.(updated);
+        }}
       />
     </View>
   );

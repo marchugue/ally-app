@@ -1,3 +1,4 @@
+import { getAnonymousDisplayName, isAnonymousHandle } from "@/lib/anonymousHandle";
 // src/components/RelationshipListModal.tsx
 
 import React, { useCallback, useEffect, useState, useRef } from "react";
@@ -158,7 +159,9 @@ export function RelationshipListModal({
             </Text>
             {Boolean(userName) && (
               <Text style={{ fontSize: 12, color: "#6B7280", marginTop: 2 }}>
-                @{userName}
+                {userName?.toUpperCase().startsWith("CHMSUAN") || userName?.startsWith("@")
+                  ? userName
+                  : `@${userName}`}
               </Text>
             )}
           </View>
@@ -307,7 +310,11 @@ export function RelationshipListModal({
             onEndReachedThreshold={0.3}
             contentContainerStyle={{ paddingBottom: 32 }}
             renderItem={({ item }) => {
-              const isAlly = activeKind === "allies" || (item as any).isAlly || (item as any).is_ally;
+              const isMasked =
+                item.username === "anonymous" ||
+                (item as any).is_ally === false ||
+                (item as any).isAlly === false;
+              const isAlly = !isMasked && Boolean(activeKind === "allies" || (item as any).isAlly || (item as any).is_ally);
               return (
                 <Pressable
                   onPress={() => handleSelectMember(item.id)}
@@ -332,7 +339,7 @@ export function RelationshipListModal({
                   />
                   <View style={{ flex: 1 }}>
                     <Text style={{ fontSize: 14, fontWeight: "700", color: "#111827" }} numberOfLines={1}>
-                      {isAlly ? (item.fullName || `@${item.username}`) : "Anonymous Peer"}
+                      {isAlly ? (item.fullName || `@${item.username}`) : getAnonymousDisplayName(item)}
                     </Text>
                     <Text style={{ fontSize: 12, color: "#6B7280", marginTop: 2 }} numberOfLines={1}>
                       {isAlly ? (item.course ? `${item.course}` : `@${item.username}`) : "Protected · Campus Student"}

@@ -2,14 +2,12 @@ import React, { useRef } from "react";
 import {
   View,
   Text,
-  Image,
   Pressable,
   Animated,
   StyleSheet,
   type StyleProp,
   type ViewStyle,
 } from "react-native";
-import { getAvatarEmoji } from "@/constants/matchOptions";
 import { RevealAvatar } from "@/components/RevealAvatar";
 import { getEffectiveAvatarReveal } from "@/lib/avatarRevealCache";
 import type { AvatarRevealView } from "@/lib/api/matchmaking";
@@ -21,6 +19,9 @@ export interface RoadmapProgressionBadgeProps {
   stagePoints?: number;
   pointsPerStage?: number;
   profileUnlockTarget?: number;
+  progressPercent?: number;
+  isProfileUnlocked?: boolean;
+  isMaxStage?: boolean;
   effectiveMultiplier?: number;
   avatarKey?: string | null;
   onPress: () => void;
@@ -29,49 +30,15 @@ export interface RoadmapProgressionBadgeProps {
   avatarReveal?: AvatarRevealView | null;
 }
 
-export interface StageProgression {
-  currentStage: number;
-  targetStage: number;
-  matchPoints: number;
-  profileUnlockTarget: number;
-  progressPercent: number;
-  isMaxStage: boolean;
-  isProfileUnlocked: boolean;
-  stageLabel: string;
-  targetLabel: string;
-}
-
-export function calculateStageProgression(
-  stage: number = 1,
-  matchPoints: number = 0,
-  profileUnlockTarget: number = 250
-): StageProgression {
-  const currentStage = Math.max(1, Math.min(4, stage));
-  const isProfileUnlocked = matchPoints >= profileUnlockTarget;
-  const progressPercent = Math.max(
-    0,
-    Math.min(100, Math.round((matchPoints / profileUnlockTarget) * 100))
-  );
-  return {
-    currentStage,
-    targetStage: currentStage >= 4 ? 4 : currentStage + 1,
-    matchPoints,
-    profileUnlockTarget,
-    progressPercent,
-    isMaxStage: currentStage >= 4,
-    isProfileUnlocked,
-    stageLabel: `S${currentStage}`,
-    targetLabel: currentStage >= 4 ? "MAX" : `S${currentStage + 1}`,
-  };
-}
-
 export function RoadmapProgressionBadge({
   stage = 1,
-  dayStreak: _dayStreak = 0,
   matchPoints = 0,
   stagePoints = 0,
-  pointsPerStage = 250,
-  profileUnlockTarget = 250,
+  pointsPerStage,
+  profileUnlockTarget,
+  progressPercent: serverProgressPercent,
+  isProfileUnlocked: serverIsProfileUnlocked,
+  isMaxStage: serverIsMaxStage,
   avatarKey,
   onPress,
   emojiSize = 60,
@@ -80,15 +47,24 @@ export function RoadmapProgressionBadge({
 }: RoadmapProgressionBadgeProps) {
   const pressScaleAnim = useRef(new Animated.Value(1)).current;
 
+  const currentStage = Math.max(1, Math.min(4, stage));
   const currentPoints = matchPoints > 0 ? matchPoints : stagePoints;
-  const targetPoints = profileUnlockTarget > 0 ? profileUnlockTarget : pointsPerStage;
-  const progression = calculateStageProgression(stage, currentPoints, targetPoints);
+  const targetPoints = profileUnlockTarget ?? pointsPerStage ?? avatarReveal?.target ?? 0;
+  const progressPercent =
+    serverProgressPercent ??
+    (targetPoints > 0
+      ? Math.max(0, Math.min(100, Math.round((currentPoints / targetPoints) * 100)))
+      : 0);
+  const isProfileUnlocked =
+    serverIsProfileUnlocked ?? Boolean(targetPoints > 0 && currentPoints >= targetPoints);
+  const isMaxStage = serverIsMaxStage ?? currentStage >= 4;
+  const stageLabel = `S${currentStage}`;
 
   const effectiveReveal = getEffectiveAvatarReveal(
     undefined,
     currentPoints,
     avatarReveal,
-    { partnerAvatar: avatarKey || undefined, target: targetPoints }
+    { partnerAvatar: avatarKey || undefined, target: targetPoints || undefined }
   );
 
   const handlePressIn = () => {
@@ -134,8 +110,8 @@ export function RoadmapProgressionBadge({
               style={[
                 styles.fill,
                 {
-                  width: `${Math.max(6, progression.progressPercent)}%`,
-                  backgroundColor: progression.isMaxStage ? "#F59E0B" : "#1A6B3C",
+                  width: `${Math.max(6, progressPercent)}%`,
+                  backgroundColor: isMaxStage ? "#F59E0B" : "#1A6B3C",
                 },
               ]}
             />
@@ -143,11 +119,9 @@ export function RoadmapProgressionBadge({
 
           {/* Stage label + pts/percent */}
           <View style={styles.labelRow}>
-            <Text style={styles.stageText}>{progression.stageLabel}</Text>
+            <Text style={styles.stageText}>{stageLabel}</Text>
             <Text style={styles.percentText}>
-              {progression.isProfileUnlocked
-                ? "MAX"
-                : `${progression.matchPoints}pt`}
+              {isProfileUnlocked ? "MAX" : `${currentPoints}pt`}
             </Text>
           </View>
         </View>
@@ -158,7 +132,6 @@ export function RoadmapProgressionBadge({
 
 const styles = StyleSheet.create({
   container: {
-    // White card container removed completely as requested
     backgroundColor: "transparent",
     alignItems: "center",
     justifyContent: "center",

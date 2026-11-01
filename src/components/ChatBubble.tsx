@@ -1,15 +1,14 @@
 import { useState, useMemo, useRef } from "react";
 import { View, Text, Pressable, Image, Platform } from "react-native";
-import { Clock, Check, CheckCheck, AlertCircle } from "lucide-react-native";
+import { Clock, Check, CheckCheck, CircleAlert as AlertCircle } from "lucide-react-native";
 import { router } from "expo-router";
 import type { Message, MessageReaction, MessageGroupPosition } from "@/types/conversation";
 import { UserAvatar, resolveImageUri } from "./UserAvatar";
-import { RevealAvatar } from "@/components/RevealAvatar";
+import { RevealAvatar } from "./RevealAvatar";
 import type { AvatarRevealView } from "@/lib/api/matchmaking";
 import { getFluentEmojiUrl } from "@/lib/fluentEmoji";
-import { OfflineAnimatedEmoji } from "@/components/OfflineAnimatedEmoji";
-import { LockedMediaThumbnail } from "@/components/LockedMediaThumbnail";
-import { GameInviteCard } from "@/components/GameInviteCard";
+import { OfflineAnimatedEmoji } from "./OfflineAnimatedEmoji";
+import { GameInviteCard } from "./GameInviteCard";
 
 export interface BubbleLayout {
   x: number;
@@ -269,7 +268,7 @@ export function ChatBubble({
   };
 
   const handleImagePress = (index: number = 0) => {
-    if (images.length === 0 || imagesLocked) return;
+    if (images.length === 0) return;
     if (onImagePress) {
       onImagePress(message, index);
       return;
@@ -486,19 +485,8 @@ export function ChatBubble({
           elevation: isImageOnly || isEmojiOnly || isGameInvite ? 0 : 1,
         }}
       >
-        {/* Locked image replacement (streak ended → level dropped below Lv.3) */}
-        {hasImage && imagesLocked && (
-          <LockedMediaThumbnail
-            uri={images[0]}
-            count={images.length}
-            style={{
-              marginBottom: message.content ? 6 : 0,
-            }}
-          />
-        )}
-
         {/* Removed Photo Placeholder */}
-        {hasImage && !imagesLocked && isMediaRemoved && (
+        {hasImage && isMediaRemoved && (
           <View
             style={{
               width: 220,
@@ -527,7 +515,7 @@ export function ChatBubble({
         )}
 
         {/* Image attachment / Stacked cards UI */}
-        {hasImage && !imagesLocked && !isMediaRemoved && images.length === 1 && (
+        {hasImage && !isMediaRemoved && images.length === 1 && (
           <Pressable
             onPress={() => handleImagePress(0)}
             onLongPress={handleBubbleLongPress}
@@ -546,7 +534,7 @@ export function ChatBubble({
           </Pressable>
         )}
 
-        {hasImage && !imagesLocked && !isMediaRemoved && images.length > 1 && (
+        {hasImage && !isMediaRemoved && images.length > 1 && (
           <View
             style={{
               position: "relative",
@@ -922,3 +910,5 @@ function groupReactions(reactions: MessageReaction[]): { emoji: string; count: n
   });
   return Array.from(map, ([emoji, count]) => ({ emoji, count }));
 }
+
+export default ChatBubble;

@@ -1,3 +1,4 @@
+import { getAnonymousDisplayName, getAnonymousAvatarKey, isAnonymousHandle } from "@/lib/anonymousHandle";
 import React, { useCallback, useEffect, useState, useMemo } from "react";
 import {
   View,
@@ -40,7 +41,7 @@ import { useAuth } from "@/lib/auth/AuthContext";
 import { useTheme } from "@/context/ThemeContext";
 import { listProfiles, getMyProfile } from "@/lib/api/profiles";
 import { listInteractions, requestConnection } from "@/lib/api/interaction";
-import { getOrCreateConversationWithUser } from "@/lib/api/conversation";
+import { createConversation } from "@/lib/api/conversation";
 import { getLookups } from "@/lib/api/lookups";
 import {
   getMatchmakingStatus,
@@ -54,6 +55,7 @@ import type { Profile } from "@/types/profile";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 interface Student {
+  anonymous_handle?: string | null;
   id: string;
   name: string;
   username: string | null;
@@ -163,13 +165,8 @@ const DARK_TAG_STYLES: Record<string, { bg: string; text: string; border: string
 };
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
-function getAnonymousName(student: Student, avatarKey: string): string {
-  if (student.name && student.name.toLowerCase().startsWith("anonymous")) {
-    return student.name;
-  }
-  const key = avatarKey || "peer";
-  const capitalized = key.charAt(0).toUpperCase() + key.slice(1).toLowerCase();
-  return `Anonymous ${capitalized}`;
+function getAnonymousName(student: Student, _avatarKey?: string): string {
+  return getAnonymousDisplayName(student, undefined, student.id);
 }
 
 function calculateMatchPercentage(userA: Student, userB: Student): number {
@@ -393,13 +390,18 @@ export default function DiscoverScreen() {
         })
         .map((p) => {
           const email = p.email || "";
+          const isAlly = Boolean(p.is_ally || p.isAlly);
+          const anonymousHandle = p.anonymous_handle || (p as any).anonymousHandle || null;
           const avatarKey =
             p.avatarKey ||
             p.avatar_preset_id ||
             getDeterministicAnonymousAvatar(p.id);
           return {
             id: p.id,
-            name: p.full_name || (p.username ? `@${p.username}` : "Student"),
+            anonymous_handle: anonymousHandle,
+            name: isAlly
+              ? (p.full_name || (p.username ? `@${p.username}` : "Student"))
+              : getAnonymousDisplayName(p, undefined, p.id),
             username: p.username || null,
             email,
             course: p.course || "Unknown Course",
@@ -411,8 +413,8 @@ export default function DiscoverScreen() {
             avatarPresetId: p.avatar_preset_id || avatarKey,
             interests: p.interests || [],
             organizations: p.organizations || [],
-            isVerified: email.toLowerCase().endsWith("@chmsu.edu.ph"),
-            isAlly: Boolean(p.is_ally || p.isAlly),
+            isVerified: Boolean((p as any).is_verified || email.toLowerCase().endsWith("@chmsu.edu.ph")),
+            isAlly,
           };
         });
 
@@ -479,12 +481,13 @@ export default function DiscoverScreen() {
         const q = search.toLowerCase().trim();
         if (q) {
           const nameMatch = (m.student.name || "").toLowerCase().includes(q);
+          const handleMatch = (m.student.anonymous_handle || "").toLowerCase().includes(q);
           const courseMatch = (m.student.course || "").toLowerCase().includes(q);
           const deptMatch = (m.student.department || "").toLowerCase().includes(q);
           const interestMatch = (m.student.interests || []).some((i) =>
             i.toLowerCase().includes(q)
           );
-          if (!nameMatch && !courseMatch && !deptMatch && !interestMatch) return false;
+          if (!nameMatch && !handleMatch && !courseMatch && !deptMatch && !interestMatch) return false;
         }
 
         if (filters.department && m.student.department !== filters.department) {
@@ -538,11 +541,28 @@ export default function DiscoverScreen() {
     }
 
     try {
-      const res = await getOrCreateConversationWithUser(studentId, accessToken);
+      const targetStudent = matches.find((m) => m.student.id === studentId)?.student;
+      const isTargetAlly = connections[studentId] === "accepted";
+      const prefillName = targetStudent
+        ? (isTargetAlly ? targetStudent.name : getAnonymousName(targetStudent))
+        : undefined;
+      const res = await createConversation(studentId, accessToken);
       if (res?.conversationId) {
         router.push({
           pathname: "/pages/conversation" as any,
-          params: { conversationId: res.conversationId, id: res.conversationId },
+          params: {
+            conversationId: res.conversationId,
+            id: res.conversationId,
+            ...(prefillName ? { prefillName } : {}),
+            ...(targetStudent
+              ? {
+                  prefillAvatar: isTargetAlly
+                    ? targetStudent.avatar
+                    : getAnonymousAvatarKey(targetStudent, targetStudent.avatarKey, studentId),
+                }
+              : {}),
+            isAnonymous: isTargetAlly ? "false" : "true",
+          },
         });
       } else {
         router.push("/(tabs)/messages" as any);

@@ -79,13 +79,7 @@ function ChatInputComponent({
 
   const handlePickMedia = async () => {
     setShowMenu(false);
-    if (!canUploadImages) {
-      Alert.alert(
-        "Feature Locked",
-        "Photo and media sharing unlocks at Stage 3 of your roadmap."
-      );
-      return;
-    }
+    if (!canUploadImages) return;
     try {
       const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
       if (status !== "granted") {
@@ -118,13 +112,7 @@ function ChatInputComponent({
 
   const handleTakePhoto = async () => {
     setShowMenu(false);
-    if (!canUploadImages) {
-      Alert.alert(
-        "Feature Locked",
-        "Photo and media sharing unlocks at Stage 3 of your roadmap."
-      );
-      return;
-    }
+    if (!canUploadImages) return;
     if (pendingImages.length >= 6) {
       Alert.alert("Limit Reached", "You can select up to 6 photos per message.");
       return;
@@ -553,3 +541,5 @@ function ChatInputComponent({
 }
 
 export const ChatInput = React.memo(ChatInputComponent);
+
+export default ChatInput;

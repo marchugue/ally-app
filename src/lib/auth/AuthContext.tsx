@@ -117,7 +117,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             sessionConfirmed = true;
           } catch (err: any) {
             console.log("[AuthContext] getSession status:", err?.status);
-            if (err?.status === 401 || err?.status === 403) {
+            if (err?.status === 403 && (err?.isBanned || err?.body?.is_banned || err?.message?.toLowerCase().includes('banned'))) {
+              if (initialUser) {
+                const bannedUser = {
+                  ...initialUser,
+                  user_metadata: {
+                    ...initialUser.user_metadata,
+                    is_banned: true,
+                    status: 'banned',
+                  },
+                };
+                setUser(bannedUser);
+                setPersistedItem(USER_CACHE_KEY, JSON.stringify(bannedUser)).catch(() => {});
+              }
+              sessionConfirmed = true;
+            } else if (err?.status === 401 || err?.status === 403) {
               authRejected = true;
             }
           }
@@ -173,6 +187,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       },
       onSessionExpired: () => {
         clearStoredTokens();
+      },
+      onAccountBanned: async () => {
+        console.warn("[AuthContext] Account banned notification received. Updating user.");
+        setUser((prev) => {
+          if (!prev) return prev;
+          const updated = {
+            ...prev,
+            user_metadata: {
+              ...prev.user_metadata,
+              is_banned: true,
+              status: "banned",
+            },
+          };
+          setPersistedItem(USER_CACHE_KEY, JSON.stringify(updated)).catch(() => {});
+          return updated;
+        });
       },
     });
     return unsubscribe;

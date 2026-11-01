@@ -1,6 +1,7 @@
 export interface ConversationMemberProfile {
   id: string;
   full_name: string;
+  anonymous_handle?: string | null;
   username: string;
   avatar_url?: string | null;
 }

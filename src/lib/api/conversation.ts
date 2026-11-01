@@ -163,6 +163,9 @@ export function getConversationStreakEvents(
 
 export interface ConversationStreakResponse {
   dayStreak: number;
+  stage?: number;
+  stageName?: string;
+  effectiveMultiplier?: number;
   streakActiveToday: boolean;
   streakStatus: 'active' | 'at_risk' | 'lapsed' | 'expired' | 'inactive';
   lastQualifyingDate: string | null;
@@ -185,8 +188,20 @@ export function getConversationStreak(
 export function restoreConversationStreak(
   id: string,
   accessToken: string
-): Promise<{ restoresRemaining: number; newStreak: number }> {
-  return apiRequest<{ restoresRemaining: number; newStreak: number }>(`/conversations/${id}/streak/restore`, {
+): Promise<{
+  restoresRemaining: number;
+  newStreak: number;
+  stage?: number;
+  stageName?: string;
+  effectiveMultiplier?: number;
+}> {
+  return apiRequest<{
+    restoresRemaining: number;
+    newStreak: number;
+    stage?: number;
+    stageName?: string;
+    effectiveMultiplier?: number;
+  }>(`/conversations/${id}/streak/restore`, {
     method: "POST",
     accessToken,
   });

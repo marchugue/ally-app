@@ -47,8 +47,8 @@ export function resolveImageUri(input: any): string | null {
 
   // Rewrite localhost / 127.0.0.1 for mobile devices/emulators so they can reach the server
   if (Platform.OS !== "web") {
-    if (raw.includes("localhost:3001") || raw.includes("127.0.0.1:3001")) {
-      return raw.replace(/https?:\/\/(localhost|127\.0\.0\.1):3001/, API_BASE_URL);
+    if (/https?:\/\/(localhost|127\.0\.0\.1):(3001|5174)/.test(raw)) {
+      return raw.replace(/https?:\/\/(localhost|127\.0\.0\.1):(3001|5174)/, API_BASE_URL);
     }
   }
 

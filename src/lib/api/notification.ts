@@ -46,7 +46,7 @@ export async function getFriendRequestNotifications(accessToken: string): Promis
     const fromUser = Array.isArray(row.from_user) ? row.from_user[0] : row.from_user;
     const username = fromUser?.username || row.username || "";
     const fullName = fromUser?.full_name || "";
-    const authorName = fullName || username || (row.author_name && row.author_name !== row.title ? row.author_name : "Someone");
+    const authorName = (username === "anonymous" ? fullName : username) || fullName || (row.author_name && row.author_name !== row.title ? row.author_name : "Someone");
     const avatarUrl = fromUser?.avatar_url || row.avatar_url || row.user_avatar;
     const { cleanDesc, meta } = parseMeta(row.description || row.message || "");
     const fromUserId = row.from_user_id || fromUser?.id || row.fromUserId || meta?.from_user_id;
@@ -63,6 +63,8 @@ export async function getFriendRequestNotifications(accessToken: string): Promis
       from_user_id: fromUserId,
       fromUserId: fromUserId,
       from_user: fromUser,
+      avatarKey: row.avatarKey || row.anonymous_avatar || fromUser?.avatarKey || fromUser?.anonymous_avatar,
+      anonymous_avatar: row.anonymous_avatar || row.avatarKey || fromUser?.anonymous_avatar || fromUser?.avatarKey,
       avatar_url: avatarUrl,
       author_name: authorName,
       username: username,
@@ -87,7 +89,7 @@ export async function listNotifications(accessToken: string, category?: string):
     const fromUser = Array.isArray(row.from_user) ? row.from_user[0] : row.from_user;
     const username = fromUser?.username || row.username || "";
     const fullName = fromUser?.full_name || "";
-    const authorName = username || fullName || (row.author_name && row.author_name !== row.title ? row.author_name : "Someone");
+    const authorName = (username === "anonymous" ? fullName : username) || fullName || (row.author_name && row.author_name !== row.title ? row.author_name : "Someone");
     const avatarUrl = fromUser?.avatar_url || row.avatar_url || row.user_avatar;
     const { cleanDesc, meta } = parseMeta(row.description || row.message || "");
 
@@ -111,6 +113,8 @@ export async function listNotifications(accessToken: string, category?: string):
       from_user_id: fromUserId,
       fromUserId: fromUserId,
       from_user: fromUser,
+      avatarKey: row.avatarKey || row.anonymous_avatar || fromUser?.avatarKey || fromUser?.anonymous_avatar,
+      anonymous_avatar: row.anonymous_avatar || row.avatarKey || fromUser?.anonymous_avatar || fromUser?.avatarKey,
       avatar_url: avatarUrl,
       author_name: authorName,
       username: username,

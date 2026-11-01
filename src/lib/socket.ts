@@ -1,6 +1,6 @@
 import { io, Socket } from "socket.io-client";
 import { API_BASE_URL } from "@/constants";
-import { notifySessionExpired } from "./api/client";
+import { notifySessionExpired, notifyAccountBanned } from "./api/client";
 
 // Socket.io attaches to the HTTP server root — strip a trailing /api if present.
 const SOCKET_URL = API_BASE_URL.replace(/\/api\/?$/, "").replace(/\/$/, "");
@@ -35,7 +35,21 @@ export function getSocket(accessToken?: string | null): Socket | null {
 
     socket.on("auth:revoked", (payload: any) => {
       console.warn("[MobileSocket] Session revoked by server:", payload);
-      notifySessionExpired();
+      if (payload?.reason === "banned" || payload?.is_banned || payload?.reason === "suspended" || payload?.is_suspended) {
+        notifyAccountBanned(payload);
+      } else {
+        notifySessionExpired();
+      }
+    });
+
+    socket.on("user:banned", (payload: any) => {
+      console.warn("[MobileSocket] user:banned received:", payload);
+      notifyAccountBanned(payload);
+    });
+
+    socket.on("user:suspended", (payload: any) => {
+      console.warn("[MobileSocket] user:suspended received:", payload);
+      notifyAccountBanned(payload);
     });
   }
 

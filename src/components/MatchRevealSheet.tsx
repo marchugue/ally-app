@@ -30,10 +30,8 @@ import { AvatarRevealCeremony } from "@/components/AvatarRevealCeremony";
 import {
   getMatchReveal,
   RevealData,
-  DailyTaskStatus,
   endMatch as apiEndMatch,
 } from "@/lib/api/matchmaking";
-import { STAGE_NAMES, POINTS_PER_STAGE, stageName, avatarColorFor } from "@/constants/matchOptions";
 
 interface MatchRevealSheetProps {
   visible: boolean;
@@ -130,20 +128,24 @@ export function MatchRevealSheet({
   }, [visible, fetchReveal]);
 
   const stage = revealData?.stage ?? initialStage;
+  const resolvedStageName = revealData?.stageName || "Anonymous Chat";
   const dayStreak = revealData?.dayStreak ?? initialStreak;
   const partner = revealData?.partner;
-  const stagePoints = revealData?.stagePoints ?? initialStagePoints;
-  const matchPoints = revealData?.matchPoints ?? 0;
+  const matchPoints = revealData?.matchPoints ?? initialStagePoints;
+  const unlockTarget = revealData?.profileUnlockTarget ?? 0;
   const effectiveMultiplier = revealData?.effectiveMultiplier ?? 1;
-  const isProfileUnlocked = Boolean(revealData?.isProfileUnlocked || matchPoints >= 250);
-  const pointsProgress = Math.min(100, Math.round((matchPoints / 250) * 100));
-  const pointsRemaining = Math.max(0, 250 - matchPoints);
+  const isProfileUnlocked = Boolean(
+    revealData?.isProfileUnlocked ?? (unlockTarget > 0 && matchPoints >= unlockTarget)
+  );
+  const pointsProgress =
+    revealData?.progressPercent ??
+    (unlockTarget > 0 ? Math.min(100, Math.round((matchPoints / unlockTarget) * 100)) : 0);
+  const pointsRemaining =
+    revealData?.pointsToProfileUnlock ?? Math.max(0, unlockTarget - matchPoints);
 
-  // Next streak milestone
-  let nextStageDays = 3;
-  if (stage === 2) nextStageDays = 7;
-  else if (stage === 3) nextStageDays = 10;
-  const daysToNextStage = Math.max(0, nextStageDays - dayStreak);
+  const isMaxStage = Boolean(revealData?.isMaxStage ?? stage >= 4);
+  const nextStageDays = revealData?.targetStreak ?? 0;
+  const daysToNextStage = revealData?.daysToNextStage ?? 0;
 
   const handleEndMatch = () => {
     Alert.alert(
@@ -228,7 +230,7 @@ export function MatchRevealSheet({
                     {isProfileUnlocked && partner?.fullName ? partner.fullName : partnerAlias}
                   </Text>
                   <Text style={{ fontSize: 12, color: "#64748B", fontWeight: "600" }}>
-                    Stage {stage}: {stageName(stage)} • {dayStreak}d streak
+                    Stage {stage}: {resolvedStageName} • {dayStreak}d streak
                   </Text>
                 </View>
               </View>
@@ -330,11 +332,13 @@ export function MatchRevealSheet({
                         <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
                           <Text style={{ fontSize: 16 }}>{isProfileUnlocked ? "🎉" : "🔓"}</Text>
                           <Text style={{ fontSize: 13, fontWeight: "800", color: "#0F172A" }}>
-                            {isProfileUnlocked ? "Real Identities Unlocked!" : "Profile Unlock Goal (250 pts)"}
+                            {isProfileUnlocked
+                              ? "Real Identities Unlocked!"
+                              : `Profile Unlock Goal${unlockTarget > 0 ? ` (${unlockTarget} pts)` : ""}`}
                           </Text>
                         </View>
                         <Text style={{ fontSize: 11, fontWeight: "700", color: isProfileUnlocked ? "#16A34A" : "#D97706" }}>
-                          {matchPoints} / 250 pts
+                          {unlockTarget > 0 ? `${matchPoints} / ${unlockTarget} pts` : `${matchPoints} pts`}
                         </Text>
                       </View>
 
@@ -400,9 +404,9 @@ export function MatchRevealSheet({
                           {dayStreak}-Day Streak • Stage {stage} ({effectiveMultiplier}× Multiplier)
                         </Text>
                         <Text style={{ fontSize: 11, color: "#B45309", marginTop: 2 }}>
-                          {stage >= 4
+                          {isMaxStage
                             ? "Max Stage 4 reached! Feed unlocked in Allies filter."
-                            : `${daysToNextStage} more consecutive day${daysToNextStage === 1 ? "" : "s"} for Stage ${stage + 1} (${nextStageDays}d milestone)`}
+                            : `${daysToNextStage} more consecutive day${daysToNextStage === 1 ? "" : "s"} for Stage ${stage + 1}${nextStageDays > 0 ? ` (${nextStageDays}d milestone)` : ""}`}
                         </Text>
                       </View>
                     </View>
@@ -597,99 +601,94 @@ export function MatchRevealSheet({
                       <Text style={{ fontSize: 12, color: "#9A3412", flex: 1, lineHeight: 18 }}>
                         Stage {stage} multiplier: <Text style={{ fontWeight: "800" }}>{effectiveMultiplier}×</Text> ({dayStreak}d streak)
                         {"\n"}
-                        <Text style={{ color: "#C2410C", fontSize: 11 }}>Resets at 12:00 AM PHT daily • 250 total points required to unlock real profiles!</Text>
+                        <Text style={{ color: "#C2410C", fontSize: 11 }}>
+                          Resets at 12:00 AM PHT daily{unlockTarget > 0 ? ` • ${unlockTarget} total points required to unlock real profiles!` : ""}
+                        </Text>
                       </Text>
                     </View>
 
-                    {(!revealData?.dailyTasks || revealData.dailyTasks.length === 0) ? (
-                      <View style={{ alignItems: "center", paddingVertical: 32 }}>
-                        <Lock size={28} color="#CBD5E1" />
-                        <Text style={{ fontSize: 13, color: "#94A3B8", marginTop: 8 }}>
-                          No tasks available at this stage.
-                        </Text>
-                      </View>
-                    ) : (
-                      <View style={{ gap: 10 }}>
-                        {revealData.dailyTasks.map((task) => {
-                          const bothDone = task.myCompleted && task.partnerCompleted;
-                          return (
-                            <View
-                              key={task.taskId}
-                              style={{
-                                backgroundColor: bothDone ? "#F0FDF4" : "#F8FAFC",
-                                borderRadius: 16,
-                                borderWidth: 1,
-                                borderColor: bothDone ? "#86EFAC" : "#E2E8F0",
-                                padding: 14,
-                              }}
-                            >
-                              <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
-                                {bothDone ? (
-                                  <CheckCircle2 size={20} color="#16A34A" />
-                                ) : (
-                                  <Circle size={20} color="#CBD5E1" />
-                                )}
-                                <View style={{ flex: 1 }}>
-                                  <Text style={{ fontSize: 13, fontWeight: "700", color: "#0F172A" }}>
-                                    {task.label}
-                                  </Text>
-                                  <Text style={{ fontSize: 11, color: "#64748B", marginTop: 2 }}>
-                                    {task.description}
-                                  </Text>
-                                </View>
-                                <View style={{ alignItems: "flex-end" }}>
-                                  <Text style={{ fontSize: 12, fontWeight: "800", color: "#1A6B3C" }}>
-                                    +{Math.round(task.basePoints * effectiveMultiplier)}pt
-                                  </Text>
-                                  <Text style={{ fontSize: 10, color: "#94A3B8" }}>
-                                    {task.basePoints}×{effectiveMultiplier}
-                                  </Text>
-                                </View>
+                    <View style={{ gap: 10 }}>
+                      {(revealData?.dailyTasks ?? []).map((task) => {
+                        const bothDone = Boolean(
+                          task.isCompleted ?? (task.myCompleted && task.partnerCompleted)
+                        );
+                        return (
+                          <View
+                            key={task.taskId}
+                            style={{
+                              backgroundColor: bothDone ? "#F0FDF4" : "#F8FAFC",
+                              borderRadius: 16,
+                              borderWidth: 1,
+                              borderColor: bothDone ? "#86EFAC" : "#E2E8F0",
+                              padding: 14,
+                            }}
+                          >
+                            <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                              {bothDone ? (
+                                <CheckCircle2 size={20} color="#16A34A" />
+                              ) : (
+                                <Circle size={20} color="#CBD5E1" />
+                              )}
+                              <View style={{ flex: 1 }}>
+                                <Text style={{ fontSize: 13, fontWeight: "700", color: "#0F172A" }}>
+                                  {task.label}
+                                </Text>
+                                <Text style={{ fontSize: 11, color: "#64748B", marginTop: 2 }}>
+                                  {task.description}
+                                </Text>
                               </View>
-
-                              {/* Me / Partner status */}
-                              <View
-                                style={{
-                                  flexDirection: "row",
-                                  gap: 16,
-                                  marginTop: 10,
-                                  paddingTop: 10,
-                                  borderTopWidth: 1,
-                                  borderTopColor: bothDone ? "#DCFCE7" : "#F1F5F9",
-                                  paddingLeft: 30,
-                                }}
-                              >
-                                <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-                                  {task.myCompleted ? (
-                                    <CheckCircle2 size={12} color="#16A34A" />
-                                  ) : (
-                                    <Circle size={12} color="#CBD5E1" />
-                                  )}
-                                  <Text style={{ fontSize: 11, color: task.myCompleted ? "#16A34A" : "#94A3B8" }}>
-                                    You
-                                  </Text>
-                                </View>
-                                <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
-                                  {task.partnerCompleted ? (
-                                    <CheckCircle2 size={12} color="#16A34A" />
-                                  ) : (
-                                    <Circle size={12} color="#CBD5E1" />
-                                  )}
-                                  <Text style={{ fontSize: 11, color: task.partnerCompleted ? "#16A34A" : "#94A3B8" }}>
-                                    {partnerAlias}
-                                  </Text>
-                                </View>
-                                {task.myPointsAwarded > 0 && (
-                                  <Text style={{ fontSize: 10, color: "#F59E0B", marginLeft: "auto", fontWeight: "700" }}>
-                                    +{task.myPointsAwarded} earned
-                                  </Text>
-                                )}
+                              <View style={{ alignItems: "flex-end" }}>
+                                <Text style={{ fontSize: 12, fontWeight: "800", color: "#1A6B3C" }}>
+                                  +{task.points}pt
+                                </Text>
+                                <Text style={{ fontSize: 10, color: "#94A3B8" }}>
+                                  {task.basePoints}×{effectiveMultiplier}
+                                </Text>
                               </View>
                             </View>
-                          );
-                        })}
-                      </View>
-                    )}
+
+                            {/* Me / Partner status */}
+                            <View
+                              style={{
+                                flexDirection: "row",
+                                gap: 16,
+                                marginTop: 10,
+                                paddingTop: 10,
+                                borderTopWidth: 1,
+                                borderTopColor: bothDone ? "#DCFCE7" : "#F1F5F9",
+                                paddingLeft: 30,
+                              }}
+                            >
+                              <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                                {task.myCompleted ? (
+                                  <CheckCircle2 size={12} color="#16A34A" />
+                                ) : (
+                                  <Circle size={12} color="#CBD5E1" />
+                                )}
+                                <Text style={{ fontSize: 11, color: task.myCompleted ? "#16A34A" : "#94A3B8" }}>
+                                  You
+                                </Text>
+                              </View>
+                              <View style={{ flexDirection: "row", alignItems: "center", gap: 4 }}>
+                                {task.partnerCompleted ? (
+                                  <CheckCircle2 size={12} color="#16A34A" />
+                                ) : (
+                                  <Circle size={12} color="#CBD5E1" />
+                                )}
+                                <Text style={{ fontSize: 11, color: task.partnerCompleted ? "#16A34A" : "#94A3B8" }}>
+                                  {partnerAlias}
+                                </Text>
+                              </View>
+                              {task.myPointsAwarded > 0 && (
+                                <Text style={{ fontSize: 10, color: "#F59E0B", marginLeft: "auto", fontWeight: "700" }}>
+                                  +{task.myPointsAwarded} earned
+                                </Text>
+                              )}
+                            </View>
+                          </View>
+                        );
+                      })}
+                    </View>
                   </>
                 )}
 

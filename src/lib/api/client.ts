@@ -19,6 +19,7 @@ interface RequestOptions {
 type AuthListener = {
   onSessionExpired?: () => void;
   onTokenRefreshed?: (newToken: string) => void;
+  onAccountBanned?: (data?: any) => void;
 };
 
 const authListeners = new Set<AuthListener>();
@@ -36,6 +37,10 @@ function notifyTokenRefreshed(newToken: string) {
 
 export function notifySessionExpired() {
   authListeners.forEach((l) => l.onSessionExpired?.());
+}
+
+export function notifyAccountBanned(data?: any) {
+  authListeners.forEach((l) => l.onAccountBanned?.(data));
 }
 
 let refreshPromise: Promise<string | null> | null = null;
@@ -192,6 +197,9 @@ export async function apiRequest<T>(
   const data = await response.json().catch(() => null);
 
   if (!response.ok) {
+    if (response.status === 403 && data && typeof data === "object" && ((data as any).is_banned || (data as any).status === "banned" || (data as any).is_suspended || (data as any).status === "suspended")) {
+      notifyAccountBanned(data);
+    }
     const isMaintenance =
       response.status === 503 &&
       Boolean(data && typeof data === "object" && "maintenance" in data && (data as any).maintenance);

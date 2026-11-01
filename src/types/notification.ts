@@ -60,6 +60,12 @@ export interface NotificationItem {
   author_name?: string;
   user_name?: string;
   username?: string;
+  anonymous_handle?: string | null;
+  anonymousHandle?: string | null;
+  from_user_alias?: string | null;
+  fromUserAlias?: string | null;
+  from_user_name?: string | null;
+  fromUserName?: string | null;
   redirection?: NotificationRedirection;
   from_user?:
     | {
@@ -67,11 +73,15 @@ export interface NotificationItem {
         username?: string;
         full_name?: string;
         avatar_url?: string;
+        anonymous_handle?: string | null;
+        anonymousHandle?: string | null;
       }
     | Array<{
         id?: string;
         username?: string;
         full_name?: string;
         avatar_url?: string;
+        anonymous_handle?: string | null;
+        anonymousHandle?: string | null;
       }>;
 }

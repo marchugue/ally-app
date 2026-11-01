@@ -1,3 +1,4 @@
+import { getAnonymousDisplayName, getAnonymousAvatarKey, isAnonymousHandle } from "@/lib/anonymousHandle";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   View,
@@ -275,8 +276,18 @@ export default function RequestsScreen() {
           const message = item.message || item.description || "Sent you a match request";
           const requesterId = item.from_user_id || item.fromUserId;
           const status = handledStatus[item.id];
-          const anonAvatarKey = getAnonAvatarKey(requesterId);
-          const anonName = `Anonymous ${anonAvatarKey.charAt(0).toUpperCase() + anonAvatarKey.slice(1)}`;
+          const anonAvatarKey = getAnonymousAvatarKey(item, undefined, requesterId);
+          const anonName = getAnonymousDisplayName(
+            {
+              ...item,
+              id: requesterId,
+              anonymous_handle: item.anonymous_handle || item.anonymousHandle || item.from_user_alias || item.fromUserAlias,
+              full_name: item.from_user_name || item.fromUserName || item.author_name,
+              name: item.username,
+            },
+            undefined,
+            requesterId
+          );
 
           return (
             <View

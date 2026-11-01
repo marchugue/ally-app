@@ -102,3 +102,51 @@ export function isUserMuted(userId: string, accessToken: string): Promise<{ mute
 export function listMutedUsers(accessToken: string): Promise<MutedUserEntry[]> {
   return apiRequest<MutedUserEntry[]>("/moderation/muted", { accessToken });
 }
+
+export interface BanStatusResponse {
+  isBanned: boolean;
+  isSuspended?: boolean;
+  status?: 'banned' | 'suspended' | 'active';
+  bannedAt: string | null;
+  suspendedUntil?: string | null;
+  reportId: string | null;
+  docketId: string;
+  violationLabel: string;
+  reason: string;
+  appealSubmitted: boolean;
+  appealDocketId?: string;
+  appealStatement?: string;
+  appealSubmittedAt?: string;
+}
+
+export function getBanStatus(accessToken: string): Promise<BanStatusResponse> {
+  return apiRequest<BanStatusResponse>("/moderation/ban-status", { accessToken });
+}
+
+export function submitBanAppeal(
+  statement: string,
+  accessToken: string,
+  reportId?: string
+): Promise<{ success: boolean; appealDocketId: string }> {
+  return apiRequest<{ success: boolean; appealDocketId: string }>("/moderation/ban-appeal", {
+    method: "POST",
+    body: { statement, reportId },
+    accessToken,
+  });
+}
+
+export function getMyReports(accessToken: string): Promise<any[]> {
+  return apiRequest<any[]>("/moderation/my-reports", { accessToken });
+}
+
+export function submitReportAppeal(
+  reportId: string,
+  statement: string,
+  accessToken: string
+): Promise<{ success: boolean; appealDocketId: string }> {
+  return apiRequest<{ success: boolean; appealDocketId: string }>(`/moderation/reports/${reportId}/appeal`, {
+    method: "POST",
+    body: { statement },
+    accessToken,
+  });
+}

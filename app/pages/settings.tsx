@@ -40,6 +40,7 @@ import {
   ExternalLink,
   Eye,
   EyeOff,
+  FileText,
   Flame,
   History,
   Key,
@@ -402,6 +403,13 @@ export default function SettingsScreen() {
           icon={ShieldAlert}
           title="Restricted Users"
           onPress={() => router.push("/pages/restricted-users" as any)}
+        />
+
+        {/* Report Center */}
+        <SettingCard
+          icon={FileText}
+          title="Report Center"
+          onPress={() => router.push("/pages/reports" as any)}
         />
 
         {/* Privacy Policy */}

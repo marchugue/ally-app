@@ -98,6 +98,7 @@ function RootLayoutNav() {
         segments[0] === "onboarding";
 
       const onPendingPage = segments[0] === "pages" && segments[1] === "pending-approval";
+      const onBannedPage = segments[0] === "pages" && segments[1] === "banned";
       const onRegisterPage = segments[0] === "pages" && segments[1] === "register";
       const onIdUploadPages =
         segments[0] === "pages" &&
@@ -110,6 +111,30 @@ function RootLayoutNav() {
       if (user) {
         // Mark onboarding as completed in storage so onboarding is never shown again
         AsyncStorage.setItem("onboarding_done", "1").catch(() => {});
+
+        // Account is banned or suspended — lock user strictly to /pages/banned
+        const isBanned = Boolean(
+          user.user_metadata?.is_banned === true ||
+          user.user_metadata?.status === "banned" ||
+          user.user_metadata?.is_suspended === true ||
+          user.user_metadata?.status === "suspended" ||
+          (user as any).is_banned === true ||
+          (user as any).status === "banned" ||
+          (user as any).is_suspended === true ||
+          (user as any).status === "suspended"
+        );
+
+        if (isBanned) {
+          if (!onBannedPage) {
+            router.replace("/pages/banned" as any);
+          }
+          return;
+        }
+
+        if (onBannedPage) {
+          router.replace("/(tabs)");
+          return;
+        }
 
         const emailType = user.user_metadata?.email_type;
         const isChmsu =
@@ -241,6 +266,7 @@ function RootLayoutNav() {
       <Stack.Screen name="pages/forgot-password" options={{ headerShown: false }} />
       <Stack.Screen name="pages/password-reset-success" options={{ headerShown: false }} />
       <Stack.Screen name="pages/pending-approval" options={{ headerShown: false }} />
+      <Stack.Screen name="pages/banned" options={{ headerShown: false }} />
 
       {/* Main app */}
       <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
@@ -255,6 +281,8 @@ function RootLayoutNav() {
       <Stack.Screen name="pages/edit-profile" options={{ headerShown: false, animation: "slide_from_right" }} />
       <Stack.Screen name="pages/blocked-users" options={{ headerShown: false, animation: "slide_from_right" }} />
       <Stack.Screen name="pages/restricted-users" options={{ headerShown: false, animation: "slide_from_right" }} />
+      <Stack.Screen name="pages/reports" options={{ headerShown: false, animation: "slide_from_right" }} />
+      <Stack.Screen name="pages/report" options={{ headerShown: false, animation: "slide_from_right" }} />
       <Stack.Screen name="pages/roadmap" options={{ headerShown: false, animation: "slide_from_bottom" }} />
       <Stack.Screen name="pages/game-portal" options={{ headerShown: false, animation: "slide_from_bottom" }} />
 

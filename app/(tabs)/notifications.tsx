@@ -1,3 +1,4 @@
+import { getAnonymousDisplayName, getAnonymousAvatarKey, isAnonymousHandle } from "@/lib/anonymousHandle";
 import React, { useCallback, useEffect, useState, useMemo } from "react";
 import {
   View,
@@ -151,8 +152,10 @@ export function getAnonymousInfo(item: NotificationItem) {
     item.type === "connection_request";
 
   const nameContainsAnon = Boolean(
-    (item.username && /anonymous/i.test(item.username)) ||
-    (item.author_name && /anonymous/i.test(item.author_name))
+    (item.username && (/anonymous/i.test(item.username) || isAnonymousHandle(item.username))) ||
+    (item.author_name && (/anonymous/i.test(item.author_name) || isAnonymousHandle(item.author_name))) ||
+    Boolean((item as any).fromUserName && isAnonymousHandle((item as any).fromUserName)) ||
+    Boolean((item as any).anonymous_handle || (item as any).anonymousHandle)
   );
   const titleContainsAnon = Boolean(
     item.title && (/anonymous/i.test(item.title) || /messaged you/i.test(item.title))
@@ -161,7 +164,14 @@ export function getAnonymousInfo(item: NotificationItem) {
     item.description && /anonymous/i.test(item.description)
   );
 
-  const rawAvatar = (item as any).avatarKey || (item as any).avatar_key || (item as any).avatar || (item as any).from_user_avatar;
+  const rawAvatar =
+    (item as any).anonymous_avatar ||
+    (item as any).avatarKey ||
+    (item as any).avatar_key ||
+    (item as any).from_user?.anonymous_avatar ||
+    (item as any).from_user?.avatarKey ||
+    (item as any).avatar ||
+    (item as any).from_user_avatar;
   const avatarIsAnimal = Boolean(
     rawAvatar &&
     ANIMAL_KEYS.includes(String(rawAvatar).toLowerCase().trim())
@@ -206,20 +216,28 @@ export function getAnonymousInfo(item: NotificationItem) {
     for (let i = 0; i < seed.length; i++) {
       hash = (hash * 31 + seed.charCodeAt(i)) >>> 0;
     }
-    avatarKey = ANIMAL_KEYS[hash % ANIMAL_KEYS.length];
+    avatarKey = getAnonymousAvatarKey(item, rawAvatar, item.from_user_id || (item as any).fromUserId);
   }
 
-  let anonName = "Anonymous Ally";
-  if (nameContainsAnon && (item.author_name || item.username)) {
-    anonName = item.author_name || item.username || "Anonymous Ally";
-  } else if (titleContainsAnon && item.title && item.title.includes("messaged you")) {
-    anonName = item.title.replace(/\s*messaged you.*$/i, "").trim();
-  } else if (titleContainsAnon && item.title && item.title.includes("sent an anonymous")) {
-    anonName = item.title.replace(/\s*sent an anonymous.*$/i, "").trim();
-  } else if (avatarKey) {
-    const capitalized = avatarKey.charAt(0).toUpperCase() + avatarKey.slice(1);
-    anonName = `Anonymous ${capitalized}`;
-  }
+  const titleSender =
+    titleContainsAnon && item.title && item.title.includes("messaged you")
+      ? item.title.replace(/\s*messaged you.*$/i, "").trim()
+      : titleContainsAnon && item.title && item.title.includes("sent an anonymous")
+      ? item.title.replace(/\s*sent an anonymous.*$/i, "").trim()
+      : undefined;
+
+  const senderId = item.from_user_id || (item as any).fromUserId || item.id;
+  const anonName = getAnonymousDisplayName(
+    {
+      ...item,
+      id: senderId,
+      anonymous_handle: (item as any).anonymous_handle || (item as any).anonymousHandle,
+      author_name: item.author_name,
+      full_name: (item as any).fromUserName,
+      name: item.username,
+    },
+    titleSender
+  );
 
   return {
     isAnon: true,

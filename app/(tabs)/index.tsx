@@ -23,6 +23,7 @@ import { useAuth } from "@/lib/auth/AuthContext";
 import { useTheme } from "@/context/ThemeContext";
 import { listFeed, likePost, unlikePost } from "@/lib/api/feed";
 import { newsfeedCache } from "@/lib/newsfeedCache";
+import { getAnonymousDisplayName } from "@/lib/anonymousHandle";
 import type { FeedPost } from "@/types/feed";
 
 const PAGE_SIZE = 30;
@@ -357,7 +358,18 @@ export default function HomeScreen() {
     [accessToken, activeFilter, user?.id]
   );
 
+  const handleUpdatePost = useCallback((updatedPost: FeedPost) => {
+    setPosts((prev) => prev.map((p) => (p.id === updatedPost.id ? updatedPost : p)));
+    void newsfeedCache.updatePost(activeFilter, updatedPost, user?.id);
+  }, [activeFilter, user?.id]);
+
+  const handleDeletePost = useCallback((postId: string) => {
+    setPosts((prev) => prev.filter((p) => p.id !== postId));
+  }, []);
+
   const navigateToPost = useCallback((post: FeedPost) => {
+    const isOwn = user?.id === post.author?.id;
+    const isAlly = Boolean((post.author?.is_ally && !post.author?.is_unrevealed_match && post.author?.username !== "anonymous") || isOwn);
     router.push({
       pathname: "/pages/media-preview" as any,
       params: {
@@ -365,15 +377,22 @@ export default function HomeScreen() {
         initialIndex: "0",
         postId: post.id,
         caption: post.content || "",
-        authorName: post.author?.full_name || `@${post.author?.username}`,
-        authorAvatar: post.author?.avatar_url || "",
+        authorName: isAlly
+          ? (post.author?.full_name || `@${post.author?.username}`)
+          : getAnonymousDisplayName(post.author),
+        authorUsername: isAlly ? (post.author?.username || "") : "anonymous",
+        authorAvatar: isAlly ? (post.author?.avatar_url || "") : "",
+        avatarKey: post.author?.avatarKey || "",
+        authorId: post.author?.id || post.author_id || "",
+        isAlly: isAlly ? "true" : "false",
+        createdAt: post.created_at || "",
         likesCount: String(post.likes_count || 0),
         commentsCount: String(post.comments_count || 0),
         isLiked: post.liked_by_me ? "true" : "false",
         openComments: "true",
       },
     });
-  }, []);
+  }, [user?.id]);
 
   const rotate = rotateAnim.interpolate({
     inputRange: [0, 1],
@@ -622,6 +641,8 @@ export default function HomeScreen() {
               post={item}
               onToggleLike={toggleLike}
               onComment={navigateToPost}
+              onUpdatePost={handleUpdatePost}
+              onDeletePost={handleDeletePost}
             />
           )}
           ListFooterComponent={

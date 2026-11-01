@@ -1,8 +1,8 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import type { Conversation, Message } from "@/types/conversation";
 
-const CONVERSATIONS_CACHE_KEY_PREFIX = "ally_conversations_cache_";
-const CHAT_CACHE_KEY_PREFIX = "ally_chat_cache_";
+const CONVERSATIONS_CACHE_KEY_PREFIX = "ally_conversations_cache_v3_";
+const CHAT_CACHE_KEY_PREFIX = "ally_chat_cache_v3_";
 const MAX_CACHE_AGE_MS = 24 * 60 * 60 * 1000; // 24 hours
 const MAX_CACHED_CONVERSATIONS = 40;
 const MAX_CACHED_MESSAGES = 50;

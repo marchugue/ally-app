@@ -1,7 +1,8 @@
 // src/constants/matchOptions.ts
 //
-// Matches backend anonymous animal pool (see backend: src/app/constants/anonymousIdentity.ts).
-// Maps each animal key to its corresponding emoji and deterministic background color.
+// Pure visual anonymous animal avatar helpers (matches backend anonymousIdentity.ts).
+// All progression rules, daily tasks, multiplied rewards, stage names,
+// unlock targets, and streak milestones live exclusively on the backend API.
 
 export const AVATAR_EMOJI: Record<string, string> = {
   fox: "🦊",
@@ -67,43 +68,3 @@ export function avatarColorFor(avatarKey: string | null | undefined): string {
   }
   return AVATAR_COLORS[hash];
 }
-
-export const STAGE_NAMES = [
-  "Stranger",
-  "Anonymous Chat",
-  "Play Games Together",
-  "Media Sharing",
-  "Campus Allies",
-] as const;
-
-/** Points required to unlock real profile / mutual identity. */
-export const TOTAL_POINTS_FOR_PROFILE_UNLOCK = 250;
-
-/** Backward-compat alias */
-export const POINTS_PER_STAGE = 250;
-
-/** Consecutive daily streak required to enter each stage: 0d (Stage 1), 3d (Stage 2), 7d (Stage 3), 10d (Stage 4). */
-export const STAGE_THRESHOLDS = [0, 0, 3, 7, 10];
-
-/** Stage corresponding to a consecutive day streak. */
-export function stageForStreak(days: number): number {
-  if (days >= 10) return 4;
-  if (days >= 7) return 3;
-  if (days >= 3) return 2;
-  return 1;
-}
-
-/**
- * Authoritative stage for a match given its live day streak.
- * Levels 1–3 follow the streak: when a streak ends, level drops back with it.
- * Level 4 (Campus Allies) is permanent and never decreases.
- */
-export function resolveStageForStreak(currentStage: number | null | undefined, dayStreak: number): number {
-  if ((currentStage ?? 1) >= 4) return 4;
-  return stageForStreak(dayStreak);
-}
-
-export function stageName(stage: number): string {
-  return STAGE_NAMES[stage] ?? STAGE_NAMES[0];
-}
-

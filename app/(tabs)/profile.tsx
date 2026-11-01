@@ -175,6 +175,13 @@ export default function ProfileScreen() {
     [accessToken]
   );
 
+  const handleUpdatePost = useCallback((updatedPost: FeedPost) => {
+    setPosts((prev) => prev.map((p) => (p.id === updatedPost.id ? updatedPost : p)));
+  }, []);
+
+  const handleDeletePost = useCallback((postId: string) => {
+    setPosts((prev) => prev.filter((p) => p.id !== postId));
+  }, []);
 
   const mediaPosts = useMemo(() => {
     return posts.filter(
@@ -563,7 +570,14 @@ export default function ProfileScreen() {
                 </Pressable>
               );
             }
-            return <PostCard post={item} onToggleLike={toggleLike} />;
+            return (
+              <PostCard
+                post={item}
+                onToggleLike={toggleLike}
+                onUpdatePost={handleUpdatePost}
+                onDeletePost={handleDeletePost}
+              />
+            );
           }}
           ListEmptyComponent={
             activeTab === "feed" && !postsLoading ? (
