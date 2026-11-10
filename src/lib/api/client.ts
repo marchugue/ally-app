@@ -18,7 +18,7 @@ interface RequestOptions {
 
 type AuthListener = {
   onSessionExpired?: () => void;
-  onTokenRefreshed?: (newToken: string) => void;
+  onTokenRefreshed?: (newToken: string, updatedUser?: any) => void;
   onAccountBanned?: (data?: any) => void;
 };
 
@@ -31,8 +31,8 @@ export function registerAuthSessionListener(listener: AuthListener): () => void 
   };
 }
 
-function notifyTokenRefreshed(newToken: string) {
-  authListeners.forEach((l) => l.onTokenRefreshed?.(newToken));
+function notifyTokenRefreshed(newToken: string, updatedUser?: any) {
+  authListeners.forEach((l) => l.onTokenRefreshed?.(newToken, updatedUser));
 }
 
 export function notifySessionExpired() {
@@ -43,13 +43,57 @@ export function notifyAccountBanned(data?: any) {
   authListeners.forEach((l) => l.onAccountBanned?.(data));
 }
 
+/**
+ * Checks if a JWT access token is expired or will expire within `bufferSeconds`.
+ * Decodes the JWT payload safely without external dependencies.
+ */
+export function isJwtExpired(token: string, bufferSeconds = 60): boolean {
+  if (!token) return true;
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return true;
+    const base64Url = parts[1];
+    const base64 = base64Url.replace(/-/g, "+").replace(/_/g, "/");
+    let jsonStr: string;
+    if (typeof atob === "function") {
+      jsonStr = atob(base64);
+    } else {
+      const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/=";
+      let str = base64.replace(/=+$/, "");
+      let output = "";
+      for (
+        let bc = 0, bs = 0, buffer, i = 0;
+        (buffer = str.charAt(i++));
+        ~buffer && ((bs = bc % 4 ? bs * 64 + buffer : buffer), bc++ % 4)
+          ? (output += String.fromCharCode(255 & (bs >> ((-2 * bc) & 6))))
+          : 0
+      ) {
+        buffer = chars.indexOf(buffer);
+      }
+      jsonStr = output;
+    }
+    const payload = JSON.parse(jsonStr);
+    if (!payload.exp) return false;
+    const nowInSeconds = Math.floor(Date.now() / 1000);
+    return nowInSeconds >= payload.exp - bufferSeconds;
+  } catch {
+    return false;
+  }
+}
+
 let refreshPromise: Promise<string | null> | null = null;
 
 /**
- * Deduplicated silent refresh using the stored refresh token.
- * Guarantees only 1 network refresh request executes at any given time.
+ * Deduplicated silent refresh using the stored refresh token (Facebook-style sliding session).
+ *
+ * Guarantees only 1 network refresh request executes at any given time to eliminate
+ * Supabase refresh token rotation reuse detection race conditions.
+ *
+ * Resilient against network drops: offline launches and transient connectivity drops
+ * will NEVER revoke or log out the session. Only explicit server revocation (401/403
+ * with invalid/revoked token or banned account) will expire the local session.
  */
-async function performSilentRefresh(): Promise<string | null> {
+export async function performSilentRefresh(force = false): Promise<string | null> {
   if (refreshPromise) {
     return refreshPromise;
   }
@@ -61,14 +105,62 @@ async function performSilentRefresh(): Promise<string | null> {
         return null;
       }
 
+      // Check if current access token is already valid when not forced
+      if (!force) {
+        const currentAccessToken = await getPersistedItem(ACCESS_TOKEN_KEY);
+        if (currentAccessToken && !isJwtExpired(currentAccessToken, 90)) {
+          return currentAccessToken;
+        }
+      }
+
       const refreshUrl = `${API_BASE_URL}/api/auth/refresh`;
-      const res = await fetch(refreshUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ refreshToken: storedRefreshToken }),
-      });
+      let res: Response;
+      try {
+        res = await fetch(refreshUrl, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ refreshToken: storedRefreshToken }),
+        });
+      } catch (fetchErr: any) {
+        // Network error / offline / server unreachable:
+        // KEEP SESSION INTACT! Never log out on transient network failure.
+        console.warn("[Auth] Silent refresh network error (device offline or server unreachable):", fetchErr?.message);
+        return null;
+      }
 
       if (!res.ok) {
+        const errorData = await res.json().catch(() => null);
+        const errMsg = String(errorData?.message || "").toLowerCase();
+        console.warn(`[Auth] Refresh endpoint returned status ${res.status}:`, errMsg);
+
+        // Check for account ban or suspension first
+        if (
+          errorData?.is_banned ||
+          errorData?.status === "banned" ||
+          errorData?.is_suspended ||
+          errorData?.status === "suspended"
+        ) {
+          notifyAccountBanned(errorData);
+          return null;
+        }
+
+        // ONLY treat as revoked if status is 401/403 AND explicitly indicates invalid/revoked token
+        const isExplicitRevocation =
+          (res.status === 401 || res.status === 403) &&
+          (errMsg.includes("invalid") ||
+            errMsg.includes("expired") ||
+            errMsg.includes("revoked") ||
+            errMsg.includes("not found") ||
+            errMsg.includes("signed out") ||
+            errMsg.includes("session invalid"));
+
+        if (isExplicitRevocation) {
+          console.warn("[Auth] Refresh token was explicitly revoked by server. Expiring session.");
+          notifySessionExpired();
+        } else {
+          // 5xx, rate limits, maintenance: preserve local session for offline resilience
+          console.warn("[Auth] Server returned non-revocation error. Preserving session for offline use.");
+        }
         return null;
       }
 
@@ -80,21 +172,23 @@ async function performSilentRefresh(): Promise<string | null> {
         return null;
       }
 
-      await setPersistedItem(ACCESS_TOKEN_KEY, newAccessToken);
-      if (newRefreshToken) {
-        await setPersistedItem(REFRESH_TOKEN_KEY, newRefreshToken);
-      }
-      if (refreshData?.user) {
-        await setPersistedItem(USER_CACHE_KEY, JSON.stringify(refreshData.user));
-      }
-      await setPersistedItem(
-        SESSION_CACHE_KEY,
-        JSON.stringify({ ...refreshData, refreshToken: newRefreshToken })
-      );
+      // Persist across both SecureStore and AsyncStorage layers
+      await Promise.all([
+        setPersistedItem(ACCESS_TOKEN_KEY, newAccessToken),
+        setPersistedItem(REFRESH_TOKEN_KEY, newRefreshToken),
+        refreshData?.user
+          ? setPersistedItem(USER_CACHE_KEY, JSON.stringify(refreshData.user))
+          : Promise.resolve(),
+        setPersistedItem(
+          SESSION_CACHE_KEY,
+          JSON.stringify({ ...refreshData, accessToken: newAccessToken, refreshToken: newRefreshToken })
+        ),
+      ]);
 
-      notifyTokenRefreshed(newAccessToken);
+      notifyTokenRefreshed(newAccessToken, refreshData?.user);
       return newAccessToken;
-    } catch {
+    } catch (err: any) {
+      console.warn("[Auth] Unexpected silent refresh error:", err);
       return null;
     } finally {
       refreshPromise = null;
@@ -126,8 +220,26 @@ export async function apiRequest<T>(
   };
 
   let tokenToUse = accessToken;
-  if (!tokenToUse && !path.startsWith("/auth/")) {
+  const isAuthRoute =
+    path.startsWith("/auth/login") ||
+    path.startsWith("/auth/refresh") ||
+    path.startsWith("/auth/register") ||
+    path.startsWith("/auth/otp") ||
+    path.startsWith("/auth/forgot-password") ||
+    path.startsWith("/auth/reset-password") ||
+    path.startsWith("/auth/check-email");
+
+  if (!tokenToUse && !isAuthRoute) {
     tokenToUse = await getPersistedItem(ACCESS_TOKEN_KEY);
+
+    // Proactive refresh (Facebook-style): if token is expired or expiring within 60s,
+    // refresh it seamlessly before dispatching the request so the user never sees 401s!
+    if (tokenToUse && isJwtExpired(tokenToUse, 60)) {
+      const refreshedToken = await performSilentRefresh(true);
+      if (refreshedToken) {
+        tokenToUse = refreshedToken;
+      }
+    }
   }
 
   if (tokenToUse) {
@@ -154,16 +266,8 @@ export async function apiRequest<T>(
   }
 
   // Intercept 401 Unauthorized for authenticated endpoints
-  const isAuthRoute =
-    path.startsWith("/auth/login") ||
-    path.startsWith("/auth/refresh") ||
-    path.startsWith("/auth/register") ||
-    path.startsWith("/auth/otp") ||
-    path.startsWith("/auth/forgot-password") ||
-    path.startsWith("/auth/reset-password");
-
   if (response.status === 401 && !isAuthRoute) {
-    const refreshedToken = await performSilentRefresh();
+    const refreshedToken = await performSilentRefresh(true);
     if (refreshedToken) {
       // Retry once with refreshed access token
       headers.Authorization = `Bearer ${refreshedToken}`;
@@ -182,8 +286,7 @@ export async function apiRequest<T>(
         );
       }
     } else {
-      console.warn(`[API] 401 Unauthorized on ${path} and refresh failed. Notifying session expired.`);
-      notifySessionExpired();
+      console.warn(`[API] 401 on ${path}. performSilentRefresh handled revocation check.`);
     }
   }
 

@@ -520,6 +520,11 @@ export default function ForgotPasswordScreen() {
                     containerStyle={{ marginBottom: 16 }}
                     returnKeyType="done"
                     onSubmitEditing={handleCompleteReset}
+                    error={
+                      confirmPassword.trim().length > 0 && confirmPassword !== newPassword
+                        ? "Passwords do not match."
+                        : null
+                    }
                   />
                 </View>
               </View>

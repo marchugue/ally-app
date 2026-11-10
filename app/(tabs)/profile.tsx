@@ -20,6 +20,7 @@ import {
   ChevronRight,
   Pencil,
   Shield,
+  ShieldAlert,
   X,
   Building2,
   Users,
@@ -966,6 +967,15 @@ function AccountSheet({
 
           <MenuRow icon={Pencil} label="Edit profile" onPress={onEdit} colors={colors} />
           <MenuRow icon={Settings} label="Settings" onPress={onSettings} colors={colors} />
+          <MenuRow
+            icon={ShieldAlert}
+            label="Report center"
+            onPress={() => {
+              onClose();
+              router.push("/pages/reports" as any);
+            }}
+            colors={colors}
+          />
           <MenuRow icon={Bookmark} label="Saved posts" onPress={onClose} colors={colors} />
 
           <View style={{ height: 12 }} />

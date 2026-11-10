@@ -1,17 +1,17 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
   View,
   Text,
-  ScrollView,
   Pressable,
   StatusBar,
   TextInput,
-  ActivityIndicator,
-  Animated,
+  Image,
   StyleSheet,
+  ActivityIndicator,
 } from "react-native";
 import { router } from "expo-router";
 import { ArrowLeft } from "lucide-react-native";
+import Svg, { Path, Circle, Defs, LinearGradient, Stop } from "react-native-svg";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth, ApiError } from "@/lib/auth/AuthContext";
 import { validateEmail } from "@/lib/validator/email";
@@ -21,14 +21,20 @@ import AlertMessage from "@/components/AlertMessage";
 import LoadingOverlay from "@/components/LoadingOverlay";
 import { Button } from "@/components/Button";
 import GoogleButton, { OrDivider } from "@/components/GoogleButton";
+import { KeyboardHugView } from "@/components/KeyboardHugView";
 import { completeOAuthPostLogin, navigateAfterOAuth } from "@/lib/auth/oauthPostLogin";
 
-const BRAND_GREEN = "#1A6B3C";
-const BRAND_GREEN_DARK = "#155a33";
+const BRAND_GREEN = "#166534";
 
 export default function LoginScreen() {
   const insets = useSafeAreaInsets();
-  const { signIn, signInWithGoogle, completeLogin } = useAuth();
+  const { user, accessToken, signIn, signInWithGoogle, completeLogin } = useAuth();
+
+  useEffect(() => {
+    if (user || accessToken) {
+      router.replace("/(tabs)");
+    }
+  }, [user, accessToken]);
 
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
@@ -40,6 +46,15 @@ export default function LoginScreen() {
 
   const emailRef = useRef<TextInput>(null);
   const passwordRef = useRef<TextInput>(null);
+
+  // If session is true, automatically show loading state while routing to newsfeed (tabs)
+  if (user || accessToken) {
+    return (
+      <View style={{ flex: 1, backgroundColor: "#FFFFFF", alignItems: "center", justifyContent: "center" }}>
+        <ActivityIndicator color={BRAND_GREEN} />
+      </View>
+    );
+  }
 
   // Validation
   const emailError =
@@ -84,7 +99,7 @@ export default function LoginScreen() {
     try {
       const [session] = await Promise.all([
         signIn(email.trim().toLowerCase(), password),
-        new Promise((resolve) => setTimeout(resolve, 1000)),
+        new Promise((resolve) => setTimeout(resolve, 800)),
       ]);
 
       const isBanned = Boolean(
@@ -120,7 +135,6 @@ export default function LoginScreen() {
         isPending ? ("/pages/pending-approval" as any) : "/(tabs)"
       );
     } catch (error: any) {
-      // Banned or suspended account — redirect directly to sanction page
       if (
         (error?.status === 403 || error?.status === 400) &&
         (error?.isBanned || error?.message?.toLowerCase().includes("banned") || error?.message?.toLowerCase().includes("suspended"))
@@ -128,7 +142,6 @@ export default function LoginScreen() {
         router.replace("/pages/banned" as any);
         return;
       }
-      // OTP not yet verified — redirect to verify screen
       if (error?.requiresOtp && error?.userId) {
         router.replace(
           `/pages/verify-otp?userId=${encodeURIComponent(
@@ -171,119 +184,168 @@ export default function LoginScreen() {
 
   return (
     <View style={styles.root}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+      <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
 
       <AlertMessage message={errorMessage} type="error" />
       <LoadingOverlay visible={isSubmitting} />
 
-      <ScrollView
-        contentContainerStyle={[
-          styles.scrollContent,
-          {
-            paddingTop: insets.top + 10,
-            paddingBottom: Math.max(insets.bottom, 24) + 16,
-          },
-        ]}
-        keyboardShouldPersistTaps="handled"
-        automaticallyAdjustKeyboardInsets={true}
-        showsVerticalScrollIndicator={false}
-      >
-        {/* ── Top Bar: Back Action ── */}
-        <View style={styles.topBar}>
-          <Pressable
-            onPress={handleBack}
-            hitSlop={12}
-            style={styles.backBtn}
-            accessibilityLabel="Go back"
-          >
-            <ArrowLeft size={22} color="#111827" strokeWidth={2.2} />
-          </Pressable>
-        </View>
+      {/* ── TOP SECTION: Organic Green Drawing Header (Non-scrolling, Compact) ── */}
+      <View style={[styles.headerContainer, { height: 180 + insets.top }]}>
+        <Svg
+          width="100%"
+          height="100%"
+          viewBox="0 0 375 220"
+          preserveAspectRatio="none"
+          style={StyleSheet.absoluteFill}
+        >
+          <Defs>
+            <LinearGradient id="mobileBaseGreen" x1="0%" y1="0%" x2="100%" y2="100%">
+              <Stop offset="0%" stopColor="#197143" />
+              <Stop offset="100%" stopColor="#146437" />
+            </LinearGradient>
+            <LinearGradient id="mobileDarkCircle" x1="0%" y1="0%" x2="100%" y2="100%">
+              <Stop offset="0%" stopColor="#155F34" />
+              <Stop offset="100%" stopColor="#0F4826" />
+            </LinearGradient>
+          </Defs>
 
-        {/* ── Centered ALLY-JIS Branding (No Icon, Fraunces Font) ── */}
-        <View style={styles.brandContainer}>
-          <Text style={styles.brandTitle}>ALLY-JIS</Text>
-        </View>
-
-        {/* ── Screen Title: Left-Aligned ── */}
-        <Text style={styles.screenTitle}>Login to your Account</Text>
-
-        {/* ── Inputs: Same as Register (EmailInput & PasswordInput) ── */}
-        <View style={styles.formContainer}>
-          <EmailInput
-            ref={emailRef}
-            value={email}
-            onChangeText={(text) => {
-              setEmail(text);
-              if (errorMessage) setErrorMessage(null);
-            }}
-            onBlur={() => setTouchedEmail(true)}
-            error={touchedEmail ? emailError : null}
-            placeholder="Email"
-            returnKeyType="next"
-            onSubmitEditing={() => passwordRef.current?.focus()}
+          {/* Base Organic Wave */}
+          <Path
+            d="M 0,0 L 250,0 C 290,12 338,40 375,85 L 375,220 C 285,225 170,210 90,165 C 40,135 10,115 0,100 Z"
+            fill="url(#mobileBaseGreen)"
           />
 
-          <PasswordInput
-            ref={passwordRef}
-            value={password}
-            onChangeText={(text) => {
-              setPassword(text);
-              if (errorMessage) setErrorMessage(null);
-            }}
-            onBlur={() => setTouchedPassword(true)}
-            error={touchedPassword ? passError : null}
-            placeholder="Password"
-            showStrength={false}
-            returnKeyType="done"
-            onSubmitEditing={handleLogin}
-          />
+          {/* Concentric Dark Green Circle */}
+          <Circle cx="195" cy="90" r="105" fill="url(#mobileDarkCircle)" />
+        </Svg>
 
-          {/* Forgot Password Link */}
-          <View style={styles.forgotPassRow}>
-            <Pressable
-              onPress={() => router.push("/pages/forgot-password" as any)}
-              hitSlop={8}
-            >
-              <Text style={styles.forgotPassText}>Forgot password?</Text>
-            </Pressable>
-          </View>
+        {/* Back Button */}
+        <Pressable
+          onPress={handleBack}
+          hitSlop={14}
+          style={[styles.backBtn, { top: insets.top + 6 }]}
+          accessibilityLabel="Go back"
+        >
+          <ArrowLeft size={20} color="#FFFFFF" strokeWidth={2.4} />
+        </Pressable>
 
-          {/* Primary Action Button */}
-          <View style={styles.submitBtnWrapper}>
-            <Button
-              label={isSubmitting ? "Signing in…" : "Sign in"}
-              variant="primary"
-              pill
-              size="lg"
-              loading={isSubmitting}
-              disabled={!isValid || isSubmitting}
-              onPress={handleLogin}
-              className="w-full"
+        {/* Centered White Circle Badge with ally-jis.png */}
+        <View style={[styles.emblemWrapper, { marginTop: insets.top + 2 }]}>
+          <View style={styles.logoBadge}>
+            <Image
+              source={require("../../assets/images/ally-jis.png")}
+              style={styles.logoImage}
+              resizeMode="contain"
             />
           </View>
+          <Text style={styles.brandTitle}>ally-jis</Text>
+        </View>
+      </View>
 
-          {/* ── Google OAuth with Horizontal Divider ── */}
-          <OrDivider text="or" />
+      {/* ── FORM WORKSPACE: Non-Scrolling, Contained in KeyboardHugView ── */}
+      <KeyboardHugView style={styles.hugView}>
+        <View style={[styles.bodyContainer, { paddingBottom: Math.max(insets.bottom, 16) + 4 }]}>
+          {/* Header text */}
+          <View style={styles.titleWrap}>
+            <Text style={styles.screenTitle}>welcome</Text>
+            <Text style={styles.screenSubtitle}>Login in to your account to continue</Text>
+          </View>
 
-          <GoogleButton
-            onPress={handleGoogleLogin}
-            loading={googleLoading}
-            disabled={isSubmitting || googleLoading}
+          {/* Form Inputs (Pure White Background) */}
+          <View style={styles.formContainer}>
+            <EmailInput
+              ref={emailRef}
+              value={email}
+              onChangeText={(text) => {
+                setEmail(text);
+                if (errorMessage) setErrorMessage(null);
+              }}
+              onBlur={() => setTouchedEmail(true)}
+              error={touchedEmail ? emailError : null}
+              placeholder="Email"
+              returnKeyType="next"
+              onSubmitEditing={() => passwordRef.current?.focus()}
+              containerStyle={{ marginBottom: 12 }}
+            />
+
+            <PasswordInput
+              ref={passwordRef}
+              value={password}
+              onChangeText={(text) => {
+                setPassword(text);
+                if (errorMessage) setErrorMessage(null);
+              }}
+              onBlur={() => setTouchedPassword(true)}
+              error={touchedPassword ? passError : null}
+              placeholder="Password"
+              showStrength={false}
+              returnKeyType="done"
+              onSubmitEditing={handleLogin}
+              containerStyle={{ marginBottom: 4 }}
+            />
+
+            {/* Forgot Password Link */}
+            <View style={styles.forgotPassRow}>
+              <Pressable
+                onPress={() => router.push("/pages/forgot-password" as any)}
+                hitSlop={8}
+              >
+                <Text style={styles.forgotPassText}>Forgot your password?</Text>
+              </Pressable>
+            </View>
+
+            {/* Primary Action Button (LOG IN) */}
+            <View style={styles.submitBtnWrapper}>
+              <Button
+                label={isSubmitting ? "LOGGING IN…" : "LOG IN"}
+                variant="primary"
+                pill
+                size="lg"
+                loading={isSubmitting}
+                disabled={!isValid || isSubmitting}
+                onPress={handleLogin}
+                className="w-full"
+              />
+            </View>
+
+            {/* Footer: Sign up link */}
+            <View style={styles.footerRow}>
+              <Text style={styles.footerPrompt}>Don't have an account? </Text>
+              <Pressable
+                onPress={() => router.push("/pages/register" as any)}
+                hitSlop={8}
+              >
+                <Text style={styles.footerLink}>sign up</Text>
+              </Pressable>
+            </View>
+
+            {/* Google OAuth with Horizontal Divider */}
+            <OrDivider text="or" />
+
+            <GoogleButton
+              onPress={handleGoogleLogin}
+              loading={googleLoading}
+              disabled={isSubmitting || googleLoading}
+            />
+          </View>
+        </View>
+      </KeyboardHugView>
+
+      {/* ── BOTTOM-LEFT DRAWING ACCENT ── */}
+      <View pointerEvents="none" style={styles.bottomAccentContainer}>
+        <Svg width={100} height={100} viewBox="0 0 140 140" fill="none">
+          <Defs>
+            <LinearGradient id="botWaveGradMobile" x1="0%" y1="0%" x2="100%" y2="100%">
+              <Stop offset="0%" stopColor="#1E825A" />
+              <Stop offset="100%" stopColor="#146437" />
+            </LinearGradient>
+          </Defs>
+          <Path
+            d="M 0,35 C 20,55 50,85 75,110 C 95,125 115,135 140,140 L 0,140 Z"
+            fill="url(#botWaveGradMobile)"
           />
-        </View>
-
-        {/* ── Footer: Centered Sign Up Link ── */}
-        <View style={styles.footerContainer}>
-          <Text style={styles.footerPrompt}>Don't have an account? </Text>
-          <Pressable
-            onPress={() => router.push("/pages/register" as any)}
-            hitSlop={8}
-          >
-            <Text style={styles.footerLink}>Sign up</Text>
-          </Pressable>
-        </View>
-      </ScrollView>
+        </Svg>
+      </View>
     </View>
   );
 }
@@ -292,72 +354,121 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
     backgroundColor: "#FFFFFF",
+    overflow: "hidden",
   },
-  scrollContent: {
-    paddingHorizontal: 24,
-    flexGrow: 1,
-  },
-  topBar: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 8,
-  },
-  backBtn: {
-    padding: 6,
-    marginLeft: -6,
-    alignSelf: "flex-start",
-  },
-  brandContainer: {
+  headerContainer: {
+    width: "100%",
+    position: "relative",
+    overflow: "hidden",
     alignItems: "center",
     justifyContent: "center",
-    paddingTop: 16,
-    paddingBottom: 36,
+  },
+  backBtn: {
+    position: "absolute",
+    left: 16,
+    padding: 7,
+    borderRadius: 18,
+    backgroundColor: "rgba(0,0,0,0.22)",
+    zIndex: 30,
+  },
+  emblemWrapper: {
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 20,
+  },
+  logoBadge: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 8,
+    borderWidth: 2,
+    borderColor: "rgba(255,255,255,0.85)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  logoImage: {
+    width: 46,
+    height: 46,
   },
   brandTitle: {
     fontFamily: "Fraunces_700Bold",
-    fontSize: 34,
-    color: BRAND_GREEN,
-    letterSpacing: -0.5,
+    fontSize: 16,
+    color: "#FFFFFF",
+    letterSpacing: -0.3,
+    marginTop: 4,
+  },
+  hugView: {
+    flex: 1,
+  },
+  bodyContainer: {
+    flex: 1,
+    paddingHorizontal: 26,
+    justifyContent: "space-between",
+    zIndex: 10,
+  },
+  titleWrap: {
+    alignItems: "center",
+    paddingTop: 8,
+    marginBottom: 6,
   },
   screenTitle: {
-    fontSize: 22,
-    fontWeight: "700",
-    color: "#111827",
-    marginBottom: 26,
-    letterSpacing: -0.3,
+    fontFamily: "Fraunces_700Bold",
+    fontSize: 28,
+    color: BRAND_GREEN,
+    textAlign: "center",
+    letterSpacing: -0.5,
+  },
+  screenSubtitle: {
+    fontSize: 12,
+    color: "#6B7280",
+    textAlign: "center",
+    marginTop: 2,
   },
   formContainer: {
     width: "100%",
   },
   forgotPassRow: {
     alignItems: "flex-end",
-    marginTop: -8,
-    marginBottom: 24,
+    marginTop: -4,
+    marginBottom: 12,
   },
   forgotPassText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: BRAND_GREEN,
+    fontSize: 12,
+    fontWeight: "500",
+    color: "#6B7280",
   },
   submitBtnWrapper: {
     width: "100%",
-    marginBottom: 16,
+    alignItems: "center",
+    marginBottom: 6,
   },
-  footerContainer: {
-    marginTop: "auto",
-    paddingTop: 32,
-    paddingBottom: 8,
+  footerRow: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
+    paddingVertical: 4,
   },
   footerPrompt: {
-    fontSize: 14,
+    fontSize: 13,
     color: "#6B7280",
   },
   footerLink: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "700",
-    color: BRAND_GREEN,
+    color: "#0FA06C",
+  },
+  bottomAccentContainer: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    width: 100,
+    height: 100,
+    zIndex: 0,
   },
 });

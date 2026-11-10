@@ -33,6 +33,7 @@ import {
   Camera,
 } from "lucide-react-native";
 import * as ImagePicker from "expo-image-picker";
+import Svg, { Path, Circle, Defs, LinearGradient, Stop } from "react-native-svg";
 import {
   validateUsername,
   validateEmail,
@@ -597,7 +598,7 @@ export default function RegisterScreen() {
       : null;
 
   const confirmPasswordError =
-    touched && form.confirmPassword.trim().length > 0
+    form.confirmPassword.trim().length > 0
       ? form.confirmPassword !== form.password
         ? "Passwords do not match."
         : null
@@ -974,14 +975,61 @@ export default function RegisterScreen() {
   // ── Main Screen Layout ─────────────────────────────────────────────────────
   return (
     <View style={[styles.root, { paddingTop: insets.top }]}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
+      <StatusBar barStyle="dark-content" translucent backgroundColor="transparent" />
 
-      {/* Top Bar with back arrow */}
-      <View style={styles.topBar}>
+      {/* ── Decorative Edge Graphics (Matching Web RegisterPage) ── */}
+      {/* Top-Right Curved Green Accent */}
+      <View pointerEvents="none" style={styles.edgeTopRight}>
+        <Svg viewBox="0 0 200 200" width={140} height={140} preserveAspectRatio="none">
+          <Path
+            d="M 200 0 L 70 0 C 95 45, 125 95, 155 125 C 180 150, 192 175, 200 200 Z"
+            fill="#1A6B3C"
+          />
+        </Svg>
+      </View>
+
+      {/* Bottom-Left Organic Green Wave Accent */}
+      <View pointerEvents="none" style={styles.edgeBottomLeft}>
+        <Svg viewBox="0 0 300 300" width={160} height={160} preserveAspectRatio="none">
+          <Defs>
+            <LinearGradient id="regEdgeBottomWave" x1="0%" y1="100%" x2="100%" y2="0%">
+              <Stop offset="0%" stopColor="#105430" />
+              <Stop offset="50%" stopColor="#1A6B3C" />
+              <Stop offset="100%" stopColor="#24884F" />
+            </LinearGradient>
+          </Defs>
+          <Path
+            d="M 0 300 L 0 90 C 60 120, 130 160, 180 200 C 230 240, 260 270, 290 300 Z"
+            fill="url(#regEdgeBottomWave)"
+            opacity={0.9}
+          />
+          <Path
+            d="M 0 300 L 0 160 C 45 180, 90 210, 130 240 C 170 270, 190 285, 210 300 Z"
+            fill="#24884F"
+            opacity={0.5}
+          />
+        </Svg>
+      </View>
+
+      {/* Top-Left Ambient Accent */}
+      <View pointerEvents="none" style={styles.edgeTopLeft}>
+        <Svg viewBox="0 0 200 200" width={90} height={90} preserveAspectRatio="none">
+          <Path
+            d="M 0 0 L 110 0 C 85 25, 55 55, 30 90 C 10 120, 0 150, 0 170 Z"
+            fill="rgba(26, 107, 60, 0.08)"
+          />
+        </Svg>
+      </View>
+
+      {/* Top Bar with back arrow (Transparent background, no block obstruction) */}
+      <View style={styles.topBar} pointerEvents="box-none">
         <Pressable
           onPress={handleBack}
           hitSlop={14}
-          style={styles.iconBtn}
+          style={({ pressed }) => [
+            styles.iconBtn,
+            pressed && { opacity: 0.6 },
+          ]}
           accessibilityLabel="Go back"
         >
           <ArrowLeft size={24} color={GREEN} />
@@ -995,19 +1043,14 @@ export default function RegisterScreen() {
                 STEP 1: CREDENTIALS (Email with Smart Detection, Password)
              ═════════════════════════════════════════════════════════════════ */}
           {step === 1 && (
-            <ScrollView
-              ref={scrollViewRef}
-              showsVerticalScrollIndicator={false}
-              style={{ flex: 1, backgroundColor: "#FFFFFF" }}
-              contentContainerStyle={{
-                flexGrow: 1,
+            <View
+              style={{
+                flex: 1,
                 justifyContent: "space-between",
                 paddingHorizontal: 24,
                 paddingTop: 8,
                 paddingBottom: isKeyboardVisible ? 10 : Math.max(insets.bottom + 12, 16),
               }}
-              keyboardShouldPersistTaps="handled"
-              keyboardDismissMode="on-drag"
             >
               {/* Top: Header Text */}
               <View style={styles.headerText}>
@@ -1164,7 +1207,7 @@ export default function RegisterScreen() {
                   </View>
                 )}
               </View>
-            </ScrollView>
+            </View>
           )}
 
           {/* ═════════════════════════════════════════════════════════════════
@@ -1994,11 +2037,38 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#FFFFFF",
   },
+  edgeTopRight: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    width: 140,
+    height: 140,
+    zIndex: 0,
+  },
+  edgeBottomLeft: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    width: 160,
+    height: 160,
+    zIndex: 0,
+  },
+  edgeTopLeft: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    width: 90,
+    height: 90,
+    zIndex: 0,
+  },
   topBar: {
-    paddingHorizontal: 20,
+    paddingHorizontal: 16,
     height: 48,
-    justifyContent: "center",
-    backgroundColor: "#FFFFFF",
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "flex-start",
+    backgroundColor: "transparent",
+    zIndex: 10,
   },
   iconBtn: {
     width: 44,
@@ -2006,6 +2076,7 @@ const styles = StyleSheet.create({
     borderRadius: 22,
     alignItems: "center",
     justifyContent: "center",
+    backgroundColor: "transparent",
   },
   stepContainer: {
     flex: 1,

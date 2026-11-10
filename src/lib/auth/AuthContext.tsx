@@ -3,7 +3,7 @@ import { AppState, type AppStateStatus } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import * as authApi from "@/lib/api/auth";
 import { ApiError } from "@/lib/api/apiError";
-import { registerAuthSessionListener } from "@/lib/api/client";
+import { registerAuthSessionListener, performSilentRefresh, isJwtExpired } from "@/lib/api/client";
 import { disconnectSocket, initSocket } from "@/lib/socket";
 import type { AuthSession, AuthUser, RegisterPayload, RegisterResponse } from "@/types/auth";
 import {
@@ -54,11 +54,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const isRefreshingRef = useRef(false);
 
-  // ── On launch: Instant cache hydration + background token validation/refresh ──
+  // ── On launch: Instant cache hydration (Facebook-style) + background token refresh ──
   useEffect(() => {
     async function restoreSession() {
       try {
-        // Step 1: Read all persisted session markers in parallel
+        // Step 1: Read all persisted session markers in parallel from SecureStore / AsyncStorage
         const [storedAccessToken, storedRefreshToken, cachedUserStr, cachedSessionStr] = await Promise.all([
           getPersistedItem(ACCESS_TOKEN_KEY),
           getPersistedItem(REFRESH_TOKEN_KEY),
@@ -91,7 +91,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           } catch {}
         }
 
-        // ── 0ms Instant Hydration: Apply cached user & token to state immediately ──
+        // ── 0ms Instant Hydration (Facebook-style): Render cached user immediately ──
         if (initialUser) {
           setUser(initialUser);
         }
@@ -100,78 +100,50 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           initSocket(initialToken);
         }
 
-        // If no credentials exist anywhere, we are unauthenticated
+        // Unblock root navigation immediately so user sees the app with zero perceived lag
+        setIsLoading(false);
+
+        // If no credentials exist anywhere, user is simply unauthenticated
         if (!initialToken && !initialRefreshToken && !initialUser) {
-          setIsLoading(false);
           return;
         }
 
-        // Step 2: Validate or Refresh session with the server in background
-        let sessionConfirmed = false;
-        let authRejected = false;
+        // Step 2: Background validation / refresh (runs silently without dropping offline user)
+        if (initialRefreshToken) {
+          void (async () => {
+            try {
+              // Proactively refresh if access token is expired (>1 hr old) or nearing expiration
+              const needsRefresh = !initialToken || isJwtExpired(initialToken, 90);
+              const freshToken = await performSilentRefresh(needsRefresh);
+              if (freshToken) {
+                setAccessToken(freshToken);
+                initSocket(freshToken);
 
-        if (initialToken) {
-          try {
-            const serverSession = await authApi.getSession(initialToken);
-            await applySession(serverSession);
-            sessionConfirmed = true;
-          } catch (err: any) {
-            console.log("[AuthContext] getSession status:", err?.status);
-            if (err?.status === 403 && (err?.isBanned || err?.body?.is_banned || err?.message?.toLowerCase().includes('banned'))) {
-              if (initialUser) {
-                const bannedUser = {
-                  ...initialUser,
-                  user_metadata: {
-                    ...initialUser.user_metadata,
-                    is_banned: true,
-                    status: 'banned',
-                  },
-                };
-                setUser(bannedUser);
-                setPersistedItem(USER_CACHE_KEY, JSON.stringify(bannedUser)).catch(() => {});
+                // Fetch latest server profile to sync moderation flags / verified status
+                try {
+                  const serverSession = await authApi.getSession(freshToken);
+                  await applySession(serverSession);
+                } catch (profileErr: any) {
+                  if (profileErr?.status === 403 && (profileErr?.isBanned || profileErr?.body?.is_banned)) {
+                    setUser((prev) => {
+                      if (!prev) return prev;
+                      const banned = {
+                        ...prev,
+                        user_metadata: { ...prev.user_metadata, is_banned: true, status: "banned" },
+                      };
+                      setPersistedItem(USER_CACHE_KEY, JSON.stringify(banned)).catch(() => {});
+                      return banned;
+                    });
+                  }
+                }
               }
-              sessionConfirmed = true;
-            } else if (err?.status === 401 || err?.status === 403) {
-              authRejected = true;
+            } catch (bgErr) {
+              console.log("[AuthContext] Launch background refresh error (retaining offline session):", bgErr);
             }
-          }
-        }
-
-        // If access token was expired or absent, attempt silent refresh using refresh token
-        if (!sessionConfirmed && initialRefreshToken) {
-          try {
-            console.log("[AuthContext] Attempting silent token refresh on launch...");
-            const refreshedSession = await authApi.refreshSessionWithToken(initialRefreshToken);
-            await applySession(refreshedSession);
-            sessionConfirmed = true;
-            authRejected = false;
-            console.log("[AuthContext] Silent token refresh succeeded on launch!");
-          } catch (refreshErr: any) {
-            console.warn("[AuthContext] Launch token refresh failed:", refreshErr?.status);
-            if (
-              refreshErr?.status === 400 ||
-              refreshErr?.status === 401 ||
-              refreshErr?.status === 403
-            ) {
-              authRejected = true;
-            }
-          }
-        }
-
-        // If authentication was explicitly rejected (401/403) and refresh failed or wasn't available:
-        if (!sessionConfirmed && authRejected) {
-          console.warn("[AuthContext] Session invalid or expired. Revoking local session.");
-          await clearStoredTokens();
-          return;
-        }
-
-        // If offline / server unreachable (network error) but we had a cached user, RETAIN the session!
-        if (!sessionConfirmed && initialUser) {
-          console.log("[AuthContext] Retaining cached auth session for offline use.");
+          })();
         }
       } catch (err) {
         console.warn("[AuthContext] Restore session error:", err);
-      } finally {
         setIsLoading(false);
       }
     }
@@ -179,13 +151,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     restoreSession();
   }, []);
 
-  // ── Listen for auto-refreshed tokens and 401 session expirations from API client ──
+  // ── Listen for auto-refreshed tokens and explicit session revocations from API client ──
   useEffect(() => {
     const unsubscribe = registerAuthSessionListener({
-      onTokenRefreshed: (newToken: string) => {
+      onTokenRefreshed: (newToken: string, updatedUser?: AuthUser) => {
         setAccessToken(newToken);
+        if (updatedUser) {
+          setUser(updatedUser);
+        }
       },
       onSessionExpired: () => {
+        console.warn("[AuthContext] Explicit session revocation signal received. Revoking local session.");
         clearStoredTokens();
       },
       onAccountBanned: async () => {
@@ -218,38 +194,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
         isRefreshingRef.current = true;
         try {
-          if (storedAccessToken) {
-            try {
-              const freshSession = await authApi.getSession(storedAccessToken);
-              await applySession(freshSession);
-              return;
-            } catch (err: any) {
-              if (err?.status !== 401 && err?.status !== 403) {
-                return; // Network error, retain session
-              }
-            }
-          }
-          if (storedRefreshToken) {
-            try {
-              const refreshed = await authApi.refreshSessionWithToken(storedRefreshToken);
-              await applySession(refreshed);
-              return;
-            } catch (refreshErr: any) {
-              if (
-                refreshErr?.status === 400 ||
-                refreshErr?.status === 401 ||
-                refreshErr?.status === 403
-              ) {
-                console.log("[AuthContext] AppState refresh token invalid. Clearing session.");
-                await clearStoredTokens();
-              }
-            }
-          } else {
-            console.log("[AuthContext] AppState access token expired with no refresh token. Clearing session.");
-            await clearStoredTokens();
+          // Use deduplicated performSilentRefresh: only refreshes if token expired
+          const freshToken = await performSilentRefresh(false);
+          if (freshToken) {
+            setAccessToken(freshToken);
+            initSocket(freshToken);
           }
         } catch {
-          // Do not log out on transient errors
+          // Do not log out on transient / offline errors
         } finally {
           isRefreshingRef.current = false;
         }
@@ -381,34 +333,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   async function refreshSession(): Promise<AuthSession | undefined> {
-    const refreshToken = await getPersistedItem(REFRESH_TOKEN_KEY);
-    if (!refreshToken) {
-      const storedAccessToken = (await getPersistedItem(ACCESS_TOKEN_KEY)) || accessToken;
-      if (storedAccessToken) {
-        try {
-          const freshSession = await authApi.getSession(storedAccessToken);
-          await applySession(freshSession);
-          return freshSession;
-        } catch {
-          return undefined;
-        }
+    try {
+      const freshToken = await performSilentRefresh(true);
+      if (freshToken) {
+        setAccessToken(freshToken);
+        initSocket(freshToken);
+        const freshSession = await authApi.getSession(freshToken);
+        await applySession(freshSession);
+        return freshSession;
       }
       return undefined;
-    }
-    try {
-      const session = await authApi.refreshSessionWithToken(refreshToken);
-      await applySession(session);
-      return session;
     } catch (err) {
-      console.warn("[AuthContext] Failed to refresh session with token:", err);
-      const storedAccessToken = (await getPersistedItem(ACCESS_TOKEN_KEY)) || accessToken;
-      if (storedAccessToken) {
-        try {
-          const freshSession = await authApi.getSession(storedAccessToken);
-          await applySession(freshSession);
-          return freshSession;
-        } catch {}
-      }
+      console.warn("[AuthContext] Failed to refresh session:", err);
       return undefined;
     }
   }
