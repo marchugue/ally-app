@@ -49,7 +49,7 @@ export default function LandingPage() {
           {/* Logo blob */}
           <View style={styles.logoBlob}>
             <Image
-              source={require("../../assets/images/logo.png")}
+              source={require("../../assets/images/ally-jis.png")}
               style={styles.logoImage}
               resizeMode="contain"
             />

@@ -34,7 +34,7 @@
       "softwareKeyboardLayoutMode": "resize",
       "versionCode": 1,
       "adaptiveIcon": {
-        "foregroundImage": "./assets/images/group9.png",
+        "foregroundImage": "./assets/images/adaptive-icon-fg.png",
         "backgroundColor": "#1f663c"
       },
       "package": "com.allyjis.mobile",
@@ -73,7 +73,7 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/images/group9.png",
+          "icon": "./assets/images/adaptive-icon-fg.png",
           "color": "#1F663C"
         }
       ],

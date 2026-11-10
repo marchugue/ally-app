@@ -574,7 +574,7 @@ export default function ReportsScreen() {
 
             <View style={styles.agentAvatarContainer}>
               <Image
-                source={require('../../assets/images/logo.png')}
+                source={require('../../assets/images/ally-jis.png')}
                 style={styles.agentAvatarImg}
                 resizeMode="cover"
               />
@@ -633,7 +633,7 @@ export default function ReportsScreen() {
                   {/* Agent Avatar */}
                   <View style={styles.msgAvatarContainer}>
                     <Image
-                      source={require('../../assets/images/logo.png')}
+                      source={require('../../assets/images/ally-jis.png')}
                       style={styles.msgAvatarImg}
                       resizeMode="cover"
                     />
