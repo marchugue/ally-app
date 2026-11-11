@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   View,
   Text,
@@ -15,13 +15,19 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { KeyboardGestureArea } from "react-native-keyboard-controller";
 import { useKeyboard } from "@/hooks/useKeyboard";
 import { KeyboardHugView } from "@/components/KeyboardHugView";
-import { X, Image as ImageIcon, Globe, Users } from "lucide-react-native";
+import { X, Image as ImageIcon } from "lucide-react-native";
 import * as ImagePicker from "expo-image-picker";
 import { Button } from "./Button";
 import { useAuth } from "@/lib/auth/AuthContext";
 import { useTheme } from "@/context/ThemeContext";
 import { createPost } from "@/lib/api/feed";
+import { getMyPreferences, updateMyPreferences } from "@/lib/api/profiles";
 import { uploadPostFiles, LocalFile } from "@/lib/api/media";
+import {
+  PostAudienceCard,
+  getPostAudienceMeta,
+  normalizePostAudience,
+} from "@/components/PostAudienceCard";
 import type { PostAudience } from "@/types/feed";
 
 const MAX_LENGTH = 280;
@@ -39,13 +45,36 @@ export function CreatePostSheet({
 }: CreatePostSheetProps) {
   const insets = useSafeAreaInsets();
   const { accessToken } = useAuth();
-  const { colors, isDark } = useTheme();
+  const { colors } = useTheme();
   const { isKeyboardVisible } = useKeyboard();
+  const [view, setView] = useState<"compose" | "audience">("compose");
   const [content, setContent] = useState("");
+  const [defaultAudience, setDefaultAudience] = useState<PostAudience>("public");
   const [audience, setAudience] = useState<PostAudience>("public");
   const [selectedImages, setSelectedImages] = useState<LocalFile[]>([]);
   const [posting, setPosting] = useState(false);
+  const [savingDefault, setSavingDefault] = useState(false);
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    if (!visible) {
+      setView("compose");
+      return;
+    }
+    if (!accessToken) return;
+    let cancelled = false;
+    getMyPreferences(accessToken)
+      .then((prefs) => {
+        if (cancelled) return;
+        const resolved = normalizePostAudience(prefs?.default_post_audience);
+        setDefaultAudience(resolved);
+        setAudience(resolved);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [visible, accessToken]);
 
   const remaining = MAX_LENGTH - content.length;
 
@@ -106,7 +135,8 @@ export function CreatePostSheet({
 
       setContent("");
       setSelectedImages([]);
-      setAudience("public");
+      setAudience(defaultAudience);
+      setView("compose");
       onPostCreated();
       onClose();
     } catch (err: any) {
@@ -116,12 +146,37 @@ export function CreatePostSheet({
     }
   };
 
+  const handleAudienceDone = async (selected: PostAudience, setAsDefault: boolean) => {
+    setAudience(selected);
+    if (setAsDefault && accessToken) {
+      setSavingDefault(true);
+      try {
+        await updateMyPreferences({ default_post_audience: selected }, accessToken);
+        setDefaultAudience(selected);
+      } catch (err: any) {
+        Alert.alert("Error", err?.message || "Could not save default audience.");
+      } finally {
+        setSavingDefault(false);
+      }
+    }
+    setView("compose");
+  };
+
+  const audienceMeta = getPostAudienceMeta(audience);
+  const AudienceIcon = audienceMeta.Icon;
+
   return (
     <Modal
       visible={visible}
       animationType="slide"
       presentationStyle="pageSheet"
-      onRequestClose={onClose}
+      onRequestClose={() => {
+        if (view === "audience") {
+          setView("compose");
+        } else {
+          onClose();
+        }
+      }}
     >
       <KeyboardHugView style={{ flex: 1 }}>
         <View
@@ -131,6 +186,18 @@ export function CreatePostSheet({
             paddingTop: insets.top + 8,
           }}
         >
+        {view === "audience" ? (
+          <PostAudienceCard
+            value={audience}
+            showDefaultOption
+            initialSetAsDefault={false}
+            saving={savingDefault}
+            bottomInset={Math.max(insets.bottom + 8, 16)}
+            onBack={() => setView("compose")}
+            onDone={handleAudienceDone}
+          />
+        ) : (
+          <>
         {/* Header */}
         <View
           style={{
@@ -280,11 +347,9 @@ export function CreatePostSheet({
               </Text>
             )}
 
-            {/* Audience toggle */}
+            {/* Audience button */}
             <Pressable
-              onPress={() =>
-                setAudience((a) => (a === "public" ? "connections" : "public"))
-              }
+              onPress={() => setView("audience")}
               style={{
                 flexDirection: "row",
                 alignItems: "center",
@@ -295,19 +360,15 @@ export function CreatePostSheet({
                 paddingVertical: 5,
               }}
             >
-              {audience === "public" ? (
-                <Globe size={13} color={colors.primary} />
-              ) : (
-                <Users size={13} color={colors.primary} />
-              )}
+              <AudienceIcon size={13} color={colors.primary} />
               <Text
                 style={{
                   fontSize: 11,
                   fontWeight: "600",
-                  color: "#1A6B3C",
+                  color: colors.primary,
                 }}
               >
-                {audience === "public" ? "Public" : "Connections"}
+                {audienceMeta.label}
               </Text>
             </Pressable>
           </View>
@@ -322,6 +383,8 @@ export function CreatePostSheet({
             {remaining}
           </Text>
         </View>
+          </>
+        )}
       </View>
     </KeyboardHugView>
   </Modal>

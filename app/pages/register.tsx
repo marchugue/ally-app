@@ -514,7 +514,7 @@ export default function RegisterScreen() {
       if (router.canGoBack()) {
         router.back();
       } else {
-        router.replace("/pages/landing" as any);
+        router.replace("/pages/login" as any);
       }
       return true;
     }
@@ -1832,7 +1832,6 @@ export default function RegisterScreen() {
                       <AnonymousAvatar
                         avatarKey={form.avatar || "fox"}
                         size={112}
-                        borderWidth={4}
                       />
                     )}
                   </View>
@@ -1870,7 +1869,7 @@ export default function RegisterScreen() {
                           ]}
                           accessibilityLabel={animal}
                         >
-                          <AnonymousAvatar avatarKey={animal} size={46} borderWidth={1.5} />
+                          <AnonymousAvatar avatarKey={animal} size={46} />
                         </Pressable>
                       );
                     })}

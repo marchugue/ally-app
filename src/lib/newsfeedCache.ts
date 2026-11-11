@@ -105,6 +105,15 @@ export const newsfeedCache = {
   },
 
   /**
+   * Updates a post across every cached feed filter tab so edits from Profile,
+   * Post Detail, or any filter remain synced across tabs.
+   */
+  async updatePostEverywhere(updatedPost: FeedPost, userId?: string | null): Promise<void> {
+    const filters = ['all', 'popular', 'allies', 'following', 'discover'];
+    await Promise.all(filters.map((f) => this.updatePost(f, updatedPost, userId)));
+  },
+
+  /**
    * Clear cache
    */
   async clear(filter?: string, userId?: string | null): Promise<void> {

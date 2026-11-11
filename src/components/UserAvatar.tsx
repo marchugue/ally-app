@@ -1,3 +1,4 @@
+import { useState, useEffect } from "react";
 import { View, Text, Image, Platform } from "react-native";
 import { API_BASE_URL } from "@/constants";
 import { AnonymousAvatar } from "./AnonymousAvatar";
@@ -45,6 +46,11 @@ export function resolveImageUri(input: any): string | null {
     return `${API_BASE_URL}${raw}`;
   }
 
+  // Rewrite legacy R2 or media domains to the official image domain
+  raw = raw.replace(/^https?:\/\/[^/]+\.r2\.cloudflarestorage\.com\/(?:ally-jis\/)?/i, "https://image.ally-jis.com/");
+  raw = raw.replace(/^https?:\/\/[^/]+\.r2\.dev(?=\/|$)/i, "https://image.ally-jis.com");
+  raw = raw.replace(/^https?:\/\/(?:www\.)?(?:media|image)\.ally-jis\.com(?=\/|$)/i, "https://image.ally-jis.com");
+
   // Rewrite localhost / 127.0.0.1 for mobile devices/emulators so they can reach the server
   if (Platform.OS !== "web") {
     if (/https?:\/\/(localhost|127\.0\.0\.1):(3001|5174)/.test(raw)) {
@@ -76,15 +82,27 @@ export function UserAvatar({
   const { container, fontSize, statusDot } = SIZE_MAP[size];
   const borderRadius = container * 0.5;
 
+  const [imgError, setImgError] = useState(false);
+
+  useEffect(() => {
+    setImgError(false);
+  }, [avatar]);
+
   const imageUri = resolveImageUri(avatar);
-  const isImage = isUrl(imageUri);
+  const isImage = isUrl(imageUri) && !imgError;
   const animalKey =
     typeof avatar === "string" && !isImage && AVATAR_EMOJI[avatar.toLowerCase().trim()]
       ? avatar.toLowerCase().trim()
       : null;
 
   const emojiDisplay =
-    typeof avatar === "string" && !isImage && !animalKey && avatar.trim().length > 0
+    typeof avatar === "string" &&
+    !isImage &&
+    !animalKey &&
+    !isUrl(imageUri) &&
+    avatar.trim().length > 0 &&
+    avatar.trim() !== "[removed]" &&
+    !avatar.startsWith("blob:")
       ? avatar
       : fallback;
 
@@ -95,6 +113,7 @@ export function UserAvatar({
       ) : isImage && imageUri ? (
         <Image
           source={{ uri: imageUri }}
+          onError={() => setImgError(true)}
           style={{
             width: container,
             height: container,

@@ -7,41 +7,37 @@ import {
   StatusBar,
   TouchableOpacity,
   TextInput,
-  Dimensions,
+  Image,
   StyleSheet,
 } from "react-native";
 import { router } from "expo-router";
 import {
   ArrowLeft,
   ArrowRight,
-  KeyRound,
   CheckCircle,
-  Pencil,
 } from "lucide-react-native";
+import Svg, { Path, Circle, Defs, LinearGradient, Stop } from "react-native-svg";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Button } from "@/components/Button";
 import EmailInput from "@/components/buttons/email";
 import PasswordInput from "@/components/buttons/password";
-import AlertMessage from "@/components/AlertMessage";
+import { ErrorAlertModal } from "@/components/ErrorAlertModal";
+import { AnimatedOtpInput } from "@/components/AnimatedOtpInput";
 import { KeyboardHugView } from "@/components/KeyboardHugView";
 import { useKeyboard } from "@/hooks/useKeyboard";
 import { validateEmail } from "@/lib/validator";
 import { validatePass } from "@/lib/validator/password";
 import * as authApi from "@/lib/api/auth";
-import {
-  EmailSelectIllustration,
-  OtpIllustration,
-} from "@/components/OnboardingIllustrations";
 
 type ResetStep = "email" | "otp" | "new_password";
 const OTP_LENGTH = 6;
+const BRAND_GREEN = "#166534";
 const GREEN = "#1A6B3C";
-const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 function formatTimer(secs: number): string {
   const m = Math.floor(secs / 60);
   const s = secs % 60;
-  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
 export default function ForgotPasswordScreen() {
@@ -55,40 +51,18 @@ export default function ForgotPasswordScreen() {
   const [confirmPassword, setConfirmPassword] = useState("");
 
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState("");
+  const [alertError, setAlertError] = useState<{ title: string; message: string } | null>(null);
   const [resendCooldown, setResendCooldown] = useState(0);
+  const [otpFocusTrigger, setOtpFocusTrigger] = useState(0);
 
-  const inputsRef = useRef<Array<TextInput | null>>([]);
-  const cooldownTimerRef = useRef<any>(null);
+  const cooldownTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const scrollViewRef = useRef<ScrollView>(null);
   const passwordInputRef = useRef<TextInput>(null);
   const confirmPasswordInputRef = useRef<TextInput>(null);
 
-  const passwordYRef = useRef(0);
-  const confirmPasswordYRef = useRef(0);
-
   const [focusedField, setFocusedField] = useState<"password" | "confirmPassword" | null>(null);
 
-  const isPasswordOrConfirmFocused =
-    step === "new_password" &&
-    (focusedField === "password" || focusedField === "confirmPassword");
-
-  const handleInputFocus = (field: "password" | "confirmPassword") => {
-    setFocusedField(field);
-
-    if (field === "password") {
-      requestAnimationFrame(() => {
-        scrollViewRef.current?.scrollTo({ y: passwordYRef.current, animated: true });
-      });
-    } else if (field === "confirmPassword") {
-      requestAnimationFrame(() => {
-        scrollViewRef.current?.scrollTo({ y: confirmPasswordYRef.current, animated: true });
-      });
-    }
-  };
-
-  // Restore scroll and reset focus state when keyboard closes
   useEffect(() => {
     if (!isKeyboardVisible && step === "new_password") {
       setFocusedField(null);
@@ -102,9 +76,9 @@ export default function ForgotPasswordScreen() {
     };
   }, []);
 
-  function startResendCooldown() {
+  function startResendCooldown(seconds = 60) {
     if (cooldownTimerRef.current) clearInterval(cooldownTimerRef.current);
-    setResendCooldown(60);
+    setResendCooldown(seconds);
     cooldownTimerRef.current = setInterval(() => {
       setResendCooldown((prev) => {
         if (prev <= 1) {
@@ -116,26 +90,48 @@ export default function ForgotPasswordScreen() {
     }, 1000);
   }
 
+  // Verify email exists in DB before sending reset OTP
+  async function ensureRegisteredEmail(cleaned: string): Promise<boolean> {
+    const emailCheck = await authApi.checkEmailAvailable(cleaned);
+    if (emailCheck?.available !== false) {
+      setAlertError({
+        title: "Account not found",
+        message: "No account found with this email address.",
+      });
+      return false;
+    }
+    return true;
+  }
+
   // ── Step 1: Request OTP Code ───────────────────────────────────────────────
   async function handleSendCode() {
-    const err = validateEmail(email, "any");
-    if (err) {
-      setError(err);
+    const cleaned = email.trim().toLowerCase();
+    const validationErr = validateEmail(cleaned, "any");
+    if (validationErr) {
+      setAlertError({
+        title: "Invalid email",
+        message: validationErr,
+      });
       return;
     }
 
     setLoading(true);
-    setError("");
+    setAlertError(null);
     try {
-      await authApi.forgotPassword(email.trim().toLowerCase());
+      const exists = await ensureRegisteredEmail(cleaned);
+      if (!exists) return;
+
+      await authApi.forgotPassword(cleaned);
+      setEmail(cleaned);
       setStep("otp");
       setOtpDigits(Array(OTP_LENGTH).fill(""));
-      startResendCooldown();
-      setTimeout(() => {
-        inputsRef.current[0]?.focus();
-      }, 300);
+      setOtpFocusTrigger((n) => n + 1);
+      startResendCooldown(60);
     } catch (err: any) {
-      setError(err?.message || "Failed to send reset code. Please try again.");
+      setAlertError({
+        title: "Could not send code",
+        message: err?.message || "No account found with this email address.",
+      });
     } finally {
       setLoading(false);
     }
@@ -144,56 +140,24 @@ export default function ForgotPasswordScreen() {
   // ── Resend Code ────────────────────────────────────────────────────────────
   async function handleResend() {
     if (loading || resendCooldown > 0 || !email.trim()) return;
+    const cleaned = email.trim().toLowerCase();
     setLoading(true);
-    setError("");
+    setAlertError(null);
     try {
-      await authApi.forgotPassword(email.trim().toLowerCase());
+      const exists = await ensureRegisteredEmail(cleaned);
+      if (!exists) return;
+
+      await authApi.forgotPassword(cleaned);
       setOtpDigits(Array(OTP_LENGTH).fill(""));
-      startResendCooldown();
-      inputsRef.current[0]?.focus();
+      setOtpFocusTrigger((n) => n + 1);
+      startResendCooldown(60);
     } catch (err: any) {
-      setError(err?.message || "Could not resend code. Please try again.");
+      setAlertError({
+        title: "Resend failed",
+        message: err?.message || "Could not resend code. Please try again.",
+      });
     } finally {
       setLoading(false);
-    }
-  }
-
-  // ── OTP Digit Input Handlers ───────────────────────────────────────────────
-  function handleDigitChange(idx: number, value: string) {
-    setError("");
-    const cleaned = value.replace(/\D/g, "");
-
-    // Multi-digit / Paste handling
-    if (cleaned.length >= OTP_LENGTH) {
-      const next = cleaned.slice(0, OTP_LENGTH).split("");
-      setOtpDigits(next);
-      inputsRef.current[OTP_LENGTH - 1]?.focus();
-      handleVerifyOtp(cleaned.slice(0, OTP_LENGTH));
-      return;
-    }
-
-    const single = cleaned.slice(-1);
-    const next = [...otpDigits];
-    next[idx] = single;
-    setOtpDigits(next);
-
-    // Auto-advance
-    if (single && idx < OTP_LENGTH - 1) {
-      inputsRef.current[idx + 1]?.focus();
-    }
-
-    // Auto-verify when all 6 filled
-    if (single && next.every(Boolean)) {
-      handleVerifyOtp(next.join(""));
-    }
-  }
-
-  function handleKeyPress(idx: number, key: string) {
-    if (key === "Backspace" && !otpDigits[idx] && idx > 0) {
-      const next = [...otpDigits];
-      next[idx - 1] = "";
-      setOtpDigits(next);
-      inputsRef.current[idx - 1]?.focus();
     }
   }
 
@@ -202,19 +166,24 @@ export default function ForgotPasswordScreen() {
     if (loading) return;
     const code = codeToVerify.trim();
     if (code.length !== OTP_LENGTH) {
-      setError("Please enter the full 6-digit code.");
+      setAlertError({
+        title: "Incomplete code",
+        message: "Please enter the full 6-digit code.",
+      });
       return;
     }
 
     setLoading(true);
-    setError("");
+    setAlertError(null);
     try {
       await authApi.verifyPasswordResetOtp(email.trim().toLowerCase(), code);
       setStep("new_password");
     } catch (err: any) {
-      setError(err?.message || "Invalid or expired verification code.");
+      setAlertError({
+        title: "Verification failed",
+        message: err?.message || "Incorrect verification code. Please check and try again.",
+      });
       setOtpDigits(Array(OTP_LENGTH).fill(""));
-      inputsRef.current[0]?.focus();
     } finally {
       setLoading(false);
     }
@@ -224,17 +193,23 @@ export default function ForgotPasswordScreen() {
   async function handleCompleteReset() {
     const pwErr = validatePass(newPassword);
     if (pwErr) {
-      setError(pwErr);
+      setAlertError({
+        title: "Invalid password",
+        message: pwErr,
+      });
       return;
     }
 
     if (newPassword !== confirmPassword) {
-      setError("Passwords do not match. Please re-enter.");
+      setAlertError({
+        title: "Password mismatch",
+        message: "Passwords do not match. Please re-enter.",
+      });
       return;
     }
 
     setLoading(true);
-    setError("");
+    setAlertError(null);
     try {
       await authApi.resetPassword({
         email: email.trim().toLowerCase(),
@@ -244,14 +219,17 @@ export default function ForgotPasswordScreen() {
 
       router.replace("/pages/password-reset-success" as any);
     } catch (err: any) {
-      setError(err?.message || "Failed to update password. Please try again.");
+      setAlertError({
+        title: "Reset failed",
+        message: err?.message || "Failed to update password. Please try again.",
+      });
     } finally {
       setLoading(false);
     }
   }
 
   function handleBack() {
-    setError("");
+    setAlertError(null);
     setFocusedField(null);
     if (step === "new_password") {
       setStep("otp");
@@ -261,425 +239,636 @@ export default function ForgotPasswordScreen() {
       setStep("email");
       return;
     }
-    router.back();
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace("/pages/login" as any);
+    }
   }
 
+  const currentStepIndex = step === "email" ? 1 : step === "otp" ? 2 : 3;
+
   return (
-    <View style={{ flex: 1, backgroundColor: "#FFFFFF" }}>
-      <StatusBar barStyle="dark-content" />
+    <View style={styles.root}>
+      <StatusBar
+        barStyle={step === "email" ? "light-content" : "dark-content"}
+        translucent
+        backgroundColor="transparent"
+      />
 
-      <KeyboardHugView style={{ flex: 1 }}>
-        <View style={{ flex: 1, width: "100%", maxWidth: 620, alignSelf: "center" }}>
-          {/* ── Header ── */}
-          <View
-            style={{
-              paddingHorizontal: 20,
-              paddingTop: Math.max(insets.top, 12),
-              paddingBottom: 10,
-              backgroundColor: "#FFFFFF",
-            }}
-          >
-            {/* Header row: green arrow back (left, no border) + Title (center) */}
-            <View
-              style={{
-                flexDirection: "row",
-                alignItems: "center",
-                justifyContent: "space-between",
-              }}
+      <ErrorAlertModal
+        visible={Boolean(alertError)}
+        title={alertError?.title}
+        message={alertError?.message}
+        onClose={() => {
+          setAlertError(null);
+          if (step === "otp") {
+            setOtpFocusTrigger((n) => n + 1);
+          }
+        }}
+      />
+
+      {step === "email" ? (
+        <>
+          {/* ── TOP SECTION: Organic Green Drawing Header (Matches login.tsx, non-scrollable) ── */}
+          <View style={[styles.headerContainer, { height: 175 + insets.top }]}>
+            <Svg
+              width="100%"
+              height="100%"
+              viewBox="0 0 375 220"
+              preserveAspectRatio="none"
+              style={StyleSheet.absoluteFill}
             >
-              <Pressable
-                onPress={handleBack}
-                hitSlop={14}
-                style={{
-                  width: 40,
-                  height: 40,
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-                accessibilityLabel="Go back"
-              >
-                <ArrowLeft size={24} color={GREEN} />
-              </Pressable>
+              <Defs>
+                <LinearGradient id="fpMobileBaseGreen" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <Stop offset="0%" stopColor="#197143" />
+                  <Stop offset="100%" stopColor="#146437" />
+                </LinearGradient>
+                <LinearGradient id="fpMobileDarkCircle" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <Stop offset="0%" stopColor="#155F34" />
+                  <Stop offset="100%" stopColor="#0F4826" />
+                </LinearGradient>
+              </Defs>
+              <Path
+                d="M 0,0 L 250,0 C 290,12 338,40 375,85 L 375,220 C 285,225 170,210 90,165 C 40,135 10,115 0,100 Z"
+                fill="url(#fpMobileBaseGreen)"
+              />
+              <Circle cx="195" cy="90" r="105" fill="url(#fpMobileDarkCircle)" />
+            </Svg>
 
-              <Text
-                style={{
-                  fontSize: 18,
-                  fontWeight: "800",
-                  color: "#111827",
-                  textAlign: "center",
-                  letterSpacing: -0.4,
-                }}
-              >
-                {step === "email" && "Reset Password"}
-                {step === "otp" && ""}
-                {step === "new_password" && "Create new password"}
-              </Text>
+            {/* Transparent circular floating Back Button */}
+            <Pressable
+              onPress={handleBack}
+              hitSlop={14}
+              style={[styles.backBtn, { top: insets.top + 6 }]}
+              accessibilityLabel="Go back"
+            >
+              <ArrowLeft size={20} color="#FFFFFF" strokeWidth={2.4} />
+            </Pressable>
 
-              {/* Balanced spacer so title is centered */}
-              <View style={{ width: 40 }} />
-            </View>
-
-            {error ? (
-              <View style={{ marginTop: 10, width: "100%" }}>
-                <AlertMessage message={error} type="error" />
+            {/* Emblem Badge with ally-jis.png */}
+            <View style={[styles.emblemWrapper, { marginTop: insets.top + 2 }]}>
+              <View style={styles.logoBadge}>
+                <Image
+                  source={require("../../assets/images/ally-jis.png")}
+                  style={styles.logoImage}
+                  resizeMode="contain"
+                />
               </View>
-            ) : null}
+              <Text style={styles.brandTitle}>ally-jis</Text>
+            </View>
           </View>
 
-          {/* ── Scrollable Body ── */}
-          <ScrollView
-            ref={scrollViewRef}
-            showsVerticalScrollIndicator={false}
-            style={{ flex: 1, backgroundColor: "#FFFFFF" }}
-            contentContainerStyle={{
-              paddingHorizontal: 24,
-              paddingTop: 16,
-              paddingBottom: isPasswordOrConfirmFocused ? SCREEN_WIDTH * 0.9 : 24,
-            }}
-            keyboardShouldPersistTaps="handled"
-            keyboardDismissMode="on-drag"
-            scrollEnabled={!isPasswordOrConfirmFocused}
-          >
-            {/* STEP 1: Email Form */}
-            {step === "email" && (
-              <View>
-                <View style={{ alignItems: "center", marginVertical: 12 }}>
-                  <EmailSelectIllustration size={160} />
-                  <Text
-                    style={{
-                      fontSize: 13,
-                      color: "#6B7280",
-                      textAlign: "center",
-                      lineHeight: 20,
-                      marginTop: 16,
-                      marginBottom: 8,
-                      paddingHorizontal: 8,
-                    }}
-                  >
-                    Enter your registered university email below. We&apos;ll send a 6-digit verification code to reset your password.
-                  </Text>
-                </View>
+          {/* ── STEP 1 FORM WORKSPACE: Centered inside KeyboardHugView ── */}
+          <KeyboardHugView style={styles.hugView}>
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              bounces={false}
+              keyboardShouldPersistTaps="handled"
+              contentContainerStyle={[
+                styles.stepOneScrollBody,
+                { paddingBottom: isKeyboardVisible ? 10 : Math.max(insets.bottom + 14, 20) },
+              ]}
+            >
+              <View style={styles.titleWrap}>
+                <Text style={styles.screenTitle}>reset password</Text>
+                <Text style={styles.screenSubtitle}>
+                  Enter your email to receive a reset code
+                </Text>
+              </View>
 
+              <View style={styles.formContainer}>
                 <EmailInput
                   value={email}
                   onChangeText={(val) => {
                     setEmail(val);
-                    setError("");
+                    if (alertError) setAlertError(null);
                   }}
-                  placeholder="yourname@chmsu.edu.ph"
+                  placeholder="Email"
                   returnKeyType="done"
                   onSubmitEditing={handleSendCode}
+                  containerStyle={{ marginBottom: 14 }}
                 />
-              </View>
-            )}
 
-            {/* STEP 2: OTP Verification */}
-            {step === "otp" && (
-              <View style={{ alignItems: "center", paddingTop: 8 }}>
-                <Text
-                  style={{
-                    fontSize: 22,
-                    fontWeight: "800",
-                    color: "#111827",
-                    textAlign: "center",
-                    marginBottom: 8,
-                    letterSpacing: -0.4,
-                  }}
-                >
-                  We just sent a 6-digit code
-                </Text>
-                <Text
-                  style={{
-                    fontSize: 14,
-                    color: "#6B7280",
-                    textAlign: "center",
-                    lineHeight: 20,
-                  }}
-                >
-                  Enter the 6-digit code we sent to
-                </Text>
+                <Button
+                  label={loading ? "SENDING CODE…" : "SEND RESET CODE"}
+                  variant="primary"
+                  pill
+                  size="lg"
+                  loading={loading}
+                  disabled={loading || !email.trim()}
+                  icon={<ArrowRight size={16} color="#FFFFFF" />}
+                  onPress={handleSendCode}
+                  className="w-full"
+                />
+
+                {!isKeyboardVisible && (
+                  <View style={styles.footerRow}>
+                    <Text style={styles.footerPrompt}>Remember your password? </Text>
+                    <Pressable onPress={() => router.replace("/pages/login" as any)} hitSlop={8}>
+                      <Text style={styles.footerLink}>sign in</Text>
+                    </Pressable>
+                  </View>
+                )}
+              </View>
+            </ScrollView>
+          </KeyboardHugView>
+
+          {/* Bottom-left green corner wave (matches login.tsx) */}
+          <View pointerEvents="none" style={styles.bottomAccentContainer}>
+            <Svg width={100} height={100} viewBox="0 0 140 140" fill="none">
+              <Defs>
+                <LinearGradient id="fpBotWaveGradMobile" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <Stop offset="0%" stopColor="#1E825A" />
+                  <Stop offset="100%" stopColor="#146437" />
+                </LinearGradient>
+              </Defs>
+              <Path
+                d="M 0,35 C 20,55 50,85 75,110 C 95,125 115,135 140,140 L 0,140 Z"
+                fill="url(#fpBotWaveGradMobile)"
+              />
+            </Svg>
+          </View>
+        </>
+      ) : (
+        <View style={{ flex: 1, paddingTop: insets.top }}>
+          {/* ── Edge Graphics for Steps 2 & 3 (Matches register.tsx) ── */}
+          <View pointerEvents="none" style={styles.edgeTopRight}>
+            <Svg viewBox="0 0 200 200" width={140} height={140} preserveAspectRatio="none">
+              <Path
+                d="M 200 0 L 70 0 C 95 45, 125 95, 155 125 C 180 150, 192 175, 200 200 Z"
+                fill={GREEN}
+              />
+            </Svg>
+          </View>
+
+          <View pointerEvents="none" style={styles.edgeBottomLeft}>
+            <Svg viewBox="0 0 300 300" width={155} height={155} preserveAspectRatio="none">
+              <Defs>
+                <LinearGradient id="fpEdgeBottomWave" x1="0%" y1="100%" x2="100%" y2="0%">
+                  <Stop offset="0%" stopColor="#105430" />
+                  <Stop offset="50%" stopColor="#1A6B3C" />
+                  <Stop offset="100%" stopColor="#24884F" />
+                </LinearGradient>
+              </Defs>
+              <Path
+                d="M 0 300 L 0 90 C 60 120, 130 160, 180 200 C 230 240, 260 270, 290 300 Z"
+                fill="url(#fpEdgeBottomWave)"
+                opacity={0.9}
+              />
+              <Path
+                d="M 0 300 L 0 160 C 45 180, 90 210, 130 240 C 170 270, 190 285, 210 300 Z"
+                fill="#24884F"
+                opacity={0.5}
+              />
+            </Svg>
+          </View>
+
+          <View pointerEvents="none" style={styles.edgeTopLeft}>
+            <Svg viewBox="0 0 200 200" width={90} height={90} preserveAspectRatio="none">
+              <Path
+                d="M 0 0 L 110 0 C 85 25, 55 55, 30 90 C 10 120, 0 150, 0 170 Z"
+                fill="rgba(26, 107, 60, 0.08)"
+              />
+            </Svg>
+          </View>
+
+          {/* Transparent Top Bar (no solid block covering graphics) */}
+          <View style={styles.topBar} pointerEvents="box-none">
+            <Pressable
+              onPress={handleBack}
+              hitSlop={14}
+              style={({ pressed }) => [styles.iconBtn, pressed && { opacity: 0.6 }]}
+              accessibilityLabel="Go back"
+            >
+              <ArrowLeft size={24} color={GREEN} />
+            </Pressable>
+
+            <View style={styles.progressRow}>
+              {[1, 2, 3].map((num) => (
                 <View
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: 6,
-                    marginTop: 4,
-                    marginBottom: 24,
-                  }}
-                >
-                  <Text
-                    style={{
-                      fontSize: 14,
-                      fontWeight: "700",
-                      color: GREEN,
-                    }}
-                  >
+                  key={num}
+                  style={[
+                    styles.progressPill,
+                    num === currentStepIndex
+                      ? styles.progressPillActive
+                      : num < currentStepIndex
+                        ? styles.progressPillDone
+                        : styles.progressPillInactive,
+                  ]}
+                />
+              ))}
+            </View>
+
+            <View style={{ width: 44 }} />
+          </View>
+
+          <KeyboardHugView style={styles.hugView}>
+            {step === "otp" ? (
+              /* Centered Step 2: OTP */
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                bounces={false}
+                keyboardShouldPersistTaps="handled"
+                contentContainerStyle={[
+                  styles.centeredStepBody,
+                  { paddingBottom: isKeyboardVisible ? 12 : Math.max(insets.bottom + 18, 24) },
+                ]}
+              >
+                <View style={styles.stepHeader}>
+                  <Text style={styles.stepTitle}>verify code</Text>
+                  <Text style={styles.stepSubtitle}>Enter the 6-digit code sent to</Text>
+                  <Text style={styles.emailPlainText} numberOfLines={1}>
                     {email}
                   </Text>
                   <TouchableOpacity
                     onPress={() => {
                       setStep("email");
-                      setError("");
+                      setAlertError(null);
                     }}
-                    hitSlop={12}
-                    accessibilityLabel="Edit email"
-                    style={{ padding: 4 }}
+                    hitSlop={10}
+                    accessibilityRole="button"
+                    accessibilityLabel="Change email"
+                    style={styles.changeEmailLinkBtn}
                   >
-                    <Pencil size={15} color={GREEN} />
+                    <Text style={styles.changeEmailLinkText}>Change email</Text>
                   </TouchableOpacity>
                 </View>
 
-                {/* 6 OTP Boxes */}
-                <View style={styles.otpContainer}>
-                  {otpDigits.map((digit, idx) => (
-                    <TextInput
-                      key={idx}
-                      ref={(el) => {
-                        inputsRef.current[idx] = el;
-                      }}
-                      value={digit}
-                      onChangeText={(val) => handleDigitChange(idx, val)}
-                      onKeyPress={({ nativeEvent }) => handleKeyPress(idx, nativeEvent.key)}
-                      keyboardType="number-pad"
-                      maxLength={6}
-                      textAlign="center"
-                      editable={!loading}
-                      selectTextOnFocus
-                      caretHidden
-                      style={[
-                        styles.otpBox,
-                        digit ? styles.otpBoxFilled : styles.otpBoxEmpty,
-                      ]}
-                    />
-                  ))}
-                </View>
-              </View>
-            )}
-
-            {/* STEP 3: Create New Password */}
-            {step === "new_password" && (
-              <View style={{ paddingTop: 8 }}>
-                <View style={{ alignItems: "center", marginBottom: 16 }}>
-                  <View
-                    style={{
-                      width: 56,
-                      height: 56,
-                      borderRadius: 18,
-                      backgroundColor: `${GREEN}15`,
-                      alignItems: "center",
-                      justifyContent: "center",
-                      marginBottom: 8,
+                <View style={styles.otpCenterBlock}>
+                  <AnimatedOtpInput
+                    digits={otpDigits}
+                    onChange={setOtpDigits}
+                    onComplete={handleVerifyOtp}
+                    onInputActivity={() => {
+                      if (alertError) setAlertError(null);
                     }}
-                  >
-                    <KeyRound size={26} color={GREEN} />
-                  </View>
-                  <Text style={{ fontSize: 13, color: "#6B7280", textAlign: "center", paddingHorizontal: 12 }}>
-                    Your new password must be secure and meet all password criteria below.
-                  </Text>
+                    disabled={loading}
+                    focusFirstTrigger={otpFocusTrigger}
+                    containerStyle={{ marginVertical: 18 }}
+                  />
                 </View>
 
-                <View
-                  onLayout={(e) => {
-                    passwordYRef.current = e.nativeEvent.layout.y;
-                  }}
-                >
+                <View style={styles.bottomActions}>
+                  <Button
+                    label={loading ? "VERIFYING…" : "VERIFY CODE"}
+                    variant="primary"
+                    pill
+                    size="lg"
+                    loading={loading}
+                    disabled={loading || !otpDigits.every(Boolean)}
+                    onPress={() => handleVerifyOtp(otpDigits.join(""))}
+                    className="w-full"
+                  />
+
+                  <View style={styles.resendWrapper}>
+                    <Text style={styles.resendPrompt}>Didn&apos;t receive the code? </Text>
+                    <TouchableOpacity
+                      onPress={handleResend}
+                      disabled={loading || resendCooldown > 0}
+                      hitSlop={8}
+                    >
+                      <Text
+                        style={[
+                          styles.resendBtnText,
+                          (resendCooldown > 0 || loading) && { color: "#9CA3AF" },
+                        ]}
+                      >
+                        {resendCooldown > 0 ? `Resend (${formatTimer(resendCooldown)})` : "Resend"}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              </ScrollView>
+            ) : (
+              /* Step 3: New Password */
+              <ScrollView
+                ref={scrollViewRef}
+                showsVerticalScrollIndicator={false}
+                bounces={false}
+                keyboardShouldPersistTaps="handled"
+                keyboardDismissMode="on-drag"
+                contentContainerStyle={[
+                  styles.centeredStepBody,
+                  { paddingBottom: isKeyboardVisible ? 12 : Math.max(insets.bottom + 18, 24) },
+                ]}
+              >
+                <View style={styles.stepHeader}>
+                  <Text style={styles.stepTitle}>new password</Text>
+                </View>
+
+                <View style={{ width: "100%", marginTop: 18 }}>
                   <PasswordInput
                     ref={passwordInputRef}
                     value={newPassword}
                     onChangeText={(val) => {
                       setNewPassword(val);
-                      setError("");
+                      if (alertError) setAlertError(null);
                     }}
-                    onFocus={() => handleInputFocus("password")}
+                    onFocus={() => setFocusedField("password")}
                     onBlur={() => setFocusedField(null)}
-                    placeholder="Enter new password"
+                    placeholder="New password"
                     showStrength={true}
-                    containerStyle={{ marginBottom: 16 }}
+                    containerStyle={{ marginBottom: 14 }}
                     returnKeyType="next"
                     onSubmitEditing={() => confirmPasswordInputRef.current?.focus()}
                   />
-                </View>
 
-                <View
-                  onLayout={(e) => {
-                    confirmPasswordYRef.current = e.nativeEvent.layout.y;
-                  }}
-                >
                   <PasswordInput
                     ref={confirmPasswordInputRef}
                     value={confirmPassword}
                     onChangeText={(val) => {
                       setConfirmPassword(val);
-                      setError("");
+                      if (alertError) setAlertError(null);
                     }}
-                    onFocus={() => handleInputFocus("confirmPassword")}
+                    onFocus={() => setFocusedField("confirmPassword")}
                     onBlur={() => setFocusedField(null)}
                     placeholder="Confirm new password"
                     showStrength={false}
-                    containerStyle={{ marginBottom: 16 }}
+                    containerStyle={{ marginBottom: 14 }}
                     returnKeyType="done"
                     onSubmitEditing={handleCompleteReset}
-                    error={
-                      confirmPassword.trim().length > 0 && confirmPassword !== newPassword
-                        ? "Passwords do not match."
-                        : null
-                    }
                   />
                 </View>
-              </View>
-            )}
-          </ScrollView>
 
-          {/* ── Fixed Footer ── */}
-          <View
-            style={{
-              paddingHorizontal: 24,
-              paddingTop: 10,
-              paddingBottom: isKeyboardVisible ? 10 : Math.max(insets.bottom + 12, 16),
-              backgroundColor: "#FFFFFF",
-            }}
-          >
-            {/* Primary Action Button */}
-            {step === "email" && (
-              <Button
-                label={loading ? "Sending code…" : "Send Reset Code"}
-                variant="primary"
-                pill
-                size="lg"
-                loading={loading}
-                disabled={loading || !email.trim()}
-                icon={<ArrowRight size={16} color="#FFFFFF" />}
-                onPress={handleSendCode}
-                className="w-full"
-              />
-            )}
-
-            {step === "otp" && (
-              <>
-                <Button
-                  label={loading ? "Verifying…" : "Verify"}
-                  variant="primary"
-                  pill
-                  size="lg"
-                  loading={loading}
-                  disabled={loading || !otpDigits.every(Boolean)}
-                  onPress={() => handleVerifyOtp(otpDigits.join(""))}
-                  className="w-full"
-                />
-
-                {/* Resend under verify button */}
-                <View
-                  style={{
-                    alignItems: "center",
-                    marginTop: 14,
-                  }}
-                >
-                  <Text style={{ fontSize: 13, color: "#6B7280", textAlign: "center" }}>
-                    Didn&apos;t receive the code?
-                  </Text>
-                  <TouchableOpacity
-                    onPress={handleResend}
-                    disabled={loading || resendCooldown > 0}
-                    style={{ marginTop: 4, paddingVertical: 4, paddingHorizontal: 8 }}
-                  >
-                    <Text
-                      style={{
-                        fontSize: 13,
-                        fontWeight: "700",
-                        color: resendCooldown > 0 || loading ? "#9CA3AF" : GREEN,
-                        textAlign: "center",
-                      }}
-                    >
-                      Resend ({formatTimer(resendCooldown)})
-                    </Text>
-                  </TouchableOpacity>
+                <View style={styles.bottomActions}>
+                  <Button
+                    label={
+                      loading
+                        ? "UPDATING PASSWORD…"
+                        : focusedField === "password"
+                          ? "NEXT"
+                          : "SAVE NEW PASSWORD"
+                    }
+                    variant="primary"
+                    pill
+                    size="lg"
+                    loading={loading}
+                    disabled={
+                      loading || !newPassword || (focusedField !== "password" && !confirmPassword)
+                    }
+                    icon={
+                      focusedField === "password" ? (
+                        <ArrowRight size={16} color="#FFFFFF" />
+                      ) : (
+                        <CheckCircle size={16} color="#FFFFFF" />
+                      )
+                    }
+                    onPress={
+                      focusedField === "password"
+                        ? () => confirmPasswordInputRef.current?.focus()
+                        : handleCompleteReset
+                    }
+                    className="w-full"
+                  />
                 </View>
-              </>
+              </ScrollView>
             )}
-
-            {step === "new_password" && (
-              <Button
-                label={
-                  loading
-                    ? "Updating password…"
-                    : focusedField === "password"
-                      ? "Next"
-                      : "Reset Password"
-                }
-                variant="primary"
-                pill
-                size="lg"
-                loading={loading}
-                disabled={
-                  loading || !newPassword || (focusedField !== "password" && !confirmPassword)
-                }
-                icon={
-                  focusedField === "password" ? (
-                    <ArrowRight size={16} color="#FFFFFF" />
-                  ) : (
-                    <CheckCircle size={16} color="#FFFFFF" />
-                  )
-                }
-                onPress={
-                  focusedField === "password"
-                    ? () => confirmPasswordInputRef.current?.focus()
-                    : handleCompleteReset
-                }
-                className="w-full"
-              />
-            )}
-
-            {!isKeyboardVisible && step === "email" && (
-              <View
-                style={{
-                  flexDirection: "row",
-                  justifyContent: "center",
-                  marginTop: 14,
-                  gap: 4,
-                }}
-              >
-                <Text style={{ fontSize: 13, color: "#6B7280" }}>
-                  Remember your password?
-                </Text>
-                <Pressable onPress={() => router.replace("/pages/login")}>
-                  <Text style={{ fontSize: 13, fontWeight: "700", color: GREEN }}>
-                    Sign in
-                  </Text>
-                </Pressable>
-              </View>
-            )}
-          </View>
+          </KeyboardHugView>
         </View>
-      </KeyboardHugView>
+      )}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  otpContainer: {
-    flexDirection: "row",
-    gap: 8,
-    marginVertical: 18,
+  root: {
+    flex: 1,
+    backgroundColor: "#FFFFFF",
+    overflow: "hidden",
+  },
+  headerContainer: {
+    width: "100%",
+    position: "relative",
+    overflow: "hidden",
+    alignItems: "center",
     justifyContent: "center",
   },
-  otpBox: {
+  backBtn: {
+    position: "absolute",
+    left: 16,
+    padding: 7,
+    borderRadius: 18,
+    backgroundColor: "rgba(0,0,0,0.22)",
+    zIndex: 30,
+  },
+  emblemWrapper: {
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 20,
+  },
+  logoBadge: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: "#FFFFFF",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 8,
+    borderWidth: 2,
+    borderColor: "rgba(255,255,255,0.85)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  logoImage: {
     width: 46,
-    height: 54,
-    borderRadius: 14,
-    borderWidth: 1.5,
+    height: 46,
+  },
+  brandTitle: {
+    fontFamily: "Fraunces_700Bold",
+    fontSize: 16,
+    color: "#FFFFFF",
+    letterSpacing: -0.3,
+    marginTop: 4,
+  },
+  hugView: {
+    flex: 1,
+  },
+  stepOneScrollBody: {
+    flexGrow: 1,
+    paddingHorizontal: 26,
+    paddingTop: 12,
+    justifyContent: "center",
+    zIndex: 10,
+  },
+  titleWrap: {
+    alignItems: "center",
+    marginBottom: 22,
+  },
+  screenTitle: {
+    fontFamily: "Fraunces_700Bold",
+    fontSize: 27,
+    color: BRAND_GREEN,
     textAlign: "center",
-    fontSize: 22,
+    letterSpacing: -0.5,
+  },
+  screenSubtitle: {
+    fontSize: 12,
+    color: "#6B7280",
+    textAlign: "center",
+    marginTop: 4,
+    lineHeight: 17,
+    maxWidth: 290,
+  },
+  formContainer: {
+    width: "100%",
+    marginBottom: 4,
+  },
+  footerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 14,
+  },
+  footerPrompt: {
+    fontSize: 13,
+    color: "#6B7280",
+  },
+  footerLink: {
+    fontSize: 13,
     fontWeight: "700",
+    color: "#0FA06C",
   },
-  otpBoxFilled: {
-    borderColor: GREEN,
-    backgroundColor: "#F0FDF4",
-    color: GREEN,
+  bottomAccentContainer: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    width: 100,
+    height: 100,
+    zIndex: 0,
   },
-  otpBoxEmpty: {
-    borderColor: "#E5E7EB",
-    backgroundColor: "#F9FAFB",
+  edgeTopRight: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    width: 140,
+    height: 140,
+    zIndex: 0,
+  },
+  edgeBottomLeft: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    width: 155,
+    height: 155,
+    zIndex: 0,
+  },
+  edgeTopLeft: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    width: 90,
+    height: 90,
+    zIndex: 0,
+  },
+  topBar: {
+    paddingHorizontal: 16,
+    height: 48,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    backgroundColor: "transparent",
+    zIndex: 10,
+  },
+  iconBtn: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "transparent",
+  },
+  progressRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  progressPill: {
+    height: 6,
+    borderRadius: 3,
+  },
+  progressPillActive: {
+    width: 28,
+    backgroundColor: GREEN,
+  },
+  progressPillDone: {
+    width: 18,
+    backgroundColor: "rgba(26, 107, 60, 0.55)",
+  },
+  progressPillInactive: {
+    width: 18,
+    backgroundColor: "#E5E7EB",
+  },
+  centeredStepBody: {
+    flexGrow: 1,
+    paddingHorizontal: 24,
+    paddingTop: 12,
+    justifyContent: "center",
+    width: "100%",
+    maxWidth: 620,
+    alignSelf: "center",
+  },
+  stepHeader: {
+    alignItems: "center",
+    marginBottom: 6,
+  },
+  stepTitle: {
+    fontFamily: "Fraunces_700Bold",
+    fontSize: 28,
+    color: BRAND_GREEN,
+    textAlign: "center",
+    letterSpacing: -0.4,
+  },
+  stepSubtitle: {
+    fontSize: 13,
+    color: "#6B7280",
+    textAlign: "center",
+    marginTop: 6,
+  },
+  emailPlainText: {
+    fontSize: 13,
+    fontWeight: "600",
     color: "#111827",
+    textAlign: "center",
+    marginTop: 4,
+    maxWidth: 280,
+  },
+  changeEmailLinkBtn: {
+    marginTop: 6,
+    paddingVertical: 2,
+    paddingHorizontal: 6,
+  },
+  changeEmailLinkText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: GREEN,
+    textAlign: "center",
+  },
+  otpCenterBlock: {
+    justifyContent: "center",
+    alignItems: "center",
+    width: "100%",
+  },
+  bottomActions: {
+    width: "100%",
+    paddingTop: 8,
+  },
+  resendWrapper: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    marginTop: 14,
+  },
+  resendPrompt: {
+    fontSize: 13,
+    color: "#6B7280",
+  },
+  resendBtnText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: GREEN,
   },
 });

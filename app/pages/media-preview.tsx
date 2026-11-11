@@ -74,6 +74,7 @@ export default function MediaPreviewScreen() {
     authorId,
     isAlly,
     createdAt,
+    isEdited,
     likesCount: rawLikes,
     commentsCount: rawComments,
     isLiked: rawLiked,
@@ -92,6 +93,7 @@ export default function MediaPreviewScreen() {
     authorId?: string;
     isAlly?: string;
     createdAt?: string;
+    isEdited?: string;
     likesCount?: string;
     commentsCount?: string;
     isLiked?: string;
@@ -131,7 +133,10 @@ export default function MediaPreviewScreen() {
   }, [mediaUrls, mediaUrl, fetchedPost?.media]);
 
   const hasMedia = parsedUrls.length > 0;
-  const effectiveCaption = fetchedPost?.content || caption || "";
+  const effectiveCaption = fetchedPost?.content ?? caption ?? "";
+  const effectiveIsEdited = fetchedPost
+    ? Boolean(fetchedPost.is_edited || fetchedPost.edited_at)
+    : isEdited === "true";
   const effectiveAuthorId = fetchedPost?.author?.id || authorId;
   const effectiveIsAlly = fetchedPost?.author
     ? Boolean(
@@ -680,7 +685,9 @@ export default function MediaPreviewScreen() {
             {effectiveAuthorName}
           </Text>
           {displayTime ? (
-            <Text style={styles.bottomTimeText}>· {displayTime}</Text>
+            <Text style={styles.bottomTimeText}>
+              · {displayTime}{effectiveIsEdited ? " · edited" : ""}
+            </Text>
           ) : null}
         </Pressable>
 

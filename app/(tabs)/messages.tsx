@@ -32,7 +32,11 @@ import { ScreenHeader } from "@/components/ScreenHeader";
 import { UserAvatar } from "@/components/UserAvatar";
 import { AnonymousAvatar } from "@/components/AnonymousAvatar";
 import { RevealAvatar } from "@/components/RevealAvatar";
-import { getEffectiveAvatarReveal } from "@/lib/avatarRevealCache";
+import {
+  getCachedAvatarReveal,
+  getEffectiveAvatarReveal,
+  loadCachedAvatarReveal,
+} from "@/lib/avatarRevealCache";
 import { ChatStreakBadge } from "@/components/ChatStreakBadge";
 import { FilterChip } from "@/components/FilterChip";
 import { EmptyState } from "@/components/EmptyState";
@@ -165,6 +169,7 @@ interface SwipeableRowProps {
   disabled: boolean;
   isNavigatingThis: boolean;
   isMovingUp?: boolean;
+  revealCacheRev: number;
 }
 
 const SwipeableRow = React.memo(function SwipeableRow({
@@ -180,6 +185,7 @@ const SwipeableRow = React.memo(function SwipeableRow({
   disabled,
   isNavigatingThis,
   isMovingUp = false,
+  revealCacheRev: _revealCacheRev,
 }: SwipeableRowProps) {
   const swipeRef = useRef<any>(null);
   const { colors, isDark } = useTheme();
@@ -452,6 +458,7 @@ export default function MessagesScreen() {
   // Position exchange animation tracking
   const prevIndicesRef = useRef<Map<string, number>>(new Map());
   const [movingUpId, setMovingUpId] = useState<string | null>(null);
+  const [revealCacheRev, setRevealCacheRev] = useState(0);
 
   // Screen focus & conversation mode tracking
   const isScreenFocusedRef = useRef(true);
@@ -565,6 +572,32 @@ export default function MessagesScreen() {
     // 24h AsyncStorage cache covers cold starts.
     return () => { isMounted = false; };
   }, [loadConversations, refreshOnlineUsers, user?.id]);
+
+  // Hydrate cached reveal thumbnails from AsyncStorage so anonymous chats in
+  // the list show their blurred photo preview immediately after cold start (mirrors web).
+  useEffect(() => {
+    const missingIds = conversations
+      .map((conv: any) => {
+        const isAnon = Boolean(
+          conv.variant ? conv.variant !== "regular" : (conv.is_anonymous || conv.type === "anonymous")
+        );
+        if (!isAnon) return null;
+        const matchId = conv.matchInfo?.matchId || conv.matchInfo?.id || conv.id;
+        return matchId && !getCachedAvatarReveal(matchId) ? matchId : null;
+      })
+      .filter((id): id is string => Boolean(id));
+
+    if (missingIds.length === 0) return;
+    let active = true;
+    Promise.all(missingIds.map((id) => loadCachedAvatarReveal(id))).then((loaded) => {
+      if (active && loaded.some(Boolean)) {
+        setRevealCacheRev((n) => n + 1);
+      }
+    });
+    return () => {
+      active = false;
+    };
+  }, [conversations]);
 
   // Re-fetch when navigating back to the Messages tab to instantly reflect read status changes,
   // and trigger reorder animation if returning from conversation panel
@@ -881,10 +914,11 @@ export default function MessagesScreen() {
           disabled={isNavigating}
           isNavigatingThis={navigatingId === item.id}
           isMovingUp={movingUpId === item.id}
+          revealCacheRev={revealCacheRev}
         />
       );
     },
-    [user?.id, checkIsOnline, swipeableRefs, handleOpenConversation, isNavigating, navigatingId, movingUpId]
+    [user?.id, checkIsOnline, swipeableRefs, handleOpenConversation, isNavigating, navigatingId, movingUpId, revealCacheRev]
   );
 
 
@@ -1073,6 +1107,7 @@ export default function MessagesScreen() {
       <FlatList
         style={{ flex: 1 }}
         data={paginatedConversations}
+        extraData={revealCacheRev}
         keyExtractor={(item) => item.id}
         refreshControl={
           <RefreshControl

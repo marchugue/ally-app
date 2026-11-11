@@ -41,6 +41,9 @@ export interface UpdateProfilePayload {
   organizations?: string[];
 }
 
+export type RelationshipAudience = 'public' | 'allies' | 'only_me';
+export type DefaultPostAudience = 'public' | 'followers' | 'connections' | 'only_me';
+
 export interface UserPreferences {
   user_id: string;
   discovery_enabled: boolean;
@@ -54,8 +57,12 @@ export interface UserPreferences {
   read_receipts_enabled: boolean;
   /** public: posts visible to everyone (identity stays anonymous unless allied). private: only allies see posts. */
   account_privacy?: 'public' | 'private';
+  allies_visibility?: RelationshipAudience;
+  following_visibility?: RelationshipAudience;
+  followers_visibility?: RelationshipAudience;
   profile_visibility: 'campus' | 'matches_only' | 'hidden';
   feed_post_audience: 'campus' | 'matches_only' | 'anonymous_only';
+  default_post_audience?: DefaultPostAudience | 'campus' | 'department' | 'allies';
 
   typing_indicators_enabled: boolean;
   auto_reveal_identity_stage: number;

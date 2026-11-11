@@ -50,7 +50,7 @@ function getApiBaseUrl(): string {
   if (hostUri && typeof hostUri === "string") {
     const hostIp = hostUri.split(":")[0];
     if (hostIp && hostIp !== "localhost" && hostIp !== "127.0.0.1") {
-      return `http://${hostIp}:5174`;
+      return `http://${hostIp}:3001`;
     }
   }
 
@@ -59,8 +59,8 @@ function getApiBaseUrl(): string {
     return process.env.EXPO_PUBLIC_API_URL;
   }
 
-  // 5. Default: localhost on port 5174 (works directly with adb reverse tcp:5174 tcp:5174 over USB)
-  return "http://localhost:5174";
+  // 5. Default: localhost on port 3001 (works directly with adb reverse tcp:3001 tcp:3001 over USB)
+  return "http://localhost:3001";
 }
 
 export const API_BASE_URL = getApiBaseUrl();

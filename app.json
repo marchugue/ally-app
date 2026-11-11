@@ -35,7 +35,7 @@
       "versionCode": 1,
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon-fg.png",
-        "backgroundColor": "#1f663c"
+        "backgroundColor": "#FFFFFF"
       },
       "package": "com.allyjis.mobile",
       "googleServicesFile": "./google-services.json",

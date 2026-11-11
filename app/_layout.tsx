@@ -1,6 +1,6 @@
 import "../global.css";
 
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import { Stack, router, useSegments } from "expo-router";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider } from "react-native-safe-area-context";
@@ -9,7 +9,6 @@ import { KeyboardProvider } from "react-native-keyboard-controller";
 import * as SplashScreen from "expo-splash-screen";
 import { View, ActivityIndicator, Platform } from "react-native";
 import Constants from "expo-constants";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import { AuthProvider, useAuth } from "@/lib/auth/AuthContext";
 import { PresenceProvider } from "@/context/PresenceContext";
 import { getMobileRegisterCache } from "@/lib/registerCache";
@@ -20,18 +19,6 @@ function RootLayoutNav() {
   const { user, accessToken, isLoading } = useAuth();
   const { colors } = useTheme();
   const segments = useSegments() as string[];
-  const [hasSeenOnboarding, setHasSeenOnboarding] = useState<boolean | null>(null);
-
-  // Check first-launch onboarding flag
-  useEffect(() => {
-    AsyncStorage.getItem("onboarding_done")
-      .then((val) => {
-        setHasSeenOnboarding(Boolean(val));
-      })
-      .catch(() => {
-        setHasSeenOnboarding(true);
-      });
-  }, []);
 
   useEffect(() => {
     if (!accessToken) return;
@@ -64,18 +51,19 @@ function RootLayoutNav() {
   }, [accessToken]);
 
   useEffect(() => {
-    if (!isLoading && hasSeenOnboarding !== null) {
+    if (!isLoading) {
       SplashScreen.hideAsync().catch(() => {});
     }
-  }, [isLoading, hasSeenOnboarding]);
+  }, [isLoading]);
 
   useEffect(() => {
-    if (isLoading || hasSeenOnboarding === null) return;
+    if (isLoading) return;
 
     let isMounted = true;
 
     const runNavigation = async () => {
       const atRoot = segments.length === 0 || (segments.length === 1 && segments[0] === "index");
+      const onLandingPage = (segments[0] === "pages" && segments[1] === "landing") || segments[0] === "landing";
 
       const onAuthPages =
         (segments[0] === "pages" &&
@@ -109,9 +97,6 @@ function RootLayoutNav() {
 
       // ── 1. Device has session ──
       if (user) {
-        // Mark onboarding as completed in storage so onboarding is never shown again
-        AsyncStorage.setItem("onboarding_done", "1").catch(() => {});
-
         // Account is banned or suspended — lock user strictly to /pages/banned
         const isBanned = Boolean(
           user.user_metadata?.is_banned === true ||
@@ -219,18 +204,9 @@ function RootLayoutNav() {
       }
 
       // ── 2. Device has no session (unauthenticated) ──
-      // First launch: onboarding not yet completed
-      if (!hasSeenOnboarding) {
-        if (atRoot || !onAuthPages) {
-          router.replace("/pages/onboarding" as any);
-        }
-        return;
-      }
-
-      // Subsequent launches / unauthenticated:
-      // If at root or attempting to access protected screens, route to login
-      if (atRoot || !onAuthPages) {
-        router.replace("/pages/login" as any);
+      // Always redirect to onboarding when opened without an active session or accessing non-auth screens
+      if (atRoot || !onAuthPages || onLandingPage) {
+        router.replace("/pages/onboarding" as any);
         return;
       }
     };
@@ -240,9 +216,9 @@ function RootLayoutNav() {
     return () => {
       isMounted = false;
     };
-  }, [user, isLoading, segments, hasSeenOnboarding]);
+  }, [user, isLoading, segments]);
 
-  if (isLoading || hasSeenOnboarding === null) {
+  if (isLoading) {
     return (
       <View style={{ flex: 1, backgroundColor: colors.background, alignItems: "center", justifyContent: "center" }}>
         <ActivityIndicator color={colors.primary} />
@@ -276,6 +252,7 @@ function RootLayoutNav() {
       <Stack.Screen name="pages/post-detail" options={{ headerShown: false, animation: "slide_from_right" }} />
       <Stack.Screen name="pages/media-preview" options={{ headerShown: false, animation: "fade" }} />
       <Stack.Screen name="pages/user-profile" options={{ headerShown: false, animation: "slide_from_right" }} />
+      <Stack.Screen name="pages/relationships" options={{ headerShown: false, animation: "slide_from_right" }} />
       <Stack.Screen name="pages/requests" options={{ headerShown: false, animation: "slide_from_right" }} />
       <Stack.Screen name="pages/settings" options={{ headerShown: false, animation: "slide_from_right" }} />
       <Stack.Screen name="pages/edit-profile" options={{ headerShown: false, animation: "slide_from_right" }} />
@@ -295,6 +272,7 @@ function RootLayoutNav() {
 import {
   useFonts,
   Fraunces_400Regular,
+  Fraunces_400Regular_Italic,
   Fraunces_600SemiBold,
   Fraunces_700Bold,
   Fraunces_800ExtraBold,
@@ -328,6 +306,7 @@ function ThemedAppContainer() {
 export default function RootLayout() {
   const [fontsLoaded] = useFonts({
     Fraunces_400Regular,
+    Fraunces_400Regular_Italic,
     Fraunces_600SemiBold,
     Fraunces_700Bold,
     Fraunces_800ExtraBold,
@@ -338,11 +317,13 @@ export default function RootLayout() {
 
     // Convenient Aliases
     Fraunces: Fraunces_700Bold,
+    "Fraunces-Italic": Fraunces_400Regular_Italic,
     "Fraunces-Bold": Fraunces_700Bold,
     "Fraunces-ExtraBold": Fraunces_800ExtraBold,
     "Fraunces-SemiBold": Fraunces_600SemiBold,
     "Fraunces-Regular": Fraunces_400Regular,
     PlusJakartaSans: PlusJakartaSans_400Regular,
+    "PlusJakartaSans-SemiBold": PlusJakartaSans_600SemiBold,
     "PlusJakartaSans-Bold": PlusJakartaSans_700Bold,
   });
 

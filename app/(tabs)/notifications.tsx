@@ -22,7 +22,6 @@ import {
   Heart,
   Drama,
   Sparkles,
-  Trash2,
   Flame,
   Check,
   X,
@@ -47,7 +46,6 @@ import {
   listNotifications,
   markNotificationRead,
   markAllNotificationsRead,
-  clearAllNotifications,
   deleteNotification,
 } from "@/lib/api/notification";
 import type { NotificationItem, NotificationCategory } from "@/types/notification";
@@ -576,31 +574,6 @@ export default function NotificationsScreen() {
       prev.map((n) => ({ ...n, isRead: true, read: true }))
     );
     setAppBadgeCount(0);
-  }, [accessToken]);
-
-  const handleClearAll = useCallback(() => {
-    Alert.alert(
-      "Clear Notifications",
-      "Are you sure you want to clear all notifications?",
-      [
-        { text: "Cancel", style: "cancel" },
-        {
-          text: "Clear All",
-          style: "destructive",
-          onPress: async () => {
-            if (accessToken) {
-              try {
-                await clearAllNotifications(accessToken);
-              } catch (err) {
-                console.warn("Failed to clear notifications", err);
-              }
-            }
-            setNotifications([]);
-            setAppBadgeCount(0);
-          },
-        },
-      ]
-    );
   }, [accessToken]);
 
   // Match request inline accept/decline
@@ -1326,69 +1299,52 @@ export default function NotificationsScreen() {
             paddingHorizontal: 16,
             paddingTop: insets.top + 8,
             paddingBottom: 8,
-            position: "relative",
             minHeight: insets.top + 48,
-            justifyContent: "center",
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
           }}
         >
-          {/* Centered Notification Label + Badge + Filter */}
-          <View
+          {/* Left balanced spacer */}
+          <View style={{ flex: 1 }} />
+
+          {/* Combined Notification Label + Filter Icon as ONE centered button (matching web) */}
+          <TouchableOpacity
+            onPress={() => setShowFilterDropdown((prev) => !prev)}
+            hitSlop={10}
+            activeOpacity={0.65}
+            accessibilityRole="button"
+            accessibilityLabel="Filter notifications"
             style={{
               flexDirection: "row",
               alignItems: "center",
               justifyContent: "center",
               gap: 8,
+              paddingVertical: 4,
+              paddingHorizontal: 8,
             }}
           >
             <Text
               style={{
                 fontFamily: "Fraunces_700Bold",
                 fontSize: 24,
-                color: colors.primary,
+                color: isDark ? "rgba(255,255,255,0.85)" : colors.primary,
                 letterSpacing: -0.5,
               }}
             >
               Notification
             </Text>
 
-            {unreadCount > 0 && (
-              <View
-                style={{
-                  backgroundColor: colors.primary,
-                  paddingHorizontal: 8,
-                  paddingVertical: 2,
-                  borderRadius: 12,
-                }}
-              >
-                <Text style={{ fontSize: 11, fontWeight: "800", color: "#FFFFFF" }}>
-                  {unreadCount}
-                </Text>
-              </View>
-            )}
-
-            {/* Borderless circular filter icon button */}
-            <TouchableOpacity
-              onPress={() => setShowFilterDropdown(true)}
-              hitSlop={8}
-              activeOpacity={0.7}
-              style={{
-                width: 32,
-                height: 32,
-                borderRadius: 16,
-                alignItems: "center",
-                justifyContent: "center",
-                position: "relative",
-              }}
-            >
-              <Filter size={17} color={colors.primary} strokeWidth={2.2} />
+            <View style={{ position: "relative", alignItems: "center", justifyContent: "center" }}>
+              <Filter size={18} color={colors.primary} strokeWidth={2.3} />
               {activeFilter !== "all" && (
                 <View
                   style={{
                     position: "absolute",
-                    top: 4,
-                    right: 4,
-                    width: 7,
-                    height: 7,
+                    top: -3,
+                    right: -3,
+                    width: 8,
+                    height: 8,
                     borderRadius: 4,
                     backgroundColor: colors.primary,
                     borderWidth: 1.5,
@@ -1396,19 +1352,16 @@ export default function NotificationsScreen() {
                   }}
                 />
               )}
-            </TouchableOpacity>
-          </View>
+            </View>
+          </TouchableOpacity>
 
-          {/* Right aligned action buttons */}
+          {/* Right aligned Read All button (no trash bin / clear all, matching web) */}
           <View
             style={{
-              position: "absolute",
-              right: 16,
-              top: insets.top + 8,
-              bottom: 8,
+              flex: 1,
               flexDirection: "row",
               alignItems: "center",
-              gap: 6,
+              justifyContent: "flex-end",
             }}
           >
             {unreadCount > 0 && (
@@ -1427,27 +1380,12 @@ export default function NotificationsScreen() {
                 }}
               >
                 <CheckCheck size={13} color={colors.primary} strokeWidth={2.5} />
-                <Text style={{ fontSize: 11, fontFamily: "PlusJakartaSans-Bold", color: colors.primary }}>
+                <Text
+                  numberOfLines={1}
+                  style={{ fontSize: 11, fontFamily: "PlusJakartaSans-Bold", color: colors.primary }}
+                >
                   Read All
                 </Text>
-              </TouchableOpacity>
-            )}
-
-            {notifications.length > 0 && (
-              <TouchableOpacity
-                onPress={handleClearAll}
-                hitSlop={6}
-                activeOpacity={0.7}
-                style={{
-                  width: 30,
-                  height: 30,
-                  borderRadius: 10,
-                  backgroundColor: colors.surfaceMuted,
-                  alignItems: "center",
-                  justifyContent: "center",
-                }}
-              >
-                <Trash2 size={14} color={colors.textSecondary} />
               </TouchableOpacity>
             )}
           </View>
@@ -1478,6 +1416,7 @@ export default function NotificationsScreen() {
         contentContainerStyle={{
           paddingTop: insets.top + 54,
           paddingBottom: 40,
+          flexGrow: 1,
         }}
         style={{ flex: 1, backgroundColor: colors.background }}
       >
@@ -1526,7 +1465,7 @@ export default function NotificationsScreen() {
             ))}
           </View>
         ) : filteredNotifications.length === 0 ? (
-          <View style={{ padding: 48, alignItems: "center", justifyContent: "center" }}>
+          <View style={{ flex: 1, padding: 48, alignItems: "center", justifyContent: "center" }}>
             <View
               style={{
                 width: 68,
@@ -1657,6 +1596,7 @@ export default function NotificationsScreen() {
               shadowRadius: 14,
               elevation: 8,
               width: 220,
+              maxHeight: "80%",
             }}
           >
             <View
@@ -1680,104 +1620,106 @@ export default function NotificationsScreen() {
                 Filter by
               </Text>
             </View>
-            {[
-              { id: "all", label: "All", count: categoryCounts.all },
-              { id: "unread", label: "Unread", count: categoryCounts.unread },
-              { id: "messages", label: "Messages", count: categoryCounts.messages },
-              { id: "connections", label: "Connections", count: categoryCounts.connections },
-              { id: "ally", label: "Ally", count: categoryCounts.ally },
-              { id: "safety", label: "Safety", count: categoryCounts.safety },
-              { id: "activity", label: "Activity", count: categoryCounts.activity },
-            ].map((option) => {
-              const isSelected = activeFilter === option.id;
-              return (
-                <TouchableOpacity
-                  key={option.id}
-                  onPress={() => {
-                    setActiveFilter(option.id as FilterCategory);
-                    setShowFilterDropdown(false);
-                  }}
-                  activeOpacity={0.7}
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    justifyContent: "space-between",
-                    paddingVertical: 9,
-                    paddingHorizontal: 10,
-                    borderRadius: 12,
-                    backgroundColor: isSelected ? colors.primarySoft : "transparent",
-                  }}
-                >
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-                    {isSelected ? (
-                      <Check size={14} color={colors.primary} strokeWidth={2.5} />
-                    ) : (
-                      <View style={{ width: 14 }} />
-                    )}
-                    <Text
-                      style={{
-                        fontSize: 12.5,
-                        fontFamily: isSelected ? "PlusJakartaSans-Bold" : "PlusJakartaSans",
-                        color: isSelected ? colors.primary : colors.textPrimary,
-                      }}
-                    >
-                      {option.label}
-                    </Text>
-                  </View>
-                  <View
+            <ScrollView bounces={false} showsVerticalScrollIndicator={false}>
+              {[
+                { id: "all", label: "All", count: categoryCounts.all },
+                { id: "unread", label: "Unread", count: categoryCounts.unread },
+                { id: "messages", label: "Messages", count: categoryCounts.messages },
+                { id: "connections", label: "Connections", count: categoryCounts.connections },
+                { id: "ally", label: "Ally", count: categoryCounts.ally },
+                { id: "safety", label: "Safety", count: categoryCounts.safety },
+                { id: "activity", label: "Activity", count: categoryCounts.activity },
+              ].map((option) => {
+                const isSelected = activeFilter === option.id;
+                return (
+                  <TouchableOpacity
+                    key={option.id}
+                    onPress={() => {
+                      setActiveFilter(option.id as FilterCategory);
+                      setShowFilterDropdown(false);
+                    }}
+                    activeOpacity={0.7}
                     style={{
-                      backgroundColor: isSelected ? colors.primary : colors.surfaceMuted,
-                      paddingHorizontal: 7,
-                      paddingVertical: 2,
-                      borderRadius: 10,
+                      flexDirection: "row",
+                      alignItems: "center",
+                      justifyContent: "space-between",
+                      paddingVertical: 9,
+                      paddingHorizontal: 10,
+                      borderRadius: 12,
+                      backgroundColor: isSelected ? colors.primarySoft : "transparent",
                     }}
                   >
-                    <Text
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+                      {isSelected ? (
+                        <Check size={14} color={colors.primary} strokeWidth={2.5} />
+                      ) : (
+                        <View style={{ width: 14 }} />
+                      )}
+                      <Text
+                        style={{
+                          fontSize: 12.5,
+                          fontFamily: isSelected ? "PlusJakartaSans-Bold" : "PlusJakartaSans",
+                          color: isSelected ? colors.primary : colors.textPrimary,
+                        }}
+                      >
+                        {option.label}
+                      </Text>
+                    </View>
+                    <View
                       style={{
-                        fontSize: 10,
-                        fontFamily: "PlusJakartaSans-Bold",
-                        color: isSelected ? "#FFFFFF" : colors.textMuted,
+                        backgroundColor: isSelected ? colors.primary : colors.surfaceMuted,
+                        paddingHorizontal: 7,
+                        paddingVertical: 2,
+                        borderRadius: 10,
                       }}
                     >
-                      {option.count}
-                    </Text>
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-            {/* Centered hyperlink under filter options */}
-            <View
-              style={{
-                borderTopWidth: 1,
-                borderTopColor: colors.border,
-                marginTop: 4,
-                paddingTop: 8,
-                paddingBottom: 4,
-                alignItems: "center",
-                justifyContent: "center",
-              }}
-            >
-              <TouchableOpacity
-                onPress={() => {
-                  setShowFilterDropdown(false);
-                  router.push("/pages/requests" as any);
+                      <Text
+                        style={{
+                          fontSize: 10,
+                          fontFamily: "PlusJakartaSans-Bold",
+                          color: isSelected ? "#FFFFFF" : colors.textMuted,
+                        }}
+                      >
+                        {option.count}
+                      </Text>
+                    </View>
+                  </TouchableOpacity>
+                );
+              })}
+              {/* Centered hyperlink under filter options */}
+              <View
+                style={{
+                  borderTopWidth: 1,
+                  borderTopColor: colors.border,
+                  marginTop: 4,
+                  paddingTop: 8,
+                  paddingBottom: 4,
+                  alignItems: "center",
+                  justifyContent: "center",
                 }}
-                activeOpacity={0.7}
-                hitSlop={8}
               >
-                <Text
-                  style={{
-                    fontSize: 12,
-                    fontFamily: "PlusJakartaSans-Bold",
-                    color: colors.primary,
-                    textDecorationLine: "underline",
-                    textAlign: "center",
+                <TouchableOpacity
+                  onPress={() => {
+                    setShowFilterDropdown(false);
+                    router.push("/pages/requests" as any);
                   }}
+                  activeOpacity={0.7}
+                  hitSlop={8}
                 >
-                  View all requests
-                </Text>
-              </TouchableOpacity>
-            </View>
+                  <Text
+                    style={{
+                      fontSize: 12,
+                      fontFamily: "PlusJakartaSans-Bold",
+                      color: colors.primary,
+                      textDecorationLine: "underline",
+                      textAlign: "center",
+                    }}
+                  >
+                    View all requests
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
           </View>
         </Pressable>
       </Modal>

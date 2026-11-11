@@ -1,17 +1,29 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useEffect, useId, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
-  Image,
   Animated,
+  Easing,
   StyleSheet,
   type StyleProp,
   type ViewStyle,
 } from "react-native";
-import Svg, { Circle, Line, Defs, LinearGradient, Stop } from "react-native-svg";
-import { avatarColorFor, getAvatarEmoji } from "@/constants/matchOptions";
+import Svg, {
+  Circle,
+  Line,
+  Defs,
+  LinearGradient,
+  RadialGradient,
+  Rect,
+  Stop,
+} from "react-native-svg";
+import { avatarColorFor } from "@/constants/matchOptions";
 import { CrittersAvatar } from "@/components/CrittersAvatar";
-import { computeRevealVisual } from "@/lib/avatarReveal";
+import { resolveImageUri } from "@/components/UserAvatar";
+import {
+  computeRevealVisual,
+  toNativeRevealBlurRadius,
+} from "@/lib/avatarReveal";
 import { synthesizeAvatarReveal } from "@/lib/avatarRevealCache";
 import type { AvatarRevealView } from "@/lib/api/matchmaking";
 
@@ -28,6 +40,7 @@ export interface RevealAvatarProps {
 }
 
 const RING_GAP = 3.5;
+const REVEAL_EASE = Easing.bezier(0.22, 1, 0.36, 1);
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
 export function RevealAvatar({
@@ -41,8 +54,8 @@ export function RevealAvatar({
   onTierUp,
   matchPoints: propMatchPoints,
 }: RevealAvatarProps) {
+  const gradId = useId().replace(/[^a-zA-Z0-9]/g, "");
   const accent = avatarColorFor(avatarKey);
-  const emoji = getAvatarEmoji(avatarKey);
 
   // If propReveal is not provided, but propMatchPoints is, synthesize fallback reveal
   const reveal = useMemo(() => {
@@ -76,68 +89,66 @@ export function RevealAvatar({
     [tier, matchPoints, reveal?.tierStart, reveal?.tierEnd, target, progress, size]
   );
 
-  // ── Smooth animated transitions for morphing ──────────────────────────────
+  const rawResolvedPreviewUrl = resolveImageUri(reveal?.previewUrl);
+  const [photoError, setPhotoError] = useState(false);
+  const [sourceWidth, setSourceWidth] = useState<number | null>(null);
+
+  useEffect(() => {
+    setPhotoError(false);
+    setSourceWidth(null);
+  }, [rawResolvedPreviewUrl]);
+
+  const resolvedPreviewUrl =
+    rawResolvedPreviewUrl && rawResolvedPreviewUrl !== "[removed]" && !photoError
+      ? rawResolvedPreviewUrl
+      : null;
+
+  const effectivePetOpacity = resolvedPreviewUrl ? visual.petOpacity : isRevealed ? 0 : 1;
+  const effectivePhotoOpacity = resolvedPreviewUrl || isRevealed ? visual.photoOpacity : 0;
+  const targetAuraOpacity = resolvedPreviewUrl && effectivePhotoOpacity > 0 ? 0.8 : 0;
+
+  // ── Smooth animated transitions for morphing (mirrors web easing & opacity) ──
   const progressAnim = useRef(new Animated.Value(progress)).current;
-  const petFadeAnim = useRef(new Animated.Value(visual.petOpacity)).current;
-  const photoFadeAnim = useRef(new Animated.Value(visual.photoOpacity)).current;
-  const petScaleAnim = useRef(new Animated.Value(isRevealed ? 1.08 : 1)).current;
-  const photoScaleAnim = useRef(new Animated.Value(isRevealed ? 1 : 1.06)).current;
-  const auraPulse = useRef(new Animated.Value(0.7)).current;
+  const petFadeAnim = useRef(new Animated.Value(effectivePetOpacity)).current;
+  const photoFadeAnim = useRef(new Animated.Value(effectivePhotoOpacity)).current;
+  const auraFadeAnim = useRef(new Animated.Value(targetAuraOpacity)).current;
 
   useEffect(() => {
     Animated.parallel([
       Animated.timing(progressAnim, {
         toValue: progress,
-        duration: 650,
+        duration: 800,
+        easing: REVEAL_EASE,
         useNativeDriver: false,
       }),
       Animated.timing(petFadeAnim, {
-        toValue: visual.petOpacity,
-        duration: 650,
+        toValue: effectivePetOpacity,
+        duration: 850,
+        easing: REVEAL_EASE,
         useNativeDriver: true,
       }),
       Animated.timing(photoFadeAnim, {
-        toValue: visual.photoOpacity,
-        duration: 650,
+        toValue: effectivePhotoOpacity,
+        duration: 850,
+        easing: REVEAL_EASE,
         useNativeDriver: true,
       }),
-      Animated.timing(petScaleAnim, {
-        toValue: isRevealed ? 1.08 : 1 + progress * 0.04,
-        duration: 650,
-        useNativeDriver: true,
-      }),
-      Animated.timing(photoScaleAnim, {
-        toValue: isRevealed ? 1 : 1.06 - progress * 0.06,
-        duration: 650,
+      Animated.timing(auraFadeAnim, {
+        toValue: targetAuraOpacity,
+        duration: 600,
         useNativeDriver: true,
       }),
     ]).start();
   }, [
     progress,
-    visual.petOpacity,
-    visual.photoOpacity,
-    isRevealed,
+    effectivePetOpacity,
+    effectivePhotoOpacity,
+    targetAuraOpacity,
     progressAnim,
     petFadeAnim,
     photoFadeAnim,
-    petScaleAnim,
-    photoScaleAnim,
+    auraFadeAnim,
   ]);
-
-  useEffect(() => {
-    if (tier === 0 && !isRevealed) {
-      const loop = Animated.loop(
-        Animated.sequence([
-          Animated.timing(auraPulse, { toValue: 1, duration: 1600, useNativeDriver: true }),
-          Animated.timing(auraPulse, { toValue: 0.65, duration: 1600, useNativeDriver: true }),
-        ])
-      );
-      loop.start();
-      return () => loop.stop();
-    } else {
-      auraPulse.setValue(0.85);
-    }
-  }, [tier, isRevealed, auraPulse]);
 
   // ── Gain chip and tier up state ──────────────────────────────────────────
   const prevPoints = useRef<number | null>(null);
@@ -186,15 +197,15 @@ export function RevealAvatar({
 
   const aura = reveal?.dominantColor || accent;
   const thresholds = (reveal?.tierThresholds ?? [0, 50, 100, 150, 200, 250]).slice(1, -1);
-  const petSize = Math.round(size * 0.74);
-
-  const veilOpacity = progressAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0.45, 0],
-    extrapolate: "clamp",
-  });
-
+  const petSize = size;
   const inset = (outer - size) / 2;
+  const nativeBlurRadius = toNativeRevealBlurRadius(
+    visual.blurPx,
+    size,
+    tier,
+    isRevealed,
+    sourceWidth
+  );
 
   return (
     <View
@@ -216,12 +227,12 @@ export function RevealAvatar({
           style={{ position: "absolute", transform: [{ rotate: "-90deg" }] }}
         >
           <Defs>
-            <LinearGradient id="ringGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <LinearGradient id={`ringGrad-${gradId}`} x1="0%" y1="0%" x2="100%" y2="100%">
               <Stop offset="0%" stopColor="#1A6B3C" />
               <Stop offset="60%" stopColor="#10B981" />
               <Stop offset="100%" stopColor="#2DD4BF" />
             </LinearGradient>
-            <LinearGradient id="ringDoneGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+            <LinearGradient id={`ringDoneGrad-${gradId}`} x1="0%" y1="0%" x2="100%" y2="100%">
               <Stop offset="0%" stopColor="#F59E0B" />
               <Stop offset="100%" stopColor="#10B981" />
             </LinearGradient>
@@ -242,7 +253,7 @@ export function RevealAvatar({
             cx={outer / 2}
             cy={outer / 2}
             r={radius}
-            stroke={isRevealed ? "url(#ringDoneGrad)" : "url(#ringGrad)"}
+            stroke={isRevealed ? `url(#ringDoneGrad-${gradId})` : `url(#ringGrad-${gradId})`}
             strokeWidth={stroke}
             fill="none"
             strokeDasharray={`${circumference} ${circumference}`}
@@ -272,7 +283,7 @@ export function RevealAvatar({
         </Svg>
       )}
 
-      {/* ── Main Avatar Circle Frame (Both Real Avatar & Emoji Centered!) ── */}
+      {/* ── Main Avatar Circle Frame (strokeless, full size without shrinking) ── */}
       <View
         style={{
           position: "absolute",
@@ -282,41 +293,60 @@ export function RevealAvatar({
           height: size,
           borderRadius: size / 2,
           overflow: "hidden",
-          backgroundColor: `${aura}26`,
-          borderWidth: 1.5,
-          borderColor: accent,
+          backgroundColor: "transparent",
           alignItems: "center",
           justifyContent: "center",
         }}
       >
-        {/* Layer 1: Ambient Aura Glow with Breathing Pulse */}
-        <Animated.View
-          style={[
-            StyleSheet.absoluteFill,
-            {
-              borderRadius: size / 2,
-              backgroundColor: `${aura}38`,
-              opacity: auraPulse,
-            },
-          ]}
-        />
+        {/* Layer 1: Ambient Radial Aura Glow (mirrors web radial-gradient glow) */}
+        {resolvedPreviewUrl && visual.photoOpacity > 0 && (
+          <Animated.View
+            pointerEvents="none"
+            style={[StyleSheet.absoluteFill, { opacity: auraFadeAnim }]}
+          >
+            <Svg width={size} height={size}>
+              <Defs>
+                <RadialGradient id={`aura-${gradId}`} cx="50%" cy="50%" r="50%">
+                  <Stop offset="0%" stopColor={aura} stopOpacity={0.53} />
+                  <Stop offset="55%" stopColor={aura} stopOpacity={0.2} />
+                  <Stop offset="100%" stopColor={aura} stopOpacity={0} />
+                </RadialGradient>
+              </Defs>
+              <Rect
+                x={0}
+                y={0}
+                width={size}
+                height={size}
+                rx={size / 2}
+                fill={`url(#aura-${gradId})`}
+              />
+            </Svg>
+          </Animated.View>
+        )}
 
-        {/* Layer 2: Real Photo (Centered, emerging from blur & increasing opacity) */}
-        {reveal?.previewUrl && visual.photoOpacity > 0 ? (
+        {/* Layer 2: Real Photo (Centered, emerging with web-mirrored blur & opacity) */}
+        {resolvedPreviewUrl && visual.photoOpacity > 0 ? (
           <Animated.Image
-            source={{ uri: reveal.previewUrl }}
+            source={{ uri: resolvedPreviewUrl }}
+            fadeDuration={0}
+            onLoad={(e) => {
+              const w = e?.nativeEvent?.source?.width;
+              if (typeof w === "number" && w > 0) {
+                setSourceWidth((prev) => (prev === w ? prev : w));
+              }
+            }}
+            onError={() => setPhotoError(true)}
             style={{
               position: "absolute",
               width: size,
               height: size,
               borderRadius: size / 2,
               opacity: photoFadeAnim,
-              transform: [{ scale: photoScaleAnim }],
             }}
             resizeMode="cover"
-            blurRadius={visual.blurPx}
+            blurRadius={nativeBlurRadius}
           />
-        ) : isRevealed && !reveal?.previewUrl ? (
+        ) : isRevealed && !resolvedPreviewUrl ? (
           <Animated.View
             style={{
               position: "absolute",
@@ -342,7 +372,7 @@ export function RevealAvatar({
           </Animated.View>
         ) : null}
 
-        {/* Layer 3: Avatar Emoji / Pet Graphic (Strictly Centered, smoothly dissolving based on points) */}
+        {/* Layer 3: Anonymous Avatar Graphic (Full size, strokeless, dissolves in place without shrinking) */}
         <Animated.View
           pointerEvents="none"
           style={{
@@ -352,7 +382,6 @@ export function RevealAvatar({
             alignItems: "center",
             justifyContent: "center",
             opacity: petFadeAnim,
-            transform: [{ scale: petScaleAnim }],
           }}
         >
           <View
@@ -372,20 +401,6 @@ export function RevealAvatar({
             />
           </View>
         </Animated.View>
-
-        {/* Layer 4: Frosted Veil Overlay (Fades smoothly as points increase) */}
-        {!isRevealed && (
-          <Animated.View
-            pointerEvents="none"
-            style={[
-              StyleSheet.absoluteFill,
-              {
-                backgroundColor: "rgba(255, 255, 255, 0.35)",
-                opacity: veilOpacity,
-              },
-            ]}
-          />
-        )}
       </View>
 
       {/* ── Gain Chip (+N pt float) ── */}

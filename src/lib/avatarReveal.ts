@@ -1,9 +1,10 @@
 // src/lib/avatarReveal.ts
 //
 // Shared math for progressive real-avatar reveal in ally-app.
-// The server caps image detail per tier (only sending low-res previews);
-// these helpers drive the visual smoothing (blur, docking animal mask,
-// progress curves) across react-native surfaces.
+// Mirrors web's reveal curves while adapting blurRadius to React Native's
+// native bitmap blur pipelines so visual clarity matches web per tier.
+
+import { PixelRatio, Platform } from "react-native";
 
 export const REVEAL_TIER_META = [
   { tier: 0, label: "Hidden", hint: "Only their aura is showing" },
@@ -53,27 +54,60 @@ export interface RevealVisual {
   petOpacity: number;
 }
 
+const TIER_THUMB_WIDTH: Record<number, number> = {
+  1: 6,
+  2: 12,
+  3: 24,
+  4: 48,
+};
+
 export function computeRevealVisual(input: RevealVisualInput, size: number): RevealVisual {
   const span = Math.max(1, input.tierEnd - input.tierStart);
   const inTier = input.tier >= 5 ? 1 : clamp01((input.matchPoints - input.tierStart) / span);
   const [b0, b1] = TIER_BLUR[input.tier] ?? TIER_BLUR[0];
-  const blurPx = Math.round(lerp(b0, b1, inTier) * size);
+  const blurPx = lerp(b0, b1, inTier) * size;
 
-  // Both real avatar and avatar emoji are strictly in the center:
-  // Pet opacity starts at 1.0 (100% visible) at 0 points,
-  // and smoothly dissolves to 0.0 as points/progress reach 100% (250 pts / tier 5).
-  const isRevealed = input.tier >= 5 || input.progress >= 1;
-  const petOpacity = isRevealed ? 0 : Math.max(0, 1 - Math.pow(clamp01(input.progress), 0.72));
+  const normalizedProgress = clamp01(input.progress);
+  const isRevealed = input.tier >= 5 || normalizedProgress >= 1;
+  const petOpacity = isRevealed ? 0 : Math.max(0, 1 - Math.pow(normalizedProgress, 0.72));
 
-  // Photo opacity starts at 0 at tier 0 (only ambient aura glow showing),
-  // then smoothly emerges from 0.35 up to 1.0 as points increase.
-  const photoOpacity = input.tier === 0
-    ? (input.matchPoints > 10 ? Math.min(0.25, (input.matchPoints / 50) * 0.25) : 0)
-    : Math.min(1, 0.35 + clamp01(input.progress) * 0.65);
+  // Mirror web's photo opacity curve: hidden in tier 0, then 0.3 -> 1.0 across tiers 1..5.
+  const photoOpacity =
+    input.tier === 0 ? 0 : Math.min(1, 0.3 + normalizedProgress * 0.75);
 
   const dock = 0; // Center aligned
 
   return { blurPx, inTier, dock, photoOpacity, petOpacity };
+}
+
+/**
+ * Converts web CSS Gaussian blurPx into a React Native Image `blurRadius` prop
+ * accounting for bitmap resolution (6/12/24/48px tier thumbnails vs full photos)
+ * and native platform `/ 2` blur divisors in ReactImageView / RCTImageBlurUtils.
+ */
+export function toNativeRevealBlurRadius(
+  blurPx: number,
+  size: number,
+  tier: number,
+  isRevealed: boolean,
+  sourceWidth?: number | null
+): number {
+  if (isRevealed || blurPx <= 0 || size <= 0) return 0;
+
+  const blurRatio = clamp01(blurPx / size);
+  const bitmapWidth =
+    sourceWidth && sourceWidth > 0
+      ? sourceWidth
+      : TIER_THUMB_WIDTH[tier] ?? size;
+  const targetSigmaPx = blurRatio * bitmapWidth;
+
+  if (Platform.OS === "android") {
+    const density = PixelRatio.get() || 1;
+    const pixelBlurRadius = Math.max(1, Math.min(48, Math.round(targetSigmaPx / 0.816)));
+    return (2 * pixelBlurRadius + 1) / density;
+  }
+
+  return Math.max(3, Math.min(60, Math.round((targetSigmaPx / 0.47) * 10) / 10));
 }
 
 export function revealSeenKey(matchId: string): string {

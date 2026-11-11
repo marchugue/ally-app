@@ -30,6 +30,7 @@ import {
 } from "@/lib/api/feed";
 import { PostCard } from "@/components/PostCard";
 import { ClickableAvatar } from "@/components/ClickableAvatar";
+import { newsfeedCache } from "@/lib/newsfeedCache";
 import type { FeedPost, Comment } from "@/types/feed";
 
 function timeAgo(dateStr: string): string {
@@ -240,7 +241,10 @@ export default function PostDetailScreen() {
             <PostCard
               post={post}
               onToggleLike={toggleLike}
-              onUpdatePost={(updated) => setPost(updated)}
+              onUpdatePost={(updated) => {
+                setPost(updated);
+                void newsfeedCache.updatePostEverywhere(updated, user?.id);
+              }}
               onDeletePost={() => router.back()}
             />
             <View

@@ -17,5 +17,5 @@ export default function Index() {
     return <Redirect href="/(tabs)" />;
   }
 
-  return <Redirect href="/pages/login" />;
+  return <Redirect href="/pages/onboarding" />;
 }

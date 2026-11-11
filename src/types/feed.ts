@@ -1,4 +1,4 @@
-export type PostAudience = "public" | "connections";
+export type PostAudience = "public" | "followers" | "connections" | "only_me";
 
 export interface PostAuthor {
   id: string;
@@ -20,6 +20,8 @@ export interface FeedPost {
   audience: PostAudience;
   likes_count: number;
   comments_count: number;
+  is_edited?: boolean;
+  edited_at?: string | null;
   created_at: string;
   updated_at: string;
   author: PostAuthor;

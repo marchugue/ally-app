@@ -226,6 +226,7 @@ export async function apiRequest<T>(
     path.startsWith("/auth/register") ||
     path.startsWith("/auth/otp") ||
     path.startsWith("/auth/forgot-password") ||
+    path.startsWith("/auth/password-reset") ||
     path.startsWith("/auth/reset-password") ||
     path.startsWith("/auth/check-email");
 

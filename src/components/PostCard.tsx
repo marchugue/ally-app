@@ -1,6 +1,6 @@
 import { getAnonymousDisplayName, isAnonymousHandle } from "@/lib/anonymousHandle";
 import React, { useState, useEffect } from "react";
-import { View, Text, Pressable, Image, Modal, Alert } from "react-native";
+import { View, Text, Pressable, TouchableOpacity, Image, Modal, Alert } from "react-native";
 import {
   Heart,
   MessageCircle,
@@ -18,6 +18,7 @@ import { ClickableAvatar } from "./ClickableAvatar";
 import { ReportModal } from "./ReportModal";
 import { EditPostSheet } from "./EditPostSheet";
 import { AnimatedHeart } from "./AnimatedHeart";
+import { getPostAudienceMeta, normalizePostAudience } from "./PostAudienceCard";
 import type { FeedPost } from "@/types/feed";
 import { router } from "expo-router";
 import { useAuth } from "@/lib/auth/AuthContext";
@@ -86,9 +87,9 @@ export function PostCard({
   const [isContentExpanded, setIsContentExpanded] = useState(false);
 
   const handleReportSubmit = async (violationId: string, details?: string) => {
-    if (!accessToken || !post.author_id) return;
-    await reportUser(post.author_id, violationId, accessToken, {
-      postId: post.id,
+    if (!accessToken || !currentPost.author_id) return;
+    await reportUser(currentPost.author_id, violationId, accessToken, {
+      postId: currentPost.id,
       notes: details,
     });
   };
@@ -102,47 +103,43 @@ export function PostCard({
     currentPost.content?.includes("<!--flagged") ||
     currentPost.content?.includes("<!--visibility:admin_and_user_only")
   );
-  const isEdited = Boolean(
-    currentPost.updated_at &&
-    currentPost.created_at &&
-    new Date(currentPost.updated_at).getTime() - new Date(currentPost.created_at).getTime() > 1000
-  );
+  const isEdited = Boolean(currentPost.is_edited || currentPost.edited_at);
 
   const handleAuthorPress = () => {
-    if (onPressAuthor && post.author?.id) {
-      onPressAuthor(post.author.id);
-    } else if (post.author?.id) {
+    if (onPressAuthor && currentPost.author?.id) {
+      onPressAuthor(currentPost.author.id);
+    } else if (currentPost.author?.id) {
       router.push({
         pathname: "/pages/user-profile",
         params: {
-          userId: post.author.id,
-          avatarKey: post.author?.avatarKey || "",
-          avatarUrl: post.author?.avatar_url || "",
-          authorName: isAlly ? (post.author?.full_name || `@${post.author?.username}`) : getAnonymousDisplayName(post.author),
+          userId: currentPost.author.id,
+          avatarKey: currentPost.author?.avatarKey || "",
+          avatarUrl: currentPost.author?.avatar_url || "",
+          authorName: isAlly ? (currentPost.author?.full_name || `@${currentPost.author?.username}`) : getAnonymousDisplayName(currentPost.author),
         },
       } as any);
     }
   };
 
   const handleToggleFollow = async () => {
-    if (!accessToken || !post.author?.id || followLoading) return;
+    if (!accessToken || !currentPost.author?.id || followLoading) return;
     const nextState = !isFollowing;
     setIsFollowing(nextState);
     if (onToggleFollow) {
-      onToggleFollow(post.author.id, nextState);
+      onToggleFollow(currentPost.author.id, nextState);
     }
     try {
       setFollowLoading(true);
       if (nextState) {
-        await followUser(post.author.id, accessToken);
+        await followUser(currentPost.author.id, accessToken);
       } else {
-        await unfollowUser(post.author.id, accessToken);
+        await unfollowUser(currentPost.author.id, accessToken);
       }
     } catch (err) {
       console.warn("Failed to update follow state", err);
       setIsFollowing(!nextState);
       if (onToggleFollow) {
-        onToggleFollow(post.author.id, !nextState);
+        onToggleFollow(currentPost.author.id, !nextState);
       }
     } finally {
       setFollowLoading(false);
@@ -153,9 +150,9 @@ export function PostCard({
     if (!accessToken || deleting) return;
     try {
       setDeleting(true);
-      await deletePost(post.id, accessToken);
+      await deletePost(currentPost.id, accessToken);
       setOptionsVisible(false);
-      onDeletePost?.(post.id);
+      onDeletePost?.(currentPost.id);
     } catch (err) {
       console.warn("Failed to delete post", err);
       Alert.alert("Error", "Could not delete post. Please try again.");
@@ -166,7 +163,7 @@ export function PostCard({
 
   const handleOpenSettings = () => {
     if (onMore) {
-      onMore(post);
+      onMore(currentPost);
     } else {
       setOptionsVisible(true);
     }
@@ -176,20 +173,21 @@ export function PostCard({
     router.push({
       pathname: "/pages/media-preview" as any,
       params: {
-        mediaUrls: post.media && post.media.length > 0 ? JSON.stringify(post.media) : "",
+        mediaUrls: currentPost.media && currentPost.media.length > 0 ? JSON.stringify(currentPost.media) : "",
         initialIndex: String(index),
-        postId: post.id,
-        caption: post.content || "",
-        authorName: isAlly ? (post.author.full_name || `@${post.author.username}`) : getAnonymousDisplayName(post.author),
-        authorUsername: isAlly ? (post.author.username || "") : "anonymous",
-        authorAvatar: isAlly ? (post.author.avatar_url || "") : "",
-        avatarKey: post.author?.avatarKey || "",
-        authorId: post.author.id,
+        postId: currentPost.id,
+        caption: currentPost.content || "",
+        authorName: isAlly ? (currentPost.author.full_name || `@${currentPost.author.username}`) : getAnonymousDisplayName(currentPost.author),
+        authorUsername: isAlly ? (currentPost.author.username || "") : "anonymous",
+        authorAvatar: isAlly ? (currentPost.author.avatar_url || "") : "",
+        avatarKey: currentPost.author?.avatarKey || "",
+        authorId: currentPost.author.id,
         isAlly: isAlly ? "true" : "false",
-        createdAt: post.created_at || "",
-        likesCount: String(post.likes_count || 0),
-        commentsCount: String(post.comments_count || 0),
-        isLiked: post.liked_by_me ? "true" : "false",
+        createdAt: currentPost.created_at || "",
+        isEdited: isEdited ? "true" : "false",
+        likesCount: String(currentPost.likes_count || 0),
+        commentsCount: String(currentPost.comments_count || 0),
+        isLiked: currentPost.liked_by_me ? "true" : "false",
         openComments: openComments ? "true" : "false",
       },
     });
@@ -252,9 +250,9 @@ export function PostCard({
           style={{ flexDirection: "row", alignItems: "center", gap: 10, flex: 1 }}
         >
           <ClickableAvatar
-            userId={post.author?.id}
-            avatarUrl={post.author?.avatar_url}
-            avatarKey={post.author?.avatarKey}
+            userId={currentPost.author?.id}
+            avatarUrl={currentPost.author?.avatar_url}
+            avatarKey={currentPost.author?.avatarKey}
             revealed={isAlly}
             size={40}
             onPress={onPressAuthor}
@@ -266,23 +264,31 @@ export function PostCard({
               numberOfLines={1}
             >
               {isAlly
-                ? (post.author?.full_name || `@${post.author?.username}`)
-                : getAnonymousDisplayName(post.author)}
+                ? (currentPost.author?.full_name || `@${currentPost.author?.username}`)
+                : getAnonymousDisplayName(currentPost.author)}
             </Text>
-            <Text style={{ fontSize: 11, color: colors.textMuted }}>
-              {isAlly && currentPost.author?.username ? `@${currentPost.author.username} · ` : ""}
-              {timeAgo(currentPost.created_at)}
-              {isEdited ? " · edited" : ""}
-            </Text>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 1 }}>
+              <Text style={{ fontSize: 11, color: colors.textMuted }}>
+                {isAlly && currentPost.author?.username ? `@${currentPost.author.username} · ` : ""}
+                {timeAgo(currentPost.created_at)}
+                {isEdited ? " · edited" : ""}
+                {" ·"}
+              </Text>
+              {(() => {
+                const AudIcon = getPostAudienceMeta(normalizePostAudience(currentPost.audience)).Icon;
+                return <AudIcon size={11} color={colors.textMuted} />;
+              })()}
+            </View>
           </View>
         </Pressable>
 
         {/* Follow / Following Button next to author name on right side */}
-        {!isOwnPost && isAlly && post.author?.id ? (
-          <Pressable
+        {!isOwnPost && isAlly && currentPost.author?.id ? (
+          <TouchableOpacity
             onPress={handleToggleFollow}
             disabled={followLoading}
-            style={({ pressed }) => ({
+            activeOpacity={0.7}
+            style={{
               paddingHorizontal: 11,
               paddingVertical: 4.5,
               borderRadius: 14,
@@ -294,8 +300,8 @@ export function PostCard({
                 ? colors.border
                 : colors.primaryBorder,
               marginRight: 2,
-              opacity: followLoading ? 0.6 : pressed ? 0.75 : 1,
-            })}
+              opacity: followLoading ? 0.6 : 1,
+            }}
             hitSlop={6}
           >
             <Text
@@ -307,7 +313,7 @@ export function PostCard({
             >
               {isFollowing ? "Following" : "+ Follow"}
             </Text>
-          </Pressable>
+          </TouchableOpacity>
         ) : null}
 
         {/* Three dots Settings button (Always on right side) */}
@@ -356,9 +362,9 @@ export function PostCard({
       {/* Media grid */}
       {hasMedia && (
         <View style={{ paddingHorizontal: 16, paddingBottom: 8 }}>
-          {post.media.length === 1 ? (
+          {currentPost.media.length === 1 ? (
             (() => {
-              const item = post.media[0];
+              const item = currentPost.media[0];
               if (item === "[removed]") {
                 return (
                   <View
@@ -404,7 +410,7 @@ export function PostCard({
             })()
           ) : (
             <View style={{ flexDirection: "row", gap: 4, flexWrap: "wrap" }}>
-              {post.media.slice(0, 4).map((url, idx) => {
+              {currentPost.media.slice(0, 4).map((url, idx) => {
                 if (url === "[removed]") {
                   return (
                     <View
@@ -477,7 +483,7 @@ export function PostCard({
         }}
       >
         <Pressable
-          onPress={() => onToggleLike(post)}
+          onPress={() => onToggleLike(currentPost)}
           style={{
             flexDirection: "row",
             alignItems: "center",
@@ -486,7 +492,7 @@ export function PostCard({
           hitSlop={6}
         >
           <AnimatedHeart
-            isLiked={Boolean(post.liked_by_me)}
+            isLiked={Boolean(currentPost.liked_by_me)}
             size={18}
             activeColor={colors.primary}
             inactiveColor={colors.textSecondary}
@@ -495,10 +501,10 @@ export function PostCard({
             style={{
               fontSize: 13,
               fontWeight: "500",
-              color: post.liked_by_me ? colors.primary : colors.textSecondary,
+              color: currentPost.liked_by_me ? colors.primary : colors.textSecondary,
             }}
           >
-            {post.likes_count > 0 ? post.likes_count : ""}
+            {currentPost.likes_count > 0 ? currentPost.likes_count : ""}
           </Text>
         </Pressable>
 
@@ -513,7 +519,7 @@ export function PostCard({
         >
           <MessageCircle size={18} color={colors.textSecondary} />
           <Text style={{ fontSize: 13, fontWeight: "500", color: colors.textSecondary }}>
-            {post.comments_count > 0 ? post.comments_count : ""}
+            {currentPost.comments_count > 0 ? currentPost.comments_count : ""}
           </Text>
         </Pressable>
       </View>

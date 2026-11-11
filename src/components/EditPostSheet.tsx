@@ -13,11 +13,16 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { KeyboardGestureArea } from "react-native-keyboard-controller";
 import { useKeyboard } from "@/hooks/useKeyboard";
 import { KeyboardHugView } from "@/components/KeyboardHugView";
-import { X, Globe, Users } from "lucide-react-native";
+import { X } from "lucide-react-native";
 import { Button } from "./Button";
 import { useAuth } from "@/lib/auth/AuthContext";
 import { useTheme } from "@/context/ThemeContext";
 import { updatePost } from "@/lib/api/feed";
+import {
+  PostAudienceCard,
+  getPostAudienceMeta,
+  normalizePostAudience,
+} from "@/components/PostAudienceCard";
 import type { FeedPost, PostAudience } from "@/types/feed";
 
 const MAX_LENGTH = 280;
@@ -39,18 +44,23 @@ export function EditPostSheet({
   const { accessToken } = useAuth();
   const { colors } = useTheme();
   const { isKeyboardVisible } = useKeyboard();
+  const [view, setView] = useState<"edit" | "audience">("edit");
   const [content, setContent] = useState(post.content || "");
-  const [audience, setAudience] = useState<PostAudience>(post.audience || "public");
+  const [audience, setAudience] = useState<PostAudience>(normalizePostAudience(post.audience));
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
 
   useEffect(() => {
     if (visible) {
+      setView("edit");
       setContent(post.content || "");
-      setAudience(post.audience || "public");
+      setAudience(normalizePostAudience(post.audience));
       setError("");
     }
   }, [visible, post]);
+
+  const audienceMeta = getPostAudienceMeta(audience);
+  const AudienceIcon = audienceMeta.Icon;
 
   const remaining = MAX_LENGTH - content.length;
   const hasMedia = post.media && post.media.length > 0;
@@ -62,6 +72,9 @@ export function EditPostSheet({
       return;
     }
     if (!accessToken || saving) return;
+
+    const hasChanged = trimmed !== (post.content || "").trim() || audience !== post.audience;
+    const wasAlreadyEdited = Boolean(post.is_edited || post.edited_at);
 
     setSaving(true);
     setError("");
@@ -75,12 +88,17 @@ export function EditPostSheet({
         accessToken
       );
 
+      const nowIso = new Date().toISOString();
       const mergedPost: FeedPost = {
         ...post,
         ...(updated || {}),
-        content: trimmed,
-        audience,
-        updated_at: updated?.updated_at || new Date().toISOString(),
+        content: updated?.content ?? trimmed,
+        audience: updated?.audience ?? audience,
+        updated_at: updated?.updated_at || post.updated_at,
+        is_edited: updated?.is_edited ?? (wasAlreadyEdited || hasChanged),
+        edited_at:
+          updated?.edited_at ??
+          (hasChanged ? nowIso : post.edited_at ?? null),
       };
 
       onPostUpdated(mergedPost);
@@ -97,7 +115,13 @@ export function EditPostSheet({
       visible={visible}
       animationType="slide"
       presentationStyle="pageSheet"
-      onRequestClose={onClose}
+      onRequestClose={() => {
+        if (view === "audience") {
+          setView("edit");
+        } else {
+          onClose();
+        }
+      }}
     >
       <KeyboardHugView style={{ flex: 1 }}>
         <View
@@ -107,6 +131,19 @@ export function EditPostSheet({
             paddingTop: insets.top + 8,
           }}
         >
+        {view === "audience" ? (
+          <PostAudienceCard
+            value={audience}
+            showDefaultOption={false}
+            bottomInset={Math.max(insets.bottom + 8, 16)}
+            onBack={() => setView("edit")}
+            onDone={(selected) => {
+              setAudience(selected);
+              setView("edit");
+            }}
+          />
+        ) : (
+          <>
           {/* Header */}
           <View
             style={{
@@ -238,11 +275,9 @@ export function EditPostSheet({
                 : Math.max(insets.bottom + 8, 12),
             }}
           >
-            {/* Audience toggle */}
+            {/* Audience button */}
             <Pressable
-              onPress={() =>
-                setAudience((a) => (a === "public" ? "connections" : "public"))
-              }
+              onPress={() => setView("audience")}
               style={{
                 flexDirection: "row",
                 alignItems: "center",
@@ -253,19 +288,15 @@ export function EditPostSheet({
                 paddingVertical: 6,
               }}
             >
-              {audience === "public" ? (
-                <Globe size={13} color={colors.primary} />
-              ) : (
-                <Users size={13} color={colors.primary} />
-              )}
+              <AudienceIcon size={13} color={colors.primary} />
               <Text
                 style={{
                   fontSize: 12,
                   fontWeight: "600",
-                  color: "#1A6B3C",
+                  color: colors.primary,
                 }}
               >
-                {audience === "public" ? "Public" : "Connections"}
+                {audienceMeta.label}
               </Text>
             </Pressable>
 
@@ -279,6 +310,8 @@ export function EditPostSheet({
               {remaining}
             </Text>
           </View>
+          </>
+        )}
         </View>
       </KeyboardHugView>
     </Modal>

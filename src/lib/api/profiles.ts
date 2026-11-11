@@ -107,13 +107,23 @@ export interface ProfileRelationshipSummary {
   allyStatus: "none" | "pending_sent" | "pending_received" | "accepted";
   isFollowing: boolean;
   isFollowedBy: boolean;
-  followersCount: number;
-  followingCount: number;
-  alliesCount: number;
+  followersCount: number | null;
+  followingCount: number | null;
+  alliesCount: number | null;
   mutualAlliesCount: number;
   mutualFollowersCount: number;
   /** Viewed account is private — only allies may see its posts. */
   isPrivate?: boolean;
+  visibility?: {
+    allies: boolean;
+    following: boolean;
+    followers: boolean;
+  };
+  privacy?: {
+    allies: "public" | "allies" | "only_me";
+    following: "public" | "allies" | "only_me";
+    followers: "public" | "allies" | "only_me";
+  };
 }
 
 export async function getProfileRelationship(userId: string, accessToken: string): Promise<ProfileRelationshipSummary> {

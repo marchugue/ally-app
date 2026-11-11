@@ -13,6 +13,7 @@ import {
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { avatarColorFor, getAvatarEmoji } from "@/constants/matchOptions";
 import { AnonymousAvatar } from "@/components/AnonymousAvatar";
+import { resolveImageUri } from "@/components/UserAvatar";
 import { revealSeenKey } from "@/lib/avatarReveal";
 
 export interface AvatarRevealCeremonyProps {
@@ -46,9 +47,7 @@ export function AvatarRevealCeremony({
   const cardScaleAnim = useRef(new Animated.Value(0.85)).current;
   const cardOpacityAnim = useRef(new Animated.Value(0)).current;
   const anonOpacityAnim = useRef(new Animated.Value(1)).current;
-  const anonScaleAnim = useRef(new Animated.Value(1)).current;
   const photoOpacityAnim = useRef(new Animated.Value(0)).current;
-  const photoScaleAnim = useRef(new Animated.Value(0.92)).current;
   const badgeSpringAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
@@ -80,7 +79,7 @@ export function AvatarRevealCeremony({
         }),
       ]).start();
 
-      // Anonymous avatar smoothly dissolves away while real photo emerges
+      // Anonymous avatar smoothly dissolves away in place while real photo emerges (no shrink/scale)
       setTimeout(() => {
         Animated.parallel([
           Animated.timing(anonOpacityAnim, {
@@ -88,20 +87,9 @@ export function AvatarRevealCeremony({
             duration: 800,
             useNativeDriver: true,
           }),
-          Animated.timing(anonScaleAnim, {
-            toValue: 1.08,
-            duration: 800,
-            useNativeDriver: true,
-          }),
           Animated.timing(photoOpacityAnim, {
             toValue: 1,
             duration: 800,
-            useNativeDriver: true,
-          }),
-          Animated.spring(photoScaleAnim, {
-            toValue: 1,
-            friction: 7,
-            tension: 40,
             useNativeDriver: true,
           }),
         ]).start();
@@ -121,7 +109,7 @@ export function AvatarRevealCeremony({
     return () => {
       isMounted = false;
     };
-  }, [matchId, isRevealed, cardOpacityAnim, cardScaleAnim, anonOpacityAnim, anonScaleAnim, photoOpacityAnim, photoScaleAnim, badgeSpringAnim]);
+  }, [matchId, isRevealed, cardOpacityAnim, cardScaleAnim, anonOpacityAnim, photoOpacityAnim, badgeSpringAnim]);
 
   const handleDismiss = async () => {
     if (matchId) {
@@ -137,6 +125,17 @@ export function AvatarRevealCeremony({
 
   const name = fullName || partnerAlias || "Your Ally";
   const firstName = name.split(" ")[0];
+  const rawResolvedAvatarUrl = resolveImageUri(avatarUrl);
+  const [photoError, setPhotoError] = useState(false);
+
+  useEffect(() => {
+    setPhotoError(false);
+  }, [rawResolvedAvatarUrl]);
+
+  const resolvedAvatarUrl =
+    rawResolvedAvatarUrl && rawResolvedAvatarUrl !== "[removed]" && !photoError
+      ? rawResolvedAvatarUrl
+      : null;
 
   if (!visible) return null;
 
@@ -165,21 +164,20 @@ export function AvatarRevealCeremony({
 
           {/* Hero Avatar Reveal Stage */}
           <View style={styles.avatarStage}>
-            {/* Real photo (revealed underneath) */}
+            {/* Real photo (revealed underneath, strokeless, no shrink movement) */}
             <Animated.View
               style={[
                 styles.photoCircle,
                 {
-                  borderColor: accent,
                   backgroundColor: `${accent}30`,
                   opacity: photoOpacityAnim,
-                  transform: [{ scale: photoScaleAnim }],
                 },
               ]}
             >
-              {avatarUrl ? (
+              {resolvedAvatarUrl ? (
                 <Image
-                  source={{ uri: avatarUrl }}
+                  source={{ uri: resolvedAvatarUrl }}
+                  onError={() => setPhotoError(true)}
                   style={styles.realPhoto}
                   resizeMode="cover"
                 />
@@ -201,21 +199,19 @@ export function AvatarRevealCeremony({
               )}
             </Animated.View>
 
-            {/* Anonymous Avatar (Smoothly reveals to real photo, replacing animal crack) */}
+            {/* Anonymous Avatar (Smoothly fades out in place to real photo) */}
             <Animated.View
               pointerEvents="none"
               style={[
                 styles.anonAvatarLayer,
                 {
                   opacity: anonOpacityAnim,
-                  transform: [{ scale: anonScaleAnim }],
                 },
               ]}
             >
               <AnonymousAvatar
                 avatarKey={avatarKey}
                 size={136}
-                borderWidth={3.5}
               />
             </Animated.View>
 
@@ -228,7 +224,7 @@ export function AvatarRevealCeremony({
                 },
               ]}
             >
-              <AnonymousAvatar avatarKey={avatarKey} size={36} borderWidth={0} />
+              <AnonymousAvatar avatarKey={avatarKey} size={36} />
             </Animated.View>
           </View>
 
@@ -308,7 +304,6 @@ const styles = StyleSheet.create({
     width: 136,
     height: 136,
     borderRadius: 68,
-    borderWidth: 3.5,
     overflow: "hidden",
     alignItems: "center",
     justifyContent: "center",
@@ -339,8 +334,6 @@ const styles = StyleSheet.create({
     height: 44,
     borderRadius: 22,
     backgroundColor: "#FFFFFF",
-    borderWidth: 2.5,
-    borderColor: "#E2E8F0",
     alignItems: "center",
     justifyContent: "center",
     elevation: 4,

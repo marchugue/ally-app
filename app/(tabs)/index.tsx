@@ -259,12 +259,16 @@ export default function HomeScreen() {
   // Check when tab focuses (e.g. switching back from other tabs or returning from pending approval)
   useFocusEffect(
     useCallback(() => {
-      if (postsRef.current.length === 0) {
+      const mem = newsfeedCache.getMemory(activeFilter, user?.id);
+      if (mem && mem.posts.length > 0) {
+        setPosts(mem.posts);
+      }
+      if (postsRef.current.length === 0 && (!mem || mem.posts.length === 0)) {
         void loadData(activeFilter);
       } else {
         void checkTabReopen();
       }
-    }, [checkTabReopen, loadData, activeFilter])
+    }, [checkTabReopen, loadData, activeFilter, user?.id])
   );
 
   // Check when app returns from background to active foreground
@@ -338,21 +342,38 @@ export default function HomeScreen() {
         const result = wasLiked
           ? await unlikePost(post.id, accessToken)
           : await likePost(post.id, accessToken);
-        const resolved: FeedPost = {
-          ...post,
-          liked_by_me: result.liked,
-          likes_count: result.likesCount,
-        };
+        let resolvedForCache: FeedPost | null = null;
         setPosts((prev) =>
-          prev.map((p) => (p.id === post.id ? resolved : p))
+          prev.map((p) => {
+            if (p.id !== post.id) return p;
+            resolvedForCache = {
+              ...p,
+              liked_by_me: result.liked,
+              likes_count: result.likesCount,
+            };
+            return resolvedForCache;
+          })
         );
-        void newsfeedCache.updatePost(activeFilter, resolved, user?.id);
+        if (resolvedForCache) {
+          void newsfeedCache.updatePostEverywhere(resolvedForCache, user?.id);
+        }
       } catch {
-        // Revert on error
+        // Revert only like state so concurrent edits remain intact
+        let revertedForCache: FeedPost | null = null;
         setPosts((prev) =>
-          prev.map((p) => (p.id === post.id ? post : p))
+          prev.map((p) => {
+            if (p.id !== post.id) return p;
+            revertedForCache = {
+              ...p,
+              liked_by_me: post.liked_by_me,
+              likes_count: post.likes_count,
+            };
+            return revertedForCache;
+          })
         );
-        void newsfeedCache.updatePost(activeFilter, post, user?.id);
+        if (revertedForCache) {
+          void newsfeedCache.updatePostEverywhere(revertedForCache, user?.id);
+        }
       }
     },
     [accessToken, activeFilter, user?.id]
@@ -360,8 +381,8 @@ export default function HomeScreen() {
 
   const handleUpdatePost = useCallback((updatedPost: FeedPost) => {
     setPosts((prev) => prev.map((p) => (p.id === updatedPost.id ? updatedPost : p)));
-    void newsfeedCache.updatePost(activeFilter, updatedPost, user?.id);
-  }, [activeFilter, user?.id]);
+    void newsfeedCache.updatePostEverywhere(updatedPost, user?.id);
+  }, [user?.id]);
 
   const handleDeletePost = useCallback((postId: string) => {
     setPosts((prev) => prev.filter((p) => p.id !== postId));
@@ -386,6 +407,7 @@ export default function HomeScreen() {
         authorId: post.author?.id || post.author_id || "",
         isAlly: isAlly ? "true" : "false",
         createdAt: post.created_at || "",
+        isEdited: post.is_edited || post.edited_at ? "true" : "false",
         likesCount: String(post.likes_count || 0),
         commentsCount: String(post.comments_count || 0),
         isLiked: post.liked_by_me ? "true" : "false",

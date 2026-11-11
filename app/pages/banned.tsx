@@ -152,7 +152,7 @@ export default function BannedPage() {
 
   const handleSignOut = async () => {
     await signOut();
-    router.replace('/pages/landing' as any);
+    router.replace('/pages/onboarding' as any);
   };
 
   const handleContactSupport = () => {

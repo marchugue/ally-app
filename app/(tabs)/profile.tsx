@@ -33,8 +33,8 @@ import { UserAvatar, resolveImageUri } from "@/components/UserAvatar";
 import { PostCard } from "@/components/PostCard";
 import { ResponsiveContainer } from "@/components/ResponsiveContainer";
 import { CreatePostSheet } from "@/components/CreatePostSheet";
-import { RelationshipListModal } from "@/components/RelationshipListModal";
 import { usePresence } from "@/context/PresenceContext";
+import { newsfeedCache } from "@/lib/newsfeedCache";
 import { useAuth } from "@/lib/auth/AuthContext";
 import { useTheme } from "@/context/ThemeContext";
 import {
@@ -72,8 +72,17 @@ export default function ProfileScreen() {
 
 
   const [menuOpen, setMenuOpen] = useState(false);
-  const [relationModalOpen, setRelationModalOpen] = useState(false);
-  const [relationModalKind, setRelationModalKind] = useState<"followers" | "following" | "allies">("allies");
+
+  const openRelationships = useCallback(
+    (initialTab: "allies" | "following" | "followers") => {
+      if (!profile?.id) return;
+      router.push({
+        pathname: "/pages/relationships" as any,
+        params: { userId: profile.id, initialTab },
+      });
+    },
+    [profile?.id]
+  );
 
   const loadProfileData = useCallback(async () => {
     if (!accessToken || !user) return;
@@ -178,7 +187,8 @@ export default function ProfileScreen() {
 
   const handleUpdatePost = useCallback((updatedPost: FeedPost) => {
     setPosts((prev) => prev.map((p) => (p.id === updatedPost.id ? updatedPost : p)));
-  }, []);
+    void newsfeedCache.updatePostEverywhere(updatedPost, user?.id);
+  }, [user?.id]);
 
   const handleDeletePost = useCallback((postId: string) => {
     setPosts((prev) => prev.filter((p) => p.id !== postId));
@@ -288,55 +298,41 @@ export default function ProfileScreen() {
                   </View>
 
                   {/* Followers, Following, Allies NEXT to avatar — shifted 25px left */}
-                  <View
-                    style={{
-                      flexDirection: "row",
-                      alignItems: "center",
-                      gap: 14,
-                      marginLeft: -25,
-                      flex: 1,
-                      justifyContent: "center",
-                    }}
-                  >
-                    <Pressable
-                      onPress={() => {
-                        setRelationModalKind("followers");
-                        setRelationModalOpen(true);
+                  {relationship && (
+                    <View
+                      style={{
+                        flexDirection: "row",
+                        alignItems: "center",
+                        gap: 14,
+                        marginLeft: -25,
+                        flex: 1,
+                        justifyContent: "center",
                       }}
-                      style={{ alignItems: "center", minWidth: 54 }}
                     >
-                      <Text style={{ fontSize: 16, fontWeight: "700", color: colors.textPrimary }}>
-                        {relationship?.followersCount ?? 0}
-                      </Text>
-                      <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 2 }}>Followers</Text>
-                    </Pressable>
-
-                    <Pressable
-                      onPress={() => {
-                        setRelationModalKind("following");
-                        setRelationModalOpen(true);
-                      }}
-                      style={{ alignItems: "center", minWidth: 54 }}
-                    >
-                      <Text style={{ fontSize: 16, fontWeight: "700", color: colors.textPrimary }}>
-                        {relationship?.followingCount ?? 0}
-                      </Text>
-                      <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 2 }}>Following</Text>
-                    </Pressable>
-
-                    <Pressable
-                      onPress={() => {
-                        setRelationModalKind("allies");
-                        setRelationModalOpen(true);
-                      }}
-                      style={{ alignItems: "center", minWidth: 54 }}
-                    >
-                      <Text style={{ fontSize: 16, fontWeight: "700", color: colors.textPrimary }}>
-                        {relationship?.alliesCount ?? 0}
-                      </Text>
-                      <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 2 }}>Allies</Text>
-                    </Pressable>
-                  </View>
+                      {(
+                        [
+                          { key: "followers" as const, label: "Followers", count: relationship.followersCount, visible: relationship.visibility?.followers ?? relationship.followersCount !== null },
+                          { key: "following" as const, label: "Following", count: relationship.followingCount, visible: relationship.visibility?.following ?? relationship.followingCount !== null },
+                          { key: "allies" as const, label: "Allies", count: relationship.alliesCount, visible: relationship.visibility?.allies ?? relationship.alliesCount !== null },
+                        ]
+                      )
+                        .filter((stat) => stat.visible && stat.count !== null)
+                        .map((stat) => (
+                          <Pressable
+                            key={stat.key}
+                            onPress={() => openRelationships(stat.key)}
+                            style={{ alignItems: "center", minWidth: 54 }}
+                          >
+                            <Text style={{ fontSize: 16, fontWeight: "700", color: colors.textPrimary }}>
+                              {stat.count}
+                            </Text>
+                            <Text style={{ fontSize: 11, color: colors.textSecondary, marginTop: 2 }}>
+                              {stat.label}
+                            </Text>
+                          </Pressable>
+                        ))}
+                    </View>
+                  )}
                 </View>
               </View>
 
@@ -680,16 +676,6 @@ export default function ProfileScreen() {
           router.push("/pages/settings" as any);
         }}
       />
-
-      {profile && (
-        <RelationshipListModal
-          visible={relationModalOpen}
-          onClose={() => setRelationModalOpen(false)}
-          userId={profile.id}
-          initialKind={relationModalKind}
-          userName={profile.username || undefined}
-        />
-      )}
     </SafeAreaView>
   );
 }

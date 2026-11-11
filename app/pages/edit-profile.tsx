@@ -43,7 +43,7 @@ import { getLookups } from "@/lib/api/lookups";
 import type { Profile, UpdateProfilePayload } from "@/types/profile";
 import { AnonymousAvatar } from "@/components/AnonymousAvatar";
 import { getDeterministicAnonymousAvatar } from "@/constants/matchOptions";
-import { isUrl } from "@/components/UserAvatar";
+import { isUrl, resolveImageUri } from "@/components/UserAvatar";
 
 // ── Fallback Lookup Constants (aligned with Web) ──────────────────────────
 const FALLBACK_DEPARTMENTS = [
@@ -178,6 +178,7 @@ export default function EditProfileScreen() {
   const [presetAvatars, setPresetAvatars] = useState<PresetAvatarRow[]>([]);
   const [avatarUploading, setAvatarUploading] = useState(false);
   const [customAvatarPreview, setCustomAvatarPreview] = useState<string | null>(null);
+  const [avatarImgError, setAvatarImgError] = useState(false);
 
   // Live username validation
   const [usernameStatus, setUsernameStatus] = useState<
@@ -229,7 +230,7 @@ export default function EditProfileScreen() {
       setUsername(p.username || "");
       setFullName(p.full_name || "");
       setBio(p.bio || "");
-      setAvatarUrl(p.avatar_url || null);
+      setAvatarUrl(p.avatar_url ? resolveImageUri(p.avatar_url) || p.avatar_url : null);
       setDepartment(p.department || "");
       setCourse(p.course || "");
       setYearLevel(p.year_level || "");
@@ -262,7 +263,12 @@ export default function EditProfileScreen() {
       try {
         const res = await getPresetAvatars();
         if (res?.avatars?.length) {
-          setPresetAvatars(res.avatars);
+          setPresetAvatars(
+            res.avatars.map((preset) => ({
+              ...preset,
+              url: resolveImageUri(preset.url) || preset.url,
+            }))
+          );
         }
       } catch {
         // Fallback gracefully
@@ -504,8 +510,9 @@ export default function EditProfileScreen() {
         { uri: localUri, name: filename, type: mimeMap[ext] || "image/jpeg" },
         accessToken
       );
-      setAvatarUrl(res.url);
-      setCustomAvatarPreview(res.url);
+      const resolvedUploadedUrl = resolveImageUri(res.url) || res.url;
+      setAvatarUrl(resolvedUploadedUrl);
+      setCustomAvatarPreview(resolvedUploadedUrl);
     } catch (err: any) {
       Alert.alert("Upload Failed", err?.message || "Failed to upload avatar photo.");
       setCustomAvatarPreview(null);
@@ -552,7 +559,7 @@ export default function EditProfileScreen() {
         username: normUsername,
         full_name: fullName.trim() || normUsername,
         bio: bio.trim() || null,
-        avatar_url: avatarUrl || null,
+        avatar_url: avatarUrl ? resolveImageUri(avatarUrl) || avatarUrl : null,
         department: department || null,
         course: course || null,
         year_level: yearLevel || null,
@@ -578,8 +585,16 @@ export default function EditProfileScreen() {
     profile?.avatarKey ||
     profile?.avatar_preset_id ||
     getDeterministicAnonymousAvatar(profile?.id || user?.id);
-  const currentAvatarDisplay = customAvatarPreview || avatarUrl;
-  const showRealAvatar = Boolean(currentAvatarDisplay && isUrl(currentAvatarDisplay));
+  const rawAvatarDisplay = customAvatarPreview || avatarUrl;
+  const currentAvatarDisplay = rawAvatarDisplay
+    ? resolveImageUri(rawAvatarDisplay) || rawAvatarDisplay
+    : null;
+  useEffect(() => {
+    setAvatarImgError(false);
+  }, [currentAvatarDisplay]);
+  const showRealAvatar = Boolean(
+    currentAvatarDisplay && isUrl(currentAvatarDisplay) && !avatarImgError
+  );
 
   if (loading) {
     return (
@@ -734,22 +749,23 @@ export default function EditProfileScreen() {
                   width: 108,
                   height: 108,
                   borderRadius: 54,
-                  borderWidth: 3,
-                  borderColor: isDark ? "#2A2A2A" : "#FFFFFF",
+                  borderWidth: showRealAvatar ? 3 : 0,
+                  borderColor: showRealAvatar ? (isDark ? "#2A2A2A" : "#FFFFFF") : "transparent",
                   overflow: "hidden",
                   alignItems: "center",
                   justifyContent: "center",
-                  backgroundColor: isDark ? "#202020" : "#F3F4F6",
-                  elevation: 3,
+                  backgroundColor: showRealAvatar ? (isDark ? "#202020" : "#F3F4F6") : "transparent",
+                  elevation: showRealAvatar ? 3 : 0,
                   shadowColor: "#000",
                   shadowOffset: { width: 0, height: 2 },
-                  shadowOpacity: 0.1,
+                  shadowOpacity: showRealAvatar ? 0.1 : 0,
                   shadowRadius: 4,
                 }}
               >
                 {showRealAvatar ? (
                   <Image
                     source={{ uri: currentAvatarDisplay! }}
+                    onError={() => setAvatarImgError(true)}
                     style={{ width: "100%", height: "100%" }}
                     resizeMode="cover"
                   />
@@ -897,12 +913,14 @@ export default function EditProfileScreen() {
                         }}
                       >
                         {presetAvatars.map((preset) => {
-                          const isSelected = avatarUrl === preset.url;
+                          const resolvedPresetUrl = resolveImageUri(preset.url) || preset.url;
+                          const normalizedAvatarUrl = avatarUrl ? resolveImageUri(avatarUrl) || avatarUrl : null;
+                          const isSelected = normalizedAvatarUrl === resolvedPresetUrl;
                           return (
                             <Pressable
                               key={preset.id}
                               onPress={() => {
-                                setAvatarUrl(preset.url);
+                                setAvatarUrl(resolvedPresetUrl);
                                 setCustomAvatarPreview(null);
                               }}
                               style={{
@@ -916,7 +934,7 @@ export default function EditProfileScreen() {
                               }}
                             >
                               <Image
-                                source={{ uri: preset.url }}
+                                source={{ uri: resolvedPresetUrl }}
                                 style={{ width: "100%", height: "100%" }}
                                 resizeMode="cover"
                               />
@@ -980,7 +998,11 @@ export default function EditProfileScreen() {
                         }}
                       >
                         <Image
-                          source={{ uri: customAvatarPreview ?? avatarUrl! }}
+                          source={{
+                            uri:
+                              resolveImageUri(customAvatarPreview ?? avatarUrl) ||
+                              (customAvatarPreview ?? avatarUrl!),
+                          }}
                           style={{
                             width: 56,
                             height: 56,

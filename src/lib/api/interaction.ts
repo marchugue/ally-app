@@ -44,6 +44,14 @@ export function rejectConnection(targetUserId: string, accessToken: string): Pro
   });
 }
 
+export function removeAlly(targetUserId: string, accessToken: string): Promise<void> {
+  return apiRequest<void>(`/interactions/ally/${targetUserId}`, {
+    method: "DELETE",
+    accessToken,
+    noContent: true,
+  });
+}
+
 export function getInteractionStatus(targetUserId: string, accessToken: string): Promise<InteractionStatusResponse> {
   return apiRequest<InteractionStatusResponse>(`/interactions/status/${targetUserId}`, { accessToken });
 }

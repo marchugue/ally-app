@@ -1,7 +1,8 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
 import { View, Image, StyleSheet } from "react-native";
 import { avatarColorFor } from "@/constants/matchOptions";
 import { CrittersAvatar } from "@/components/CrittersAvatar";
+import { resolveImageUri } from "@/components/UserAvatar";
 
 interface AnonymousAvatarProps {
   avatarKey?: string | null;
@@ -17,21 +18,25 @@ export function AnonymousAvatar({
   size = 48,
   photoUrl,
   isBlurred = false,
-  borderWidth = 2,
+  borderWidth: _ignoredBorderWidth = 0,
 }: AnonymousAvatarProps) {
   const bg = avatarColorFor(avatarKey);
   const borderRadius = size / 2;
+  const resolvedPhotoUrl = resolveImageUri(photoUrl);
+  const [photoError, setPhotoError] = useState(false);
+
+  useEffect(() => {
+    setPhotoError(false);
+  }, [resolvedPhotoUrl]);
 
   // ── Photo path (user has an unlocked real photo) ───────────────────────────
-  if (photoUrl) {
+  if (resolvedPhotoUrl && resolvedPhotoUrl !== "[removed]" && !photoError) {
     return (
       <View
         style={{
           width: size,
           height: size,
           borderRadius,
-          borderWidth,
-          borderColor: bg,
           overflow: "hidden",
           backgroundColor: "#E5E7EB",
           alignItems: "center",
@@ -39,7 +44,8 @@ export function AnonymousAvatar({
         }}
       >
         <Image
-          source={{ uri: photoUrl }}
+          source={{ uri: resolvedPhotoUrl }}
+          onError={() => setPhotoError(true)}
           style={{ width: size, height: size }}
           resizeMode="cover"
           blurRadius={isBlurred ? 18 : 0}
@@ -56,15 +62,13 @@ export function AnonymousAvatar({
     );
   }
 
-  // ── DiceBear Critters Theme (Default for all anonymous users & roadmap) ────
+  // ── DiceBear Critters Theme (Always strokeless for anonymous users) ────────
   return (
     <View
       style={{
         width: size,
         height: size,
         borderRadius,
-        borderWidth,
-        borderColor: bg,
         backgroundColor: bg,
         alignItems: "center",
         justifyContent: "center",
@@ -73,7 +77,7 @@ export function AnonymousAvatar({
     >
       <CrittersAvatar
         avatarKey={avatarKey}
-        size={size - borderWidth * 2}
+        size={size}
         customBg={bg}
         blurRadius={isBlurred ? 14 : 0}
       />

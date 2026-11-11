@@ -7,19 +7,15 @@ import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   View,
   Text,
-  TextInput,
   TouchableOpacity,
   StyleSheet,
-  ActivityIndicator,
   ScrollView,
   Dimensions,
-  Clipboard,
   BackHandler,
-  Platform,
 } from 'react-native';
 
 import { useRouter, useLocalSearchParams } from 'expo-router';
-import { ArrowLeft, AlertCircle, Pencil } from 'lucide-react-native';
+import { ArrowLeft, Pencil } from 'lucide-react-native';
 import * as authApi from '@/lib/api/auth';
 import {
   getMobileRegisterCache,
@@ -29,6 +25,8 @@ import {
 import { useAuth } from '@/lib/auth/AuthContext';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Button } from '@/components/Button';
+import { AnimatedOtpInput } from '@/components/AnimatedOtpInput';
+import { ErrorAlertModal } from '@/components/ErrorAlertModal';
 import { KeyboardHugView } from '@/components/KeyboardHugView';
 import { useKeyboard } from '@/hooks/useKeyboard';
 
@@ -71,7 +69,7 @@ export default function VerifyOtpPage() {
   const [resendCount, setResendCount] = useState(0);
   const [resendLimit, setResendLimit] = useState(3);
   const [cooldown, setCooldown] = useState(0);
-  const inputsRef = useRef<(TextInput | null)[]>([]);
+  const [focusFirstTrigger, setFocusFirstTrigger] = useState(0);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const isVerifiedRef = useRef<boolean>(false);
 
@@ -126,11 +124,6 @@ export default function VerifyOtpPage() {
       .catch(() => {});
   }, [userId]);
 
-  // Focus first box
-  useEffect(() => {
-    setTimeout(() => inputsRef.current[0]?.focus(), 300);
-  }, []);
-
   const startCooldown = useCallback(() => {
     setCooldown(RESEND_COOLDOWN);
     if (timerRef.current) clearInterval(timerRef.current);
@@ -184,49 +177,9 @@ export default function VerifyOtpPage() {
     } catch (err: any) {
       setError(err?.message ?? 'Incorrect code. Please try again.');
       setDigits(Array(OTP_LENGTH).fill(''));
-      inputsRef.current[0]?.focus();
+      setFocusFirstTrigger((n) => n + 1);
     } finally {
       setIsVerifying(false);
-    }
-  };
-
-  // Handle single digit input — auto-advance to next box
-  const handleDigitChange = (idx: number, value: string) => {
-    setError('');
-
-    // Support paste of full code into any box
-    const cleaned = value.replace(/\D/g, '');
-    if (cleaned.length >= OTP_LENGTH) {
-      const next = cleaned.slice(0, OTP_LENGTH).split('');
-      setDigits(next);
-      inputsRef.current[OTP_LENGTH - 1]?.focus();
-      submitCode(next.join(''));
-      return;
-    }
-
-    // Single digit — take last char typed
-    const singleDigit = cleaned.slice(-1);
-    const next = [...digits];
-    next[idx] = singleDigit;
-    setDigits(next);
-
-    // Auto-advance
-    if (singleDigit && idx < OTP_LENGTH - 1) {
-      inputsRef.current[idx + 1]?.focus();
-    }
-
-    // Auto-submit when all filled
-    if (singleDigit && next.every(Boolean)) {
-      submitCode(next.join(''));
-    }
-  };
-
-  const handleKeyPress = (idx: number, key: string) => {
-    if (key === 'Backspace' && !digits[idx] && idx > 0) {
-      const next = [...digits];
-      next[idx - 1] = '';
-      setDigits(next);
-      inputsRef.current[idx - 1]?.focus();
     }
   };
 
@@ -239,7 +192,7 @@ export default function VerifyOtpPage() {
       setResendCount(result.resendCount);
       setResendLimit(result.resendLimit);
       setDigits(Array(OTP_LENGTH).fill(''));
-      inputsRef.current[0]?.focus();
+      setFocusFirstTrigger((n) => n + 1);
       startCooldown();
     } catch (err: any) {
       setError(err?.message ?? 'Could not resend code.');
@@ -312,36 +265,23 @@ export default function VerifyOtpPage() {
               </View>
             </View>
 
-            {/* OTP boxes (blended to white screen, no container) */}
-            <View style={styles.otpRow}>
-              {digits.map((d, i) => (
-                <TextInput
-                  key={i}
-                  ref={(el) => { inputsRef.current[i] = el; }}
-                  style={[
-                    styles.otpBox,
-                    d ? styles.otpBoxFilled : null,
-                    error ? styles.otpBoxError : null,
-                  ]}
-                  value={d}
-                  onChangeText={(v) => handleDigitChange(i, v)}
-                  onKeyPress={({ nativeEvent }) => handleKeyPress(i, nativeEvent.key)}
-                  keyboardType="number-pad"
-                  maxLength={6}
-                  textAlign="center"
-                  editable={!isVerifying}
-                  selectTextOnFocus
-                  caretHidden
-                />
-              ))}
-            </View>
-
-            {error ? (
-              <View style={styles.errorBanner}>
-                <AlertCircle size={14} color="#DC2626" style={{ marginRight: 6 }} />
-                <Text style={styles.errorBannerText}>{error}</Text>
-              </View>
-            ) : null}
+            {/* Animated OTP boxes */}
+            <AnimatedOtpInput
+              digits={digits}
+              onChange={setDigits}
+              onComplete={submitCode}
+              onInputActivity={() => {
+                if (error) setError('');
+              }}
+              disabled={isVerifying}
+              focusFirstTrigger={focusFirstTrigger}
+              boxWidth={BOX_SIZE}
+              boxHeight={BOX_SIZE + 10}
+              borderRadius={12}
+              fontSize={BOX_FONT}
+              filledBackgroundColor="#F0FDF4"
+              containerStyle={styles.otpRow}
+            />
           </ScrollView>
 
           {/* Bottom Area: Verify button + Didn't receive the code? + Resend with 00:00 timer */}
@@ -392,6 +332,16 @@ export default function VerifyOtpPage() {
           </View>
         </View>
       </KeyboardHugView>
+
+      <ErrorAlertModal
+        visible={Boolean(error)}
+        title="Verification failed"
+        message={error || null}
+        onClose={() => {
+          setError('');
+          setFocusFirstTrigger((n) => n + 1);
+        }}
+      />
     </View>
   );
 }
@@ -462,46 +412,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   otpRow: {
-    flexDirection: 'row',
-    gap: BOX_GAP,
-    justifyContent: 'center',
     marginBottom: 20,
     width: '100%',
-  },
-  otpBox: {
-    width: BOX_SIZE,
-    height: BOX_SIZE + 10,
-    borderRadius: 12,
-    borderWidth: 1.5,
-    borderColor: '#E5E7EB',
-    backgroundColor: '#FFFFFF',
-    fontSize: BOX_FONT,
-    fontWeight: '700',
-    color: '#111827',
-  },
-  otpBoxFilled: {
-    borderColor: GREEN,
-    backgroundColor: '#F0FDF4',
-  },
-  otpBoxError: {
-    borderColor: '#EF4444',
-    backgroundColor: '#FEF2F2',
-  },
-  errorBanner: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: '#FEF2F2',
-    borderWidth: 1,
-    borderColor: '#FECACA',
-    borderRadius: 10,
-    padding: 10,
-    marginTop: 8,
-    width: '100%',
-  },
-  errorBannerText: {
-    fontSize: 12,
-    color: '#DC2626',
-    flex: 1,
   },
   bottomSection: {
     paddingHorizontal: 24,

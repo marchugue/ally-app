@@ -10,7 +10,6 @@ import {
   ActivityIndicator,
 } from "react-native";
 import { router } from "expo-router";
-import { ArrowLeft } from "lucide-react-native";
 import Svg, { Path, Circle, Defs, LinearGradient, Stop } from "react-native-svg";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAuth, ApiError } from "@/lib/auth/AuthContext";
@@ -67,14 +66,6 @@ export default function LoginScreen() {
     validateEmail(email) === null &&
     email.trim().length > 0 &&
     password.length >= 6;
-
-  const handleBack = () => {
-    if (router.canGoBack()) {
-      router.back();
-    } else {
-      router.replace("/pages/landing" as any);
-    }
-  };
 
   async function handleLogin() {
     setTouchedEmail(true);
@@ -219,16 +210,6 @@ export default function LoginScreen() {
           <Circle cx="195" cy="90" r="105" fill="url(#mobileDarkCircle)" />
         </Svg>
 
-        {/* Back Button */}
-        <Pressable
-          onPress={handleBack}
-          hitSlop={14}
-          style={[styles.backBtn, { top: insets.top + 6 }]}
-          accessibilityLabel="Go back"
-        >
-          <ArrowLeft size={20} color="#FFFFFF" strokeWidth={2.4} />
-        </Pressable>
-
         {/* Centered White Circle Badge with ally-jis.png */}
         <View style={[styles.emblemWrapper, { marginTop: insets.top + 2 }]}>
           <View style={styles.logoBadge}>
@@ -362,14 +343,6 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     alignItems: "center",
     justifyContent: "center",
-  },
-  backBtn: {
-    position: "absolute",
-    left: 16,
-    padding: 7,
-    borderRadius: 18,
-    backgroundColor: "rgba(0,0,0,0.22)",
-    zIndex: 30,
   },
   emblemWrapper: {
     alignItems: "center",

@@ -52,6 +52,7 @@ import { useAuth } from '@/lib/auth/AuthContext';
 import { useTheme } from '@/context/ThemeContext';
 import { getSocket } from '@/lib/socket';
 import { getMyReports, submitReportAppeal } from '@/lib/api/moderation';
+import { resolveImageUri } from '@/components/UserAvatar';
 
 const GREEN = '#1A6B3C';
 const EMERALD = '#10B981';
@@ -366,14 +367,45 @@ export default function ReportsScreen() {
 
         {mediaList.length > 0 && (
           <View style={styles.postMediaGrid}>
-            {mediaList.slice(0, 2).map((m: any, idx: number) => (
-              <Image
-                key={idx}
-                source={{ uri: m.url || m }}
-                style={styles.postMediaThumb}
-                resizeMode="cover"
-              />
-            ))}
+            {mediaList.slice(0, 2).map((m: any, idx: number) => {
+              const isRemoved = m === '[removed]' || m?.url === '[removed]';
+              const uri = isRemoved ? null : resolveImageUri(m);
+              if (isRemoved || !uri) {
+                return (
+                  <View
+                    key={idx}
+                    style={[
+                      styles.postMediaThumb,
+                      {
+                        backgroundColor: isDark ? 'rgba(255,255,255,0.06)' : '#F3F4F6',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        paddingHorizontal: 8,
+                      },
+                    ]}
+                  >
+                    <Text
+                      style={{
+                        fontSize: 10,
+                        color: isDark ? '#9CA3AF' : '#6B7280',
+                        textAlign: 'center',
+                        fontWeight: '600',
+                      }}
+                    >
+                      {isRemoved ? 'Photo removed' : 'Unavailable'}
+                    </Text>
+                  </View>
+                );
+              }
+              return (
+                <Image
+                  key={idx}
+                  source={{ uri }}
+                  style={styles.postMediaThumb}
+                  resizeMode="cover"
+                />
+              );
+            })}
           </View>
         )}
 

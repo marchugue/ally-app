@@ -62,6 +62,8 @@ import {
 // 6. Components
 import { ConfirmModal } from "@/components/ConfirmModal";
 import { PasswordStrengthMeter } from "@/components/buttons/password";
+import { DefaultPostAudienceModal } from "@/components/DefaultPostAudienceModal";
+import { getPostAudienceMeta, normalizePostAudience } from "@/components/PostAudienceCard";
 
 const DEFAULT_PREFERENCES: UserPreferences = {
   user_id: "",
@@ -76,6 +78,7 @@ const DEFAULT_PREFERENCES: UserPreferences = {
   account_privacy: "public",
   profile_visibility: "campus",
   feed_post_audience: "campus",
+  default_post_audience: "public",
   typing_indicators_enabled: true,
   auto_reveal_identity_stage: 4,
   notify_chat_messages: true,
@@ -111,6 +114,7 @@ export default function SettingsScreen() {
 
   // Privacy Controls Modal
   const [showPrivacyModal, setShowPrivacyModal] = useState(false);
+  const [showDefaultAudienceModal, setShowDefaultAudienceModal] = useState(false);
 
   // Change password modal state
   const [showPasswordModal, setShowPasswordModal] = useState(false);
@@ -254,7 +258,9 @@ export default function SettingsScreen() {
   };
 
   const currentVisibilityText = visibilityLabels[preferences.profile_visibility || "campus"] || "Campus Allies";
-  const currentFeedAudienceText = feedAudienceLabels[preferences.feed_post_audience || "campus"] || "Campus Public";
+  const currentDefaultPostAudienceMeta = getPostAudienceMeta(
+    normalizePostAudience(preferences.default_post_audience)
+  );
 
   return (
     <View style={{ flex: 1, backgroundColor: colors.background }}>
@@ -348,6 +354,14 @@ export default function SettingsScreen() {
           icon={Lock}
           title="Privacy Controls"
           onPress={() => setShowPrivacyModal(true)}
+        />
+
+        {/* Default Post Audience */}
+        <SettingCard
+          icon={currentDefaultPostAudienceMeta.Icon}
+          title="Default Post Audience"
+          badgeText={currentDefaultPostAudienceMeta.label}
+          onPress={() => setShowDefaultAudienceModal(true)}
         />
 
         {/* Permissions */}
@@ -742,24 +756,14 @@ export default function SettingsScreen() {
               <ChevronRight size={18} color={colors.textSecondary} />
             </TouchableOpacity>
 
-            {/* Default Feed Audience Row */}
+            {/* Default Post Audience Row */}
             <TouchableOpacity
               activeOpacity={0.7}
               onPress={() => {
                 setShowPrivacyModal(false);
                 setTimeout(() => {
-                  setActivePicker({
-                    title: "Default Feed Audience",
-                    description: "Initial audience when drafting campus confessions.",
-                    options: [
-                      { value: "campus", label: "Campus Public", sublabel: "Visible to all verified students" },
-                      { value: "matches_only", label: "Mutual Allies Only", sublabel: "Visible only to connected allies" },
-                      { value: "anonymous_only", label: "Always Anonymous", sublabel: "Mask your name and avatar" },
-                    ],
-                    selectedValue: preferences.feed_post_audience || "campus",
-                    onSelect: (val) => handleUpdatePreference({ feed_post_audience: val }),
-                  });
-                }, 300);
+                  setShowDefaultAudienceModal(true);
+                }, 220);
               }}
               style={{
                 backgroundColor: colors.surfaceMuted,
@@ -774,10 +778,10 @@ export default function SettingsScreen() {
             >
               <View style={{ flex: 1, paddingRight: 12 }}>
                 <Text style={{ fontSize: 14.5, fontFamily: "PlusJakartaSans-Bold", color: colors.textPrimary }}>
-                  Default Feed Audience
+                  Default Post Audience
                 </Text>
                 <Text style={{ fontSize: 12.5, fontFamily: "PlusJakartaSans", color: colors.primary, marginTop: 2 }}>
-                  {currentFeedAudienceText}
+                  {currentDefaultPostAudienceMeta.label}
                 </Text>
               </View>
               <ChevronRight size={18} color={colors.textSecondary} />
@@ -1165,6 +1169,16 @@ export default function SettingsScreen() {
         destructive
         onConfirm={handleDeleteAccount}
         onCancel={() => setShowDeleteConfirm(false)}
+      />
+
+      <DefaultPostAudienceModal
+        visible={showDefaultAudienceModal}
+        onClose={() => setShowDefaultAudienceModal(false)}
+        accessToken={accessToken}
+        value={preferences.default_post_audience}
+        onSaved={(nextAud) =>
+          setPreferences((prev) => ({ ...prev, default_post_audience: nextAud }))
+        }
       />
     </View>
   );

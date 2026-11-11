@@ -16,13 +16,18 @@ export interface AllyListItem {
   username: string | null;
   fullName: string | null;
   avatarUrl: string | null;
+  avatarKey?: string | null;
   course: string | null;
+  department?: string | null;
+  yearLevel?: string | null;
+  isAlly?: boolean;
   alliedAt: string;
 }
 
 export interface PaginatedAllyList {
   items: AllyListItem[];
   nextCursor: string | null;
+  totalCount?: number;
 }
 
 export interface AllyFilterParams {
