@@ -2,12 +2,14 @@ import { useState, useEffect } from 'react';
 import { View, Text, Modal, Pressable, Linking, ActivityIndicator } from 'react-native';
 import { Sparkles, Download, RefreshCw, CheckCircle2, AlertCircle } from 'lucide-react-native';
 import * as Updates from 'expo-updates';
+import { getFallbackImageUri, probeUrlReachable } from './UserAvatar';
 
 export interface VersionInfo {
   version: string;
   minVersion?: string;
   downloadUrl: string;
   apkUrl?: string;
+  fallbackApkUrl?: string;
   releaseNotes?: string;
 }
 
@@ -42,23 +44,43 @@ export function UpdateModal({
 
   const downloadUrl = versionInfo.downloadUrl || 'https://ally-jis.com/download';
 
-  // Target URL: prefer direct Cloudflare R2 APK link if available, fallback to download page
-  const targetApkUrl = versionInfo.apkUrl || downloadUrl;
+  // Resolve primary APK URL -> R2 fallback URL -> web download page if primary host does not resolve
+  const resolveWorkingApkUrl = async (): Promise<string> => {
+    const primary = versionInfo.apkUrl?.trim();
+    const fallback =
+      versionInfo.fallbackApkUrl?.trim() || getFallbackImageUri(primary);
+    const candidates = [primary, fallback, downloadUrl].filter(
+      (u, idx, arr): u is string => Boolean(u) && arr.indexOf(u) === idx
+    );
+
+    for (const candidate of candidates) {
+      if (candidate === downloadUrl) return candidate;
+      const ok = await probeUrlReachable(candidate, 2500, true);
+      if (ok) return candidate;
+    }
+
+    return downloadUrl;
+  };
+
+  const openReachableApkDownload = async () => {
+    try {
+      const targetUrl = await resolveWorkingApkUrl();
+      const canOpen = await Linking.canOpenURL(targetUrl);
+      if (canOpen) {
+        await Linking.openURL(targetUrl);
+      } else {
+        await Linking.openURL('https://ally-jis.com/download');
+      }
+    } catch (err) {
+      console.warn('Failed to open download URL:', err);
+    }
+  };
 
   // Handle OTA In-App Update download & reload or direct APK download
   const handleStartInAppUpdate = async () => {
     // 1. If running in a standalone APK build without EAS OTA updates enabled, download the APK directly
     if (!Updates.isEnabled) {
-      try {
-        const canOpen = await Linking.canOpenURL(targetApkUrl);
-        if (canOpen) {
-          await Linking.openURL(targetApkUrl);
-        } else {
-          await Linking.openURL('https://ally-jis.com/download');
-        }
-      } catch (err) {
-        console.warn('Failed to open download URL:', err);
-      }
+      await openReachableApkDownload();
       onClose();
       return;
     }
@@ -81,7 +103,7 @@ export function UpdateModal({
       } else {
         // No OTA bundle patch, open external APK download
         setProgressState('idle');
-        await handleWebFallback();
+        await openReachableApkDownload();
         onClose();
       }
     } catch (err: any) {
@@ -96,27 +118,16 @@ export function UpdateModal({
       if (Updates.isEnabled) {
         await Updates.reloadAsync();
       } else {
-        await handleWebFallback();
+        await openReachableApkDownload();
         onClose();
       }
     } catch (err) {
-      await handleWebFallback();
+      await openReachableApkDownload();
       onClose();
     }
   };
 
-  const handleWebFallback = async () => {
-    try {
-      const canOpen = await Linking.canOpenURL(targetApkUrl);
-      if (canOpen) {
-        await Linking.openURL(targetApkUrl);
-      } else {
-        await Linking.openURL('https://ally-jis.com/download');
-      }
-    } catch (err) {
-      console.warn('Failed to open URL:', err);
-    }
-  };
+  const handleWebFallback = openReachableApkDownload;
 
   return (
     <Modal

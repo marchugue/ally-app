@@ -24,6 +24,71 @@ interface UserAvatarProps {
   fallback?: string;
 }
 
+export const PRIMARY_CDN_DOMAIN = "https://image.ally-jis.com";
+export const FALLBACK_CDN_DOMAIN = "https://pub-21734b6a6db44e4bbb01a1a37662f875.r2.dev";
+
+let primaryCdnReachable: boolean | null = null;
+let primaryProbePromise: Promise<boolean> | null = null;
+
+export async function probeUrlReachable(
+  url: string,
+  timeoutMs = 2500,
+  requireOkStatus = false
+): Promise<boolean> {
+  if (typeof fetch !== "function") return true;
+  const controller = typeof AbortController !== "undefined" ? new AbortController() : null;
+  const timer = controller ? setTimeout(() => controller.abort(), timeoutMs) : null;
+  try {
+    const res = await fetch(url, {
+      method: "HEAD",
+      signal: controller?.signal,
+    });
+    return requireOkStatus ? res.ok : true;
+  } catch {
+    return false;
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+export function markPrimaryCdnUnreachable(): void {
+  primaryCdnReachable = false;
+}
+
+export function probePrimaryCdn(): Promise<boolean> {
+  if (primaryCdnReachable !== null) return Promise.resolve(primaryCdnReachable);
+  if (!primaryProbePromise) {
+    primaryProbePromise = probeUrlReachable(`${PRIMARY_CDN_DOMAIN}/`).then((ok) => {
+      primaryCdnReachable = ok;
+      return ok;
+    });
+  }
+  return primaryProbePromise;
+}
+
+void probePrimaryCdn();
+
+function rewriteCdnDomain(url: string, targetDomain: string): string {
+  let out = url.replace(
+    /^https?:\/\/[^/]+\.r2\.cloudflarestorage\.com\/(?:ally-jis\/)?/i,
+    `${targetDomain}/`
+  );
+  out = out.replace(/^https?:\/\/[^/]+\.r2\.dev(?=\/|$)/i, targetDomain);
+  out = out.replace(
+    /^https?:\/\/(?:www\.)?(?:media|image)\.ally-jis\.com(?=\/|$)/i,
+    targetDomain
+  );
+  return out;
+}
+
+export function getFallbackImageUri(uri: string | null | undefined): string | null {
+  if (!uri) return null;
+  const trimmed = uri.trim();
+  if (!trimmed) return null;
+  const rewritten = rewriteCdnDomain(trimmed, FALLBACK_CDN_DOMAIN);
+  return rewritten !== trimmed ? rewritten : null;
+}
+
 export function resolveImageUri(input: any): string | null {
   if (!input) return null;
   let raw: string | null = null;
@@ -46,10 +111,9 @@ export function resolveImageUri(input: any): string | null {
     return `${API_BASE_URL}${raw}`;
   }
 
-  // Rewrite legacy R2 or media domains to the official image domain
-  raw = raw.replace(/^https?:\/\/[^/]+\.r2\.cloudflarestorage\.com\/(?:ally-jis\/)?/i, "https://image.ally-jis.com/");
-  raw = raw.replace(/^https?:\/\/[^/]+\.r2\.dev(?=\/|$)/i, "https://image.ally-jis.com");
-  raw = raw.replace(/^https?:\/\/(?:www\.)?(?:media|image)\.ally-jis\.com(?=\/|$)/i, "https://image.ally-jis.com");
+  const activeDomain =
+    primaryCdnReachable === false ? FALLBACK_CDN_DOMAIN : PRIMARY_CDN_DOMAIN;
+  raw = rewriteCdnDomain(raw, activeDomain);
 
   // Rewrite localhost / 127.0.0.1 for mobile devices/emulators so they can reach the server
   if (Platform.OS !== "web") {
@@ -83,13 +147,16 @@ export function UserAvatar({
   const borderRadius = container * 0.5;
 
   const [imgError, setImgError] = useState(false);
+  const [fallbackUri, setFallbackUri] = useState<string | null>(null);
 
   useEffect(() => {
     setImgError(false);
+    setFallbackUri(null);
   }, [avatar]);
 
   const imageUri = resolveImageUri(avatar);
-  const isImage = isUrl(imageUri) && !imgError;
+  const resolvedUri = fallbackUri || imageUri;
+  const isImage = isUrl(resolvedUri) && !imgError;
   const animalKey =
     typeof avatar === "string" && !isImage && AVATAR_EMOJI[avatar.toLowerCase().trim()]
       ? avatar.toLowerCase().trim()
@@ -110,10 +177,18 @@ export function UserAvatar({
     <View style={{ width: container, height: container, position: "relative" }}>
       {animalKey ? (
         <AnonymousAvatar avatarKey={animalKey} size={container} />
-      ) : isImage && imageUri ? (
+      ) : isImage && resolvedUri ? (
         <Image
-          source={{ uri: imageUri }}
-          onError={() => setImgError(true)}
+          source={{ uri: resolvedUri }}
+          onError={() => {
+            const candidate = getFallbackImageUri(resolvedUri);
+            if (!fallbackUri && candidate && candidate !== resolvedUri) {
+              markPrimaryCdnUnreachable();
+              setFallbackUri(candidate);
+              return;
+            }
+            setImgError(true);
+          }}
           style={{
             width: container,
             height: container,
