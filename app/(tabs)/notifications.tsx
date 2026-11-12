@@ -1121,7 +1121,7 @@ export default function NotificationsScreen() {
                 </Text>
               </View>
             ) : (
-              <View style={{ flexDirection: "row", gap: 8, marginTop: 8, maxWidth: 300 }}>
+              <View style={{ flexDirection: "row", gap: 8, marginTop: 10, width: "100%" }}>
                 <TouchableOpacity
                   onPress={() => handleAcceptInline(item)}
                   disabled={isBusy}
@@ -1129,19 +1129,16 @@ export default function NotificationsScreen() {
                   style={{
                     flex: 1,
                     backgroundColor: colors.primary,
-                    paddingVertical: 7.5,
+                    paddingVertical: 8.5,
                     paddingHorizontal: 12,
-                    borderRadius: 12,
-                    flexDirection: "row",
+                    borderRadius: 999,
                     alignItems: "center",
                     justifyContent: "center",
-                    gap: 5,
                     opacity: isBusy ? 0.6 : 1,
                   }}
                 >
-                  <Check size={13} color="#FFFFFF" strokeWidth={2.5} />
-                  <Text style={{ fontSize: 12, fontFamily: "PlusJakartaSans-Bold", color: "#FFFFFF" }}>
-                    {isBusy ? "Accepting..." : "Accept Request"}
+                  <Text style={{ fontSize: 12.5, fontFamily: "PlusJakartaSans-Bold", color: "#FFFFFF" }}>
+                    {isBusy ? "Confirming..." : "Confirm"}
                   </Text>
                 </TouchableOpacity>
 
@@ -1152,21 +1149,18 @@ export default function NotificationsScreen() {
                   style={{
                     flex: 1,
                     backgroundColor: colors.surfaceMuted,
-                    paddingVertical: 7.5,
+                    paddingVertical: 8.5,
                     paddingHorizontal: 12,
-                    borderRadius: 12,
-                    flexDirection: "row",
+                    borderRadius: 999,
                     alignItems: "center",
                     justifyContent: "center",
-                    gap: 5,
                     borderWidth: 1,
                     borderColor: colors.border,
                     opacity: isBusy ? 0.6 : 1,
                   }}
                 >
-                  <X size={13} color={colors.textSecondary} />
-                  <Text style={{ fontSize: 12, fontWeight: "600", color: colors.textSecondary }}>
-                    {isBusy ? "Declining..." : "Decline Request"}
+                  <Text style={{ fontSize: 12.5, fontWeight: "600", color: colors.textSecondary }}>
+                    {isBusy ? "Declining..." : "Decline"}
                   </Text>
                 </TouchableOpacity>
               </View>

@@ -86,25 +86,20 @@ function ChatInputComponent({
         Alert.alert("Permission Required", "Photo library permission is required to select photos.");
         return;
       }
-      const remaining = 6 - pendingImages.length;
-      if (remaining <= 0) {
-        Alert.alert("Limit Reached", "You can select up to 6 photos per message.");
-        return;
-      }
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ["images"],
         allowsMultipleSelection: true,
-        selectionLimit: remaining,
+        selectionLimit: 0,
         quality: 0.8,
       });
       if (result.canceled || !result.assets?.length) return;
 
-      const newFiles: LocalFile[] = result.assets.slice(0, remaining).map((asset) => {
+      const newFiles: LocalFile[] = result.assets.map((asset) => {
         const filename = asset.fileName || asset.uri.split("/").pop() || `photo_${Date.now()}.jpg`;
         const mime = asset.mimeType || (/\.png$/i.test(filename) ? "image/png" : "image/jpeg");
         return { uri: asset.uri, name: filename, type: mime };
       });
-      setPendingImages((prev) => [...prev, ...newFiles].slice(0, 6));
+      setPendingImages((prev) => [...prev, ...newFiles]);
     } catch (err: any) {
       console.warn("Failed to pick media", err);
     }
@@ -113,10 +108,6 @@ function ChatInputComponent({
   const handleTakePhoto = async () => {
     setShowMenu(false);
     if (!canUploadImages) return;
-    if (pendingImages.length >= 6) {
-      Alert.alert("Limit Reached", "You can select up to 6 photos per message.");
-      return;
-    }
     try {
       const { status } = await ImagePicker.requestCameraPermissionsAsync();
       if (status !== "granted") {
@@ -132,7 +123,7 @@ function ChatInputComponent({
       const asset = result.assets[0];
       const filename = asset.fileName || asset.uri.split("/").pop() || `camera_${Date.now()}.jpg`;
       const mime = asset.mimeType || (/\.png$/i.test(filename) ? "image/png" : "image/jpeg");
-      setPendingImages((prev) => [...prev, { uri: asset.uri, name: filename, type: mime }].slice(0, 6));
+      setPendingImages((prev) => [...prev, { uri: asset.uri, name: filename, type: mime }]);
     } catch (err: any) {
       console.warn("Failed to take photo", err);
     }
@@ -199,7 +190,7 @@ function ChatInputComponent({
         </View>
       )}
 
-      {/* Media Upload Carousel Preview Strip (up to 6) — mirrors web MessageInput */}
+      {/* Media Upload Carousel Preview Strip — unlimited selection */}
       {pendingImages.length > 0 && (
         <View
           style={{
@@ -281,37 +272,35 @@ function ChatInputComponent({
               </View>
             ))}
 
-            {pendingImages.length < 6 && (
-              <TouchableOpacity
-                onPress={handlePickMedia}
-                activeOpacity={0.7}
+            <TouchableOpacity
+              onPress={handlePickMedia}
+              activeOpacity={0.7}
+              style={{
+                width: 72,
+                height: 72,
+                borderRadius: 12,
+                borderWidth: 1.5,
+                borderStyle: "dashed",
+                borderColor: "#D1D5DB",
+                backgroundColor: "#FAF9F5",
+                alignItems: "center",
+                justifyContent: "center",
+                paddingHorizontal: 4,
+              }}
+            >
+              <ImageIcon size={20} color="#1A6B3C" />
+              <Text
                 style={{
-                  width: 72,
-                  height: 72,
-                  borderRadius: 12,
-                  borderWidth: 1.5,
-                  borderStyle: "dashed",
-                  borderColor: "#D1D5DB",
-                  backgroundColor: "#FAF9F5",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  paddingHorizontal: 4,
+                  fontSize: 10,
+                  fontWeight: "600",
+                  color: "#6B7280",
+                  marginTop: 3,
+                  textAlign: "center",
                 }}
               >
-                <ImageIcon size={20} color="#1A6B3C" />
-                <Text
-                  style={{
-                    fontSize: 10,
-                    fontWeight: "600",
-                    color: "#6B7280",
-                    marginTop: 3,
-                    textAlign: "center",
-                  }}
-                >
-                  Add (max 6)
-                </Text>
-              </TouchableOpacity>
-            )}
+                Add
+              </Text>
+            </TouchableOpacity>
           </ScrollView>
         </View>
       )}

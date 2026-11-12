@@ -89,6 +89,7 @@ import { endMatch as apiEndMatch } from "@/lib/api/matchmaking";
 import { getSocket } from "@/lib/socket";
 import * as ImagePicker from "expo-image-picker";
 import { uploadChatFile, type LocalFile } from "@/lib/api/media";
+import { registerUploadedMediaCache } from "@/lib/mediaCache";
 import { SwipeableChatBubble } from "@/components/SwipeableChatBubble";
 import { ChatBubble, isOnlyEmoji, formatWrapContent, type BubbleLayout } from "@/components/ChatBubble";
 import { ChatInput } from "@/components/ChatInput";
@@ -1205,6 +1206,8 @@ export default function ConversationScreen() {
     }
   }, [conversationId, accessToken]);
 
+  const failedMediaFilesRef = useRef<Record<string, LocalFile[]>>({});
+
   // ── Send message (Optimistic UI — 0ms instant display with clientMessageId reconciliation) ───
   const handleSend = useCallback(
     async (content: string, media?: LocalFile[] | string | null) => {
@@ -1214,9 +1217,14 @@ export default function ConversationScreen() {
       const activeReply = replyTo;
       setReplyTo(null);
 
+      const isLocalFileList = Array.isArray(media) && media.length > 0;
+      if (isLocalFileList) {
+        failedMediaFilesRef.current[clientMessageId] = media;
+      }
+
       // Derive optimistic image URL (single local URI or stringified JSON array of local URIs)
       let optimisticImageUrl: string | null = null;
-      if (Array.isArray(media) && media.length > 0) {
+      if (isLocalFileList) {
         optimisticImageUrl = media.length === 1 ? media[0].uri : JSON.stringify(media.map((f) => f.uri));
       } else if (typeof media === "string" && media) {
         optimisticImageUrl = media;
@@ -1234,6 +1242,7 @@ export default function ConversationScreen() {
         replied_message: activeReply || null,
         reactions: [],
         status: "sending",
+        uploadProgress: isLocalFileList ? 6 : undefined,
       };
       (optimisticMsg as any).imageUrl = optimisticImageUrl;
 
@@ -1252,11 +1261,43 @@ export default function ConversationScreen() {
       // 3. Process upload if LocalFile[] provided, then send to server in background
       try {
         let finalImageUrl: string | null = null;
-        if (Array.isArray(media) && media.length > 0) {
-          const uploadPromises = media.map((file) => uploadChatFile(file, accessToken));
+        if (isLocalFileList) {
+          const fileProgress = new Array(media.length).fill(0);
+          let lastReported = 6;
+
+          const uploadPromises = media.map((file, idx) =>
+            uploadChatFile(file, accessToken, (pct) => {
+              fileProgress[idx] = pct;
+              const avg = fileProgress.reduce((sum, v) => sum + v, 0) / media.length;
+              const mapped = Math.round(8 + (avg / 100) * 84);
+              if (mapped - lastReported >= 2 || mapped >= 92) {
+                lastReported = mapped;
+                setMessages((prev) =>
+                  prev.map((m) =>
+                    m.clientMessageId === clientMessageId || m.id === clientMessageId
+                      ? { ...m, uploadProgress: mapped }
+                      : m
+                  )
+                );
+              }
+            })
+          );
           const uploadRes = await Promise.all(uploadPromises);
           const urls = uploadRes.map((r) => r?.url).filter((u): u is string => Boolean(u));
+          urls.forEach((remoteUrl, i) => {
+            if (media[i]?.uri) {
+              registerUploadedMediaCache(remoteUrl, media[i].uri);
+            }
+          });
           finalImageUrl = urls.length === 1 ? urls[0] : JSON.stringify(urls);
+
+          setMessages((prev) =>
+            prev.map((m) =>
+              m.clientMessageId === clientMessageId || m.id === clientMessageId
+                ? { ...m, uploadProgress: 96 }
+                : m
+            )
+          );
         } else if (typeof media === "string" && media) {
           finalImageUrl = media;
         }
@@ -1272,11 +1313,14 @@ export default function ConversationScreen() {
           accessToken
         );
 
+        delete failedMediaFilesRef.current[clientMessageId];
+
         // Reconcile optimistic message with confirmed server message in-place
         const confirmedMsg: Message = {
           ...savedMsg,
           clientMessageId,
           status: "sent",
+          uploadProgress: 100,
         };
 
         setMessages((prev) => {
@@ -1301,7 +1345,7 @@ export default function ConversationScreen() {
     [conversationId, accessToken, user, replyTo, hasMore, nextCursor]
   );
 
-  // ── Pick media & take photo handlers (up to 6 images) ────────────────
+  // ── Pick media & take photo handlers (unlimited media upload) ────────────────
   const handlePickMedia = useCallback(async () => {
     if (!conversationId || !accessToken) return;
     try {
@@ -1313,32 +1357,22 @@ export default function ConversationScreen() {
       const result = await ImagePicker.launchImageLibraryAsync({
         mediaTypes: ["images"],
         allowsMultipleSelection: true,
-        selectionLimit: 6,
+        selectionLimit: 0,
         quality: 0.8,
       });
       if (result.canceled || !result.assets?.length) return;
 
-      const assets = result.assets.slice(0, 6);
-      const uploadPromises = assets.map(async (asset) => {
+      const localFiles: LocalFile[] = result.assets.map((asset) => {
         const filename = asset.fileName || asset.uri.split("/").pop() || `photo_${Date.now()}.jpg`;
         const mime = asset.mimeType || (/\.png$/i.test(filename) ? "image/png" : "image/jpeg");
-        const uploadRes = await uploadChatFile(
-          { uri: asset.uri, name: filename, type: mime },
-          accessToken
-        );
-        return uploadRes?.url;
+        return { uri: asset.uri, name: filename, type: mime };
       });
-
-      const uploadedUrls = (await Promise.all(uploadPromises)).filter((url): url is string => Boolean(url));
-      if (uploadedUrls.length > 0) {
-        const payloadImageUrl = uploadedUrls.length === 1 ? uploadedUrls[0] : JSON.stringify(uploadedUrls);
-        await handleSend("", payloadImageUrl);
-      }
+      await handleSend("", localFiles);
     } catch (err: any) {
       console.warn("Failed to pick and send image", err);
       Alert.alert("Upload Failed", err?.message || "Could not upload image. Please try again.");
     }
-  }, [conversationId, accessToken, handleSend, isImagesLocked]);
+  }, [conversationId, accessToken, handleSend]);
 
   const handleTakePhoto = useCallback(async () => {
     if (!conversationId || !accessToken) return;
@@ -1357,51 +1391,80 @@ export default function ConversationScreen() {
       const asset = result.assets[0];
       const filename = asset.fileName || asset.uri.split("/").pop() || `camera_${Date.now()}.jpg`;
       const mime = asset.mimeType || (/\.png$/i.test(filename) ? "image/png" : "image/jpeg");
-
-      const uploadRes = await uploadChatFile(
-        { uri: asset.uri, name: filename, type: mime },
-        accessToken
-      );
-      if (uploadRes?.url) {
-        await handleSend("", uploadRes.url);
-      }
+      await handleSend("", [{ uri: asset.uri, name: filename, type: mime }]);
     } catch (err: any) {
       console.warn("Failed to take photo and send", err);
       Alert.alert("Camera Failed", err?.message || "Could not upload photo. Please try again.");
     }
-  }, [conversationId, accessToken, handleSend, isImagesLocked]);
+  }, [conversationId, accessToken, handleSend]);
 
   // ── Retry failed message (Optimistic background retry with clientMessageId) ───
   const handleRetry = useCallback(
     async (failedMsg: Message) => {
       if (!conversationId || !accessToken || !user) return;
       const targetClientId = failedMsg.clientMessageId || failedMsg.id;
+      const pendingFiles = failedMediaFilesRef.current[targetClientId];
 
       // 1. Immediately transition status back to "sending" (0ms UI update)
       setMessages((prev) =>
         prev.map((m) =>
           (m.clientMessageId && m.clientMessageId === targetClientId) || m.id === targetClientId
-            ? { ...m, status: "sending" as const }
+            ? { ...m, status: "sending" as const, uploadProgress: pendingFiles?.length ? 6 : undefined }
             : m
         )
       );
 
       try {
+        let imageUrlToSend = failedMsg.image_url;
+        if (pendingFiles && pendingFiles.length > 0) {
+          const fileProgress = new Array(pendingFiles.length).fill(0);
+          let lastReported = 6;
+          const uploadRes = await Promise.all(
+            pendingFiles.map((file, idx) =>
+              uploadChatFile(file, accessToken, (pct) => {
+                fileProgress[idx] = pct;
+                const avg = fileProgress.reduce((sum, v) => sum + v, 0) / pendingFiles.length;
+                const mapped = Math.round(8 + (avg / 100) * 84);
+                if (mapped - lastReported >= 2 || mapped >= 92) {
+                  lastReported = mapped;
+                  setMessages((prev) =>
+                    prev.map((m) =>
+                      (m.clientMessageId && m.clientMessageId === targetClientId) || m.id === targetClientId
+                        ? { ...m, uploadProgress: mapped }
+                        : m
+                    )
+                  );
+                }
+              })
+            )
+          );
+          const urls = uploadRes.map((r) => r?.url).filter((u): u is string => Boolean(u));
+          urls.forEach((remoteUrl, i) => {
+            if (pendingFiles[i]?.uri) {
+              registerUploadedMediaCache(remoteUrl, pendingFiles[i].uri);
+            }
+          });
+          imageUrlToSend = urls.length === 1 ? urls[0] : JSON.stringify(urls);
+        }
+
         const savedMsg = await sendMessage(
           conversationId,
           {
             content: failedMsg.content,
-            imageUrl: failedMsg.image_url,
+            imageUrl: imageUrlToSend,
             replyToMessageId: failedMsg.reply_to_message_id,
             clientMessageId: targetClientId,
           },
           accessToken
         );
 
+        delete failedMediaFilesRef.current[targetClientId];
+
         const confirmedMsg: Message = {
           ...savedMsg,
           clientMessageId: targetClientId,
           status: "sent",
+          uploadProgress: 100,
         };
 
         setMessages((prev) => {

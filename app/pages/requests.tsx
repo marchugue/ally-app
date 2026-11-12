@@ -1,4 +1,4 @@
-import { getAnonymousDisplayName, getAnonymousAvatarKey, isAnonymousHandle } from "@/lib/anonymousHandle";
+import { getAnonymousDisplayName, getAnonymousAvatarKey } from "@/lib/anonymousHandle";
 import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   View,
@@ -11,20 +11,20 @@ import {
   Modal,
 } from "react-native";
 import { router } from "expo-router";
+import { LinearGradient } from "expo-linear-gradient";
 import {
   ArrowLeft,
   UserPlus,
   Check,
   X,
   Filter,
-  ChevronDown,
   Sparkles,
-  Clock,
 } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { AnonymousAvatar } from "@/components/AnonymousAvatar";
 import { EmptyState } from "@/components/EmptyState";
 import { useAuth } from "@/lib/auth/AuthContext";
+import { useTheme } from "@/context/ThemeContext";
 import {
   getFriendRequestNotifications,
   markNotificationRead,
@@ -78,6 +78,7 @@ function isRecent(dateStr?: string): boolean {
 export default function RequestsScreen() {
   const insets = useSafeAreaInsets();
   const { accessToken } = useAuth();
+  const { colors, isDark } = useTheme();
   const [requests, setRequests] = useState<NotificationItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -182,46 +183,142 @@ export default function RequestsScreen() {
 
   if (loading && requests.length === 0) {
     return (
-      <View style={{ flex: 1, backgroundColor: "#F9FAFB", alignItems: "center", justifyContent: "center" }}>
-        <ActivityIndicator color="#1A6B3C" size="large" />
+      <View
+        style={{
+          flex: 1,
+          backgroundColor: colors.background,
+          alignItems: "center",
+          justifyContent: "center",
+        }}
+      >
+        <ActivityIndicator color={colors.primary} size="large" />
       </View>
     );
   }
 
   return (
-    <View style={{ flex: 1, backgroundColor: "#F9FAFB" }}>
-      {/* ═══ Header ═══ */}
+    <View style={{ flex: 1, backgroundColor: colors.background }}>
+      {/* ═══ Top Sticky Header with Seamless Transparent Blend ═══ */}
       <View
         style={{
-          paddingTop: insets.top + 8,
-          paddingBottom: 12,
-          paddingHorizontal: 16,
-          backgroundColor: "#FFFFFF",
-          borderBottomWidth: 1,
-          borderBottomColor: "#E5E7EB",
-          flexDirection: "row",
-          alignItems: "center",
-          justifyContent: "space-between",
+          position: "absolute",
+          top: 0,
+          left: 0,
+          right: 0,
+          zIndex: 20,
         }}
+        pointerEvents="box-none"
       >
-        <View style={{ flexDirection: "row", alignItems: "center", gap: 12 }}>
-          <TouchableOpacity onPress={() => router.back()} hitSlop={10} activeOpacity={0.7}>
-            <ArrowLeft size={22} color="#111827" />
-          </TouchableOpacity>
-          <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
-            <Text style={{ fontSize: 18, fontWeight: "800", color: "#111827" }}>
+        <View
+          style={{
+            backgroundColor: colors.surface,
+            paddingHorizontal: 16,
+            paddingTop: insets.top + 8,
+            paddingBottom: 8,
+            minHeight: insets.top + 48,
+            flexDirection: "row",
+            alignItems: "center",
+            justifyContent: "space-between",
+          }}
+        >
+          {/* Left: Fully Rounded Pill Back Button */}
+          <View style={{ flex: 1, flexDirection: "row", alignItems: "center" }}>
+            <TouchableOpacity
+              onPress={() => router.back()}
+              hitSlop={10}
+              activeOpacity={0.7}
+              accessibilityRole="button"
+              accessibilityLabel="Back to Notifications"
+              style={{
+                width: 38,
+                height: 38,
+                borderRadius: 999,
+                backgroundColor: colors.surfaceMuted,
+                borderWidth: 1,
+                borderColor: colors.border,
+                alignItems: "center",
+                justifyContent: "center",
+              }}
+            >
+              <ArrowLeft size={19} color={colors.textPrimary} />
+            </TouchableOpacity>
+          </View>
+
+          {/* Center: Match Requests Title + Filter Trigger (matching Notification screen) */}
+          <TouchableOpacity
+            onPress={() => setShowFilterDropdown((prev) => !prev)}
+            hitSlop={10}
+            activeOpacity={0.65}
+            accessibilityRole="button"
+            accessibilityLabel="Filter match requests"
+            style={{
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "center",
+              gap: 8,
+              paddingVertical: 4,
+              paddingHorizontal: 8,
+            }}
+          >
+            <Text
+              numberOfLines={1}
+              style={{
+                fontFamily: "Fraunces_700Bold",
+                fontSize: 22,
+                color: isDark ? "rgba(255,255,255,0.85)" : colors.primary,
+                letterSpacing: -0.5,
+              }}
+            >
               Match Requests
             </Text>
+
+            <View style={{ position: "relative", alignItems: "center", justifyContent: "center" }}>
+              <Filter size={17} color={colors.primary} strokeWidth={2.3} />
+              {activeFilter !== "all" && (
+                <View
+                  style={{
+                    position: "absolute",
+                    top: -3,
+                    right: -3,
+                    width: 8,
+                    height: 8,
+                    borderRadius: 4,
+                    backgroundColor: colors.primary,
+                    borderWidth: 1.5,
+                    borderColor: colors.surface,
+                  }}
+                />
+              )}
+            </View>
+          </TouchableOpacity>
+
+          {/* Right: Balanced Pending Count Pill */}
+          <View
+            style={{
+              flex: 1,
+              flexDirection: "row",
+              alignItems: "center",
+              justifyContent: "flex-end",
+            }}
+          >
             {counts.all > 0 && (
               <View
                 style={{
-                  backgroundColor: "#1A6B3C",
-                  paddingHorizontal: 8,
-                  paddingVertical: 2,
-                  borderRadius: 12,
+                  backgroundColor: colors.primarySoft,
+                  paddingHorizontal: 10,
+                  paddingVertical: 4,
+                  borderRadius: 999,
+                  borderWidth: 1,
+                  borderColor: isDark ? "rgba(16,185,129,0.22)" : "rgba(26,107,60,0.16)",
                 }}
               >
-                <Text style={{ fontSize: 11, fontWeight: "800", color: "#FFFFFF" }}>
+                <Text
+                  style={{
+                    fontSize: 11,
+                    fontFamily: "PlusJakartaSans-Bold",
+                    color: colors.primary,
+                  }}
+                >
                   {counts.all}
                 </Text>
               </View>
@@ -229,31 +326,16 @@ export default function RequestsScreen() {
           </View>
         </View>
 
-        {/* Filter Toggle Button */}
-        <TouchableOpacity
-          onPress={() => setShowFilterDropdown((prev) => !prev)}
-          hitSlop={8}
-          activeOpacity={0.7}
-          style={{
-            flexDirection: "row",
-            alignItems: "center",
-            gap: 6,
-            backgroundColor: "#F3F4F6",
-            paddingHorizontal: 10,
-            paddingVertical: 6,
-            borderRadius: 12,
-            borderWidth: 1,
-            borderColor: "#E5E7EB",
-          }}
-        >
-          <Filter size={15} color="#1A6B3C" />
-          <Text style={{ fontSize: 12, fontWeight: "700", color: "#111827" }}>
-            {activeFilter === "all" ? "All" : activeFilter === "unread" ? "Unread" : "Recent"}
-          </Text>
-          <ChevronDown size={13} color="#6B7280" />
-        </TouchableOpacity>
+        <LinearGradient
+          colors={
+            isDark
+              ? ["#181818", "rgba(24, 24, 24, 0.9)", "rgba(24, 24, 24, 0.4)", "rgba(24, 24, 24, 0)"]
+              : ["#FFFFFF", "rgba(255, 255, 255, 0.9)", "rgba(255, 255, 255, 0.4)", "rgba(255, 255, 255, 0)"]
+          }
+          style={{ height: 28, width: "100%" }}
+          pointerEvents="none"
+        />
       </View>
-
 
       {/* ═══ Requests List ═══ */}
       <FlatList
@@ -263,16 +345,21 @@ export default function RequestsScreen() {
           <RefreshControl
             refreshing={refreshing}
             onRefresh={onRefresh}
-            tintColor="#1A6B3C"
+            tintColor={colors.primary}
+            progressViewOffset={insets.top + 48}
           />
         }
         contentContainerStyle={
           filteredRequests.length === 0
-            ? { flex: 1, padding: 20 }
-            : { paddingVertical: 12, paddingHorizontal: 16, gap: 12 }
+            ? { flexGrow: 1, paddingTop: insets.top + 68, paddingHorizontal: 20 }
+            : {
+                paddingTop: insets.top + 54,
+                paddingBottom: Math.max(insets.bottom + 24, 36),
+              }
         }
         renderItem={({ item }) => {
           const isProcessing = processing.has(item.id);
+          const isUnread = !(item.is_read ?? item.isRead ?? item.read ?? false);
           const message = item.message || item.description || "Sent you a match request";
           const requesterId = item.from_user_id || item.fromUserId;
           const status = handledStatus[item.id];
@@ -292,161 +379,175 @@ export default function RequestsScreen() {
           return (
             <View
               style={{
-                backgroundColor: "#FFFFFF",
-                borderRadius: 18,
-                padding: 16,
-                borderWidth: 1,
-                borderColor: "#E5E7EB",
-                shadowColor: "#000",
-                shadowOffset: { width: 0, height: 1 },
-                shadowOpacity: 0.04,
-                shadowRadius: 4,
-                elevation: 1,
-                opacity: isProcessing ? 0.6 : 1,
+                flexDirection: "row",
+                alignItems: "flex-start",
+                gap: 12,
+                paddingHorizontal: 16,
+                paddingVertical: 14,
+                backgroundColor: isUnread ? colors.primarySoft : colors.surface,
+                borderBottomWidth: 1,
+                borderBottomColor: colors.border,
+                opacity: isProcessing ? 0.65 : 1,
               }}
             >
-              <View style={{ flexDirection: "row", alignItems: "flex-start", gap: 12 }}>
-                <AnonymousAvatar avatarKey={anonAvatarKey} size={46} />
-                <View style={{ flex: 1, minWidth: 0 }}>
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 6, flexWrap: "wrap" }}>
-                    <Text style={{ fontSize: 15, fontWeight: "700", color: "#111827" }}>
-                      {anonName}
-                    </Text>
-                    <View
-                      style={{
-                        flexDirection: "row",
-                        alignItems: "center",
-                        gap: 3,
-                        backgroundColor: "#FEF3C7",
-                        paddingHorizontal: 7,
-                        paddingVertical: 2,
-                        borderRadius: 10,
-                      }}
-                    >
-                      <Sparkles size={10} color="#D97706" />
-                      <Text style={{ fontSize: 10, fontWeight: "800", color: "#92400E" }}>
-                        MATCH REQUEST
-                      </Text>
-                    </View>
-                  </View>
-
-                  {/* Message Quote Box */}
-                  <View
-                    style={{
-                      backgroundColor: "#F9FAFB",
-                      borderRadius: 12,
-                      paddingHorizontal: 12,
-                      paddingVertical: 8,
-                      marginTop: 8,
-                      borderWidth: 1,
-                      borderColor: "#F3F4F6",
-                    }}
-                  >
-                    <Text style={{ fontSize: 12.5, color: "#4B5563", fontStyle: "italic", lineHeight: 18 }}>
-                      "{message}"
-                    </Text>
-                  </View>
-
-                  {/* Sent time */}
-                  <View style={{ flexDirection: "row", alignItems: "center", gap: 4, marginTop: 8 }}>
-                    <Clock size={11} color="#9CA3AF" />
-                    <Text style={{ fontSize: 11, color: "#9CA3AF" }}>
-                      Sent {formatTimestamp(item.created_at || item.timestamp)}
-                    </Text>
-                  </View>
+              {/* Avatar with corner Sparkles badge matching notification rows */}
+              <View style={{ position: "relative", flexShrink: 0 }}>
+                <AnonymousAvatar avatarKey={anonAvatarKey} size={44} />
+                <View
+                  style={{
+                    position: "absolute",
+                    bottom: -2,
+                    right: -2,
+                    width: 18,
+                    height: 18,
+                    borderRadius: 9,
+                    backgroundColor: "#D97706",
+                    alignItems: "center",
+                    justifyContent: "center",
+                    borderWidth: 2,
+                    borderColor: colors.surface,
+                  }}
+                >
+                  <Sparkles size={10} color="#FFFFFF" />
                 </View>
               </View>
 
-              {/* Two-Column One-Row Buttons */}
-              {status === "accepted" ? (
-                <View
+              {/* Middle Content */}
+              <View style={{ flex: 1, minWidth: 0, paddingRight: 4 }}>
+                <Text
                   style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: 6,
-                    marginTop: 12,
-                    paddingVertical: 8,
-                    backgroundColor: "rgba(26,107,60,0.08)",
-                    borderRadius: 12,
+                    fontSize: 13.5,
+                    lineHeight: 18,
                   }}
+                  numberOfLines={2}
                 >
-                  <Check size={15} color="#1A6B3C" />
-                  <Text style={{ fontSize: 12.5, fontWeight: "700", color: "#1A6B3C" }}>
-                    Match Request Accepted
+                  <Text style={{ fontFamily: "PlusJakartaSans-Bold", color: colors.textPrimary }}>
+                    {anonName}
                   </Text>
-                </View>
-              ) : status === "declined" ? (
-                <View
-                  style={{
-                    flexDirection: "row",
-                    alignItems: "center",
-                    justifyContent: "center",
-                    gap: 6,
-                    marginTop: 12,
-                    paddingVertical: 8,
-                    backgroundColor: "#F3F4F6",
-                    borderRadius: 12,
-                  }}
-                >
-                  <X size={15} color="#6B7280" />
-                  <Text style={{ fontSize: 12.5, fontWeight: "600", color: "#6B7280" }}>
-                    Match Request Declined
-                  </Text>
-                </View>
-              ) : (
-                <View style={{ flexDirection: "row", gap: 10, marginTop: 12 }}>
-                  <TouchableOpacity
-                    onPress={() => handleAccept(item)}
-                    disabled={isProcessing}
-                    activeOpacity={0.7}
+                  <Text
                     style={{
-                      flex: 1,
-                      backgroundColor: "#1A6B3C",
-                      paddingVertical: 9,
-                      borderRadius: 12,
-                      flexDirection: "row",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: 6,
+                      fontFamily: "PlusJakartaSans",
+                      fontWeight: isUnread ? "600" : "400",
+                      color: isUnread ? colors.textPrimary : colors.textSecondary,
                     }}
                   >
-                    <Check size={15} color="#FFFFFF" />
-                    <Text style={{ fontSize: 13, fontWeight: "700", color: "#FFFFFF" }}>
-                      {isProcessing ? "Accepting..." : "Accept Request"}
-                    </Text>
-                  </TouchableOpacity>
+                    {" sent you a match request"}
+                  </Text>
+                </Text>
 
-                  <TouchableOpacity
-                    onPress={() => handleReject(item)}
-                    disabled={isProcessing}
-                    activeOpacity={0.7}
+                {Boolean(message) && message.toLowerCase() !== "sent you a match request" && (
+                  <Text
+                    numberOfLines={2}
                     style={{
-                      flex: 1,
-                      backgroundColor: "#F3F4F6",
-                      paddingVertical: 9,
-                      borderRadius: 12,
-                      flexDirection: "row",
-                      alignItems: "center",
-                      justifyContent: "center",
-                      gap: 6,
-                      borderWidth: 1,
-                      borderColor: "#E5E7EB",
+                      fontSize: 12.5,
+                      lineHeight: 17,
+                      color: colors.textSecondary,
+                      fontFamily: "PlusJakartaSans",
+                      marginTop: 3,
                     }}
                   >
-                    <X size={15} color="#4B5563" />
-                    <Text style={{ fontSize: 13, fontWeight: "600", color: "#4B5563" }}>
-                      {isProcessing ? "Declining..." : "Decline Request"}
+                    {`"${message}"`}
+                  </Text>
+                )}
+
+                {/* Full-width 1-row iconless Confirm / Decline pill CTAs */}
+                {status === "accepted" ? (
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 5, marginTop: 8 }}>
+                    <Check size={13} color={colors.primary} strokeWidth={2.5} />
+                    <Text style={{ fontSize: 12, fontFamily: "PlusJakartaSans-Bold", color: colors.primary }}>
+                      Match Request Accepted
                     </Text>
-                  </TouchableOpacity>
-                </View>
-              )}
+                  </View>
+                ) : status === "declined" ? (
+                  <View style={{ flexDirection: "row", alignItems: "center", gap: 5, marginTop: 8 }}>
+                    <X size={13} color={colors.textMuted} />
+                    <Text style={{ fontSize: 12, fontWeight: "600", color: colors.textMuted }}>
+                      Match Request Declined
+                    </Text>
+                  </View>
+                ) : (
+                  <View style={{ flexDirection: "row", gap: 8, marginTop: 10, width: "100%" }}>
+                    <TouchableOpacity
+                      onPress={() => handleAccept(item)}
+                      disabled={isProcessing}
+                      activeOpacity={0.7}
+                      style={{
+                        flex: 1,
+                        backgroundColor: colors.primary,
+                        paddingVertical: 8.5,
+                        paddingHorizontal: 12,
+                        borderRadius: 999,
+                        alignItems: "center",
+                        justifyContent: "center",
+                      }}
+                    >
+                      <Text style={{ fontSize: 12.5, fontFamily: "PlusJakartaSans-Bold", color: "#FFFFFF" }}>
+                        {isProcessing ? "Confirming..." : "Confirm"}
+                      </Text>
+                    </TouchableOpacity>
+
+                    <TouchableOpacity
+                      onPress={() => handleReject(item)}
+                      disabled={isProcessing}
+                      activeOpacity={0.7}
+                      style={{
+                        flex: 1,
+                        backgroundColor: colors.surfaceMuted,
+                        paddingVertical: 8.5,
+                        paddingHorizontal: 12,
+                        borderRadius: 999,
+                        alignItems: "center",
+                        justifyContent: "center",
+                        borderWidth: 1,
+                        borderColor: colors.border,
+                      }}
+                    >
+                      <Text style={{ fontSize: 12.5, fontWeight: "600", color: colors.textSecondary }}>
+                        {isProcessing ? "Declining..." : "Decline"}
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
+              </View>
+
+              {/* Right Timestamp + Unread Dot */}
+              <View
+                style={{
+                  flexDirection: "row",
+                  alignItems: "center",
+                  paddingTop: 1,
+                  gap: 6,
+                  flexShrink: 0,
+                }}
+              >
+                <Text
+                  style={{
+                    fontSize: 11,
+                    fontWeight: "500",
+                    color: colors.textMuted,
+                    fontFamily: "PlusJakartaSans",
+                  }}
+                >
+                  {formatTimestamp(item.created_at || item.timestamp)}
+                </Text>
+
+                {isUnread && (
+                  <View
+                    style={{
+                      width: 7,
+                      height: 7,
+                      borderRadius: 4,
+                      backgroundColor: colors.primary,
+                    }}
+                  />
+                )}
+              </View>
             </View>
           );
         }}
         ListEmptyComponent={
           <EmptyState
-            icon={<UserPlus size={28} color="#1A6B3C" />}
+            icon={<UserPlus size={28} color={colors.primary} />}
             title={activeFilter === "all" ? "No pending requests" : `No ${activeFilter} requests`}
             description={
               activeFilter === "all"
@@ -457,7 +558,7 @@ export default function RequestsScreen() {
         }
       />
 
-      {/* ═══ Dropdown Filter Modal ═══ */}
+      {/* ═══ Centered Filter Dropdown Modal (matching Notifications) ═══ */}
       <Modal
         visible={showFilterDropdown}
         transparent
@@ -467,29 +568,42 @@ export default function RequestsScreen() {
         <Pressable
           style={{
             flex: 1,
-            backgroundColor: "rgba(0,0,0,0.3)",
+            backgroundColor: isDark ? "rgba(0,0,0,0.45)" : "rgba(0,0,0,0.22)",
             justifyContent: "flex-start",
-            paddingTop: insets.top + 55,
-            paddingHorizontal: 16,
+            alignItems: "center",
+            paddingTop: insets.top + 54,
           }}
           onPress={() => setShowFilterDropdown(false)}
         >
           <View
             style={{
-              backgroundColor: "#FFFFFF",
+              backgroundColor: colors.surface,
               borderRadius: 16,
-              padding: 8,
+              paddingVertical: 8,
+              paddingHorizontal: 6,
               borderWidth: 1,
-              borderColor: "#E5E7EB",
+              borderColor: colors.border,
               shadowColor: "#000",
-              shadowOffset: { width: 0, height: 4 },
-              shadowOpacity: 0.1,
-              shadowRadius: 10,
-              elevation: 5,
-              alignSelf: "flex-end",
-              width: 220,
+              shadowOffset: { width: 0, height: 6 },
+              shadowOpacity: isDark ? 0.45 : 0.12,
+              shadowRadius: 14,
+              elevation: 8,
+              width: 230,
             }}
           >
+            <Text
+              style={{
+                fontSize: 10,
+                fontFamily: "PlusJakartaSans-Bold",
+                color: colors.textMuted,
+                textTransform: "uppercase",
+                letterSpacing: 0.8,
+                paddingHorizontal: 10,
+                paddingVertical: 6,
+              }}
+            >
+              Filter requests
+            </Text>
             {[
               { id: "all", label: "All Requests", count: counts.all },
               { id: "unread", label: "Unread", count: counts.unread },
@@ -508,23 +622,23 @@ export default function RequestsScreen() {
                     flexDirection: "row",
                     alignItems: "center",
                     justifyContent: "space-between",
-                    paddingVertical: 10,
-                    paddingHorizontal: 12,
+                    paddingVertical: 9,
+                    paddingHorizontal: 10,
                     borderRadius: 10,
-                    backgroundColor: isSelected ? "rgba(26,107,60,0.08)" : "transparent",
+                    backgroundColor: isSelected ? colors.primarySoft : "transparent",
                   }}
                 >
                   <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
                     {isSelected ? (
-                      <Check size={14} color="#1A6B3C" />
+                      <Check size={14} color={colors.primary} strokeWidth={2.5} />
                     ) : (
                       <View style={{ width: 14 }} />
                     )}
                     <Text
                       style={{
                         fontSize: 13,
-                        fontWeight: isSelected ? "700" : "500",
-                        color: isSelected ? "#1A6B3C" : "#374151",
+                        fontFamily: isSelected ? "PlusJakartaSans-Bold" : "PlusJakartaSans",
+                        color: isSelected ? colors.primary : colors.textPrimary,
                       }}
                     >
                       {option.label}
@@ -532,17 +646,17 @@ export default function RequestsScreen() {
                   </View>
                   <View
                     style={{
-                      backgroundColor: isSelected ? "#1A6B3C" : "#F3F4F6",
-                      paddingHorizontal: 6,
-                      paddingVertical: 1,
-                      borderRadius: 10,
+                      backgroundColor: isSelected ? colors.primary : colors.surfaceMuted,
+                      paddingHorizontal: 7,
+                      paddingVertical: 2,
+                      borderRadius: 999,
                     }}
                   >
                     <Text
                       style={{
                         fontSize: 10,
-                        fontWeight: "700",
-                        color: isSelected ? "#FFFFFF" : "#6B7280",
+                        fontFamily: "PlusJakartaSans-Bold",
+                        color: isSelected ? "#FFFFFF" : colors.textMuted,
                       }}
                     >
                       {option.count}

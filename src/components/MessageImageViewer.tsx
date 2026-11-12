@@ -7,7 +7,6 @@ import {
   TouchableOpacity,
   Dimensions,
   FlatList,
-  Image,
   Share,
   StyleSheet,
   StatusBar,
@@ -16,8 +15,9 @@ import {
 } from "react-native";
 import { SafeAreaView, useSafeAreaInsets } from "react-native-safe-area-context";
 import { ArrowLeft, ChevronLeft, ChevronRight, Reply, Share2 } from "lucide-react-native";
+import { Image as ExpoImage } from "expo-image";
 import type { Message } from "@/types/conversation";
-import { resolveImageUri } from "./UserAvatar";
+import { resolveCachedMediaUri } from "@/lib/mediaCache";
 
 const { width: SCREEN_WIDTH, height: SCREEN_HEIGHT } = Dimensions.get("window");
 
@@ -81,7 +81,7 @@ export function MessageImageViewer({
       if (message.content && typeof message.content === "string") {
         const trimmed = message.content.trim();
         if (/^https?:\/\/.+\.(jpg|jpeg|png|webp|gif)(\?.*)?$/i.test(trimmed)) {
-          const uri = resolveImageUri(trimmed);
+          const uri = resolveCachedMediaUri(trimmed);
           if (uri) return [uri];
         }
       }
@@ -89,7 +89,7 @@ export function MessageImageViewer({
     }
 
     if (Array.isArray(raw)) {
-      return raw.map(resolveImageUri).filter((u): u is string => Boolean(u));
+      return raw.map(resolveCachedMediaUri).filter((u): u is string => Boolean(u));
     }
     if (typeof raw === "string") {
       const trimmed = raw.trim();
@@ -97,11 +97,11 @@ export function MessageImageViewer({
         try {
           const parsed = JSON.parse(trimmed);
           if (Array.isArray(parsed)) {
-            return parsed.map(resolveImageUri).filter((u): u is string => Boolean(u));
+            return parsed.map(resolveCachedMediaUri).filter((u): u is string => Boolean(u));
           }
         } catch {}
       }
-      const uri = resolveImageUri(trimmed);
+      const uri = resolveCachedMediaUri(trimmed);
       if (uri) return [uri];
     }
     return [];
@@ -212,10 +212,11 @@ export function MessageImageViewer({
             })}
             renderItem={({ item }) => (
               <View style={styles.slide}>
-                <Image
+                <ExpoImage
                   source={{ uri: item }}
+                  cachePolicy="memory-disk"
                   style={styles.fullImage}
-                  resizeMode="contain"
+                  contentFit="contain"
                 />
               </View>
             )}
@@ -272,10 +273,11 @@ export function MessageImageViewer({
                       isActive && styles.thumbnailWrapperActive,
                     ]}
                   >
-                    <Image
+                    <ExpoImage
                       source={{ uri: img }}
+                      cachePolicy="memory-disk"
                       style={styles.thumbnailImage}
-                      resizeMode="cover"
+                      contentFit="cover"
                     />
                   </TouchableOpacity>
                 );

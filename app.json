@@ -108,7 +108,10 @@
       "url": "https://u.expo.dev/fb558069-d3da-43c2-ad88-5c3ee45b5144",
       "enabled": true,
       "checkAutomatically": "ON_LOAD",
-      "fallbackToCacheTimeout": 0
+      "fallbackToCacheTimeout": 0,
+      "requestHeaders": {
+        "expo-channel-name": "production"
+      }
     },
     "runtimeVersion": {
       "policy": "appVersion"

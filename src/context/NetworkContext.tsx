@@ -72,29 +72,51 @@ export function NetworkProvider({ children }: { children: React.ReactNode }) {
   // Check for App Updates against domain endpoint & Expo OTA updates
   const checkForUpdates = useCallback(async (manual = false) => {
     try {
-      // 1. Check Expo OTA updates if enabled in native build
+      // 1. Check Expo OTA updates if enabled in native build (isolated so errors fall through to version.json)
       if (Updates.isEnabled && !__DEV__) {
-        const otaCheck = await Updates.checkForUpdateAsync();
-        if (otaCheck.isAvailable) {
-          setIsUpdateAvailable(true);
-          setShowUpdateModal(true);
-          const otaInfo: VersionInfo = {
-            version: 'OTA Update Available',
-            downloadUrl: 'https://ally-jis.com/download',
-            releaseNotes: 'An instant Over-The-Air performance and feature patch is ready to download.',
-          };
-          setVersionInfo(otaInfo);
-          return { isAvailable: true, info: otaInfo };
+        try {
+          const otaCheck = await Updates.checkForUpdateAsync();
+          if (otaCheck.isAvailable) {
+            setIsUpdateAvailable(true);
+            setShowUpdateModal(true);
+            const otaInfo: VersionInfo = {
+              version: 'OTA Update Available',
+              downloadUrl: 'https://ally-jis.com/download',
+              releaseNotes: 'An instant Over-The-Air performance and feature patch is ready to download.',
+            };
+            setVersionInfo(otaInfo);
+            return { isAvailable: true, info: otaInfo };
+          }
+        } catch (otaErr: any) {
+          console.warn('Expo OTA check skipped:', otaErr?.message || otaErr);
         }
       }
 
-      // 2. Check domain version manifest (ally-jis.com/version.json)
-      const endpoint = 'https://ally-jis.com/version.json';
-      const response = await fetch(endpoint, { cache: 'no-store' });
-      if (!response.ok) {
-        throw new Error(`Failed to fetch version info (${response.status})`);
+      // 2. Check domain version manifest (prefer www.ally-jis.com directly to avoid 308 redirect hops)
+      const versionEndpoints = [
+        'https://www.ally-jis.com/version.json',
+        'https://ally-jis.com/version.json',
+      ];
+      let data: VersionInfo | null = null;
+      let lastErr: Error | null = null;
+
+      for (const endpoint of versionEndpoints) {
+        try {
+          const response = await fetch(endpoint, { cache: 'no-store' });
+          if (!response.ok) {
+            throw new Error(`Failed to fetch version info (${response.status})`);
+          }
+          data = (await response.json()) as VersionInfo;
+          break;
+        } catch (fetchErr: any) {
+          lastErr = fetchErr;
+        }
       }
-      const data: VersionInfo = await response.json();
+
+      if (!data) {
+        throw lastErr || new Error('Failed to fetch version info');
+      }
+
       setVersionInfo(data);
 
       const hasNewerVersion = compareVersions(data.version, currentVersion) > 0;

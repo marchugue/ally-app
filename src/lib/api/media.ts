@@ -78,7 +78,12 @@ export function sanitizeFile(file: LocalFile): { uri: string; name: string; type
  * to Android's NetworkingModule / iOS RCTNetworking, which natively streams the file
  * from local device storage (file:// or content://) via OkHttp / NSURLSession.
  */
-function uploadViaXHR<T>(path: string, formData: FormData, accessToken?: string): Promise<T> {
+function uploadViaXHR<T>(
+  path: string,
+  formData: FormData,
+  accessToken?: string,
+  onProgress?: (progress: number) => void
+): Promise<T> {
   const url = `${API_BASE_URL}/api${path}`;
 
   return new Promise((resolve, reject) => {
@@ -89,6 +94,15 @@ function uploadViaXHR<T>(path: string, formData: FormData, accessToken?: string)
       xhr.setRequestHeader("Authorization", `Bearer ${accessToken}`);
     }
     xhr.setRequestHeader("Accept", "application/json");
+
+    if (xhr.upload && onProgress) {
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable && event.total > 0) {
+          const pct = Math.max(0, Math.min(100, Math.round((event.loaded / event.total) * 100)));
+          onProgress(pct);
+        }
+      };
+    }
 
     xhr.onload = () => {
       let data: any = null;
@@ -161,11 +175,12 @@ export async function uploadUserAvatar(
 /** POST /api/media/chat — field name "file" */
 export async function uploadChatFile(
   file: LocalFile,
-  accessToken: string
+  accessToken: string,
+  onProgress?: (progress: number) => void
 ): Promise<ChatMediaUploadResult> {
   const formData = new FormData();
   await appendFileToFormData(formData, "file", file);
-  return uploadViaXHR<ChatMediaUploadResult>("/media/chat", formData, accessToken);
+  return uploadViaXHR<ChatMediaUploadResult>("/media/chat", formData, accessToken, onProgress);
 }
 
 /** POST /api/media/posts — field name "files", max 4 */

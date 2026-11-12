@@ -746,7 +746,13 @@ export default function DiscoverScreen() {
             <View style={{ flexDirection: "row", gap: 12, marginBottom: 16 }}>
               {/* Card 1: Anonymous */}
               <Pressable
-                onPress={isInQueue ? () => void matchmaking.leaveQueue() : handleFindMatch}
+                onPress={
+                  matchmaking.phase === "pending"
+                    ? () => setShowMatchOverlay(true)
+                    : isInQueue
+                    ? () => void matchmaking.leaveQueue()
+                    : handleFindMatch
+                }
                 disabled={!canMatch && !isInQueue}
                 style={{
                   flex: 1,
@@ -2609,12 +2615,7 @@ export default function DiscoverScreen() {
 
       {/* ═══ Matchmaking Fullscreen Queue Overlay Modal ═══ */}
       <MatchmakingOverlayModal
-        visible={
-          (showMatchOverlay ||
-            matchmaking.phase === "searching" ||
-            matchmaking.phase === "pending") &&
-          matchmaking.phase !== "accepted"
-        }
+        visible={showMatchOverlay && matchmaking.phase !== "accepted"}
         onClose={() => setShowMatchOverlay(false)}
         matchmaking={matchmaking}
       />

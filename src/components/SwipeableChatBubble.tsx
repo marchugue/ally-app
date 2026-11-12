@@ -1,8 +1,16 @@
-import { useRef, useCallback } from "react";
-import { View, Text } from "react-native";
-import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
+import { useCallback } from "react";
+import { View, Platform, useWindowDimensions } from "react-native";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
+import Animated, {
+  runOnJS,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming,
+} from "react-native-reanimated";
 import { Reply } from "lucide-react-native";
 import { ChatBubble, type BubbleLayout } from "./ChatBubble";
+import { useTheme } from "@/context/ThemeContext";
 import type { Message, MessageGroupPosition } from "@/types/conversation";
 import type { AvatarRevealView } from "@/lib/api/matchmaking";
 
@@ -24,21 +32,25 @@ interface SwipeableChatBubbleProps {
   partnerProfileImage?: string | null;
 }
 
-/** Reply arrow indicator shown during swipe */
-function ReplyIndicator() {
+const MAX_SLIDE_DISTANCE = 72;
+const HALF_SLIDE_THRESHOLD = MAX_SLIDE_DISTANCE * 0.5; // 50% slide triggers reply & icon pill
+
+/** Fully rounded pill reply icon indicator */
+function ReplyIndicator({ isDark }: { isDark: boolean }) {
   return (
     <View
       style={{
-        width: 40,
-        height: 40,
-        borderRadius: 20,
-        backgroundColor: "#E8F5EE",
+        width: 36,
+        height: 36,
+        borderRadius: 999,
+        backgroundColor: isDark ? "rgba(16, 185, 129, 0.22)" : "#E8F5EE",
+        borderWidth: 1,
+        borderColor: isDark ? "rgba(16, 185, 129, 0.35)" : "rgba(26, 107, 60, 0.14)",
         justifyContent: "center",
         alignItems: "center",
-        alignSelf: "center",
       }}
     >
-      <Reply size={18} color="#1A6B3C" />
+      <Reply size={18} color={isDark ? "#34D399" : "#1A6B3C"} />
     </View>
   );
 }
@@ -60,116 +72,108 @@ export function SwipeableChatBubble({
   partnerAvatar,
   partnerProfileImage,
 }: SwipeableChatBubbleProps) {
-  const swipeRef = useRef<any>(null);
+  const { width } = useWindowDimensions();
+  const { isDark } = useTheme();
+  const isMobileViewport = Platform.OS !== "web" || width < 768;
 
-  const handleSwipeOpen = useCallback(() => {
-    // Close the swipe immediately, then trigger reply
-    swipeRef.current?.close();
+  const translateX = useSharedValue(0);
+  const reachedHalf = useSharedValue(false);
+
+  const triggerReply = useCallback(() => {
     onReply?.(message);
   }, [message, onReply]);
 
-  // If deleted for everyone, do not allow swipe actions
-  if (message.is_deleted || (message as any).isDeleted) {
-    return (
-      <ChatBubble
-        message={message}
-        isMine={isMine}
-        groupPosition={groupPosition}
-        senderName={senderName}
-        imagesLocked={imagesLocked}
-        isAnonymous={isAnonymous}
-        avatarReveal={avatarReveal}
-        partnerAvatar={partnerAvatar}
-        partnerProfileImage={partnerProfileImage}
-      />
-    );
+  const isDeleted = Boolean(message.is_deleted || (message as any).isDeleted);
+  const isSending = message.status === "sending";
+  const isFailed = message.status === "failed";
+  const canSwipe = isMobileViewport && !isDeleted && !isSending && !isFailed;
+
+  const panGesture = Gesture.Pan()
+    .enabled(canSwipe)
+    .activeOffsetX(isMine ? [-12, 9999] : [-9999, 12])
+    .failOffsetY([-10, 10])
+    .onUpdate((e) => {
+      const clamped = isMine
+        ? Math.max(-MAX_SLIDE_DISTANCE, Math.min(0, e.translationX))
+        : Math.min(MAX_SLIDE_DISTANCE, Math.max(0, e.translationX));
+      translateX.value = clamped;
+      reachedHalf.value = Math.abs(clamped) >= HALF_SLIDE_THRESHOLD;
+    })
+    .onEnd(() => {
+      if (reachedHalf.value) {
+        runOnJS(triggerReply)();
+      }
+      reachedHalf.value = false;
+      translateX.value = withSpring(0, { damping: 22, stiffness: 280 });
+    })
+    .onFinalize(() => {
+      reachedHalf.value = false;
+      translateX.value = withSpring(0, { damping: 22, stiffness: 280 });
+    });
+
+  // Slide message + attached reply pill together
+  const rowSlideStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: translateX.value }],
+  }));
+
+  // Appear at >= 50% slide and reverse smoothly back out when released
+  const pillAppearStyle = useAnimatedStyle(() => {
+    const active = Math.abs(translateX.value) >= HALF_SLIDE_THRESHOLD;
+    return {
+      opacity: withTiming(active ? 1 : 0, { duration: 140 }),
+      transform: [
+        { scale: withSpring(active ? 1 : 0.4, { damping: 18, stiffness: 260 }) },
+      ],
+    };
+  });
+
+  const bubbleElement = (
+    <ChatBubble
+      message={message}
+      isMine={isMine}
+      groupPosition={groupPosition}
+      senderName={senderName}
+      onLongPress={isMobileViewport ? onLongPress : undefined}
+      onReply={onReply}
+      onRetry={onRetry}
+      onImagePress={onImagePress}
+      isActiveTime={isActiveTime}
+      onToggleTime={onToggleTime}
+      imagesLocked={imagesLocked}
+      isAnonymous={isAnonymous}
+      avatarReveal={avatarReveal}
+      partnerAvatar={partnerAvatar}
+      partnerProfileImage={partnerProfileImage}
+    />
+  );
+
+  if (!canSwipe) {
+    return bubbleElement;
   }
 
-  // My messages → swipe LEFT to reply (renderRightActions)
-  // Their messages → swipe RIGHT to reply (renderLeftActions)
-
-  if (isMine) {
-    return (
-      <ReanimatedSwipeable
-        ref={swipeRef}
-        containerStyle={{ width: "100%" }}
-        childrenContainerStyle={{ width: "100%" }}
-        friction={2}
-        overshootRight={false}
-        rightThreshold={40}
-        onSwipeableOpen={handleSwipeOpen}
-        renderRightActions={() => (
-          <View
-            style={{
-              justifyContent: "center",
-              paddingLeft: 8,
-              paddingRight: 4,
-            }}
-          >
-            <ReplyIndicator />
-          </View>
-        )}
-      >
-        <ChatBubble
-          message={message}
-          isMine={isMine}
-          groupPosition={groupPosition}
-          senderName={senderName}
-          onLongPress={onLongPress}
-          onReply={onReply}
-          onRetry={onRetry}
-          onImagePress={onImagePress}
-          isActiveTime={isActiveTime}
-          onToggleTime={onToggleTime}
-          imagesLocked={imagesLocked}
-          isAnonymous={isAnonymous}
-          avatarReveal={avatarReveal}
-          partnerAvatar={partnerAvatar}
-          partnerProfileImage={partnerProfileImage}
-        />
-      </ReanimatedSwipeable>
-    );
-  }
-
-  // Their message → swipe RIGHT to reply
   return (
-    <ReanimatedSwipeable
-      ref={swipeRef}
-      containerStyle={{ width: "100%" }}
-      childrenContainerStyle={{ width: "100%" }}
-      friction={2}
-      overshootLeft={false}
-      leftThreshold={40}
-      onSwipeableOpen={handleSwipeOpen}
-      renderLeftActions={() => (
-        <View
-          style={{
-            justifyContent: "center",
-            paddingRight: 8,
-            paddingLeft: 4,
-          }}
+    <GestureDetector gesture={panGesture}>
+      <Animated.View style={[{ width: "100%", position: "relative" }, rowSlideStyle]}>
+        {bubbleElement}
+
+        {/* Reply pill anchored beside bubble edge so it slides & reverses together */}
+        <Animated.View
+          pointerEvents="none"
+          style={[
+            {
+              position: "absolute",
+              top: 0,
+              bottom: 0,
+              justifyContent: "center",
+              alignItems: "center",
+              ...(isMine ? { right: -34 } : { left: -34 }),
+            },
+            pillAppearStyle,
+          ]}
         >
-          <ReplyIndicator />
-        </View>
-      )}
-    >
-      <ChatBubble
-        message={message}
-        isMine={isMine}
-        groupPosition={groupPosition}
-        senderName={senderName}
-        onLongPress={onLongPress}
-        onReply={onReply}
-        onRetry={onRetry}
-        onImagePress={onImagePress}
-        isActiveTime={isActiveTime}
-        onToggleTime={onToggleTime}
-        imagesLocked={imagesLocked}
-        isAnonymous={isAnonymous}
-        avatarReveal={avatarReveal}
-        partnerAvatar={partnerAvatar}
-        partnerProfileImage={partnerProfileImage}
-      />
-    </ReanimatedSwipeable>
+          <ReplyIndicator isDark={isDark} />
+        </Animated.View>
+      </Animated.View>
+    </GestureDetector>
   );
 }

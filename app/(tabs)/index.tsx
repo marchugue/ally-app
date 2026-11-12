@@ -13,7 +13,7 @@ import {
   type AppStateStatus,
 } from "react-native";
 import { router, useFocusEffect } from "expo-router";
-import { Plus, Home, Users, UserCheck, SlidersHorizontal, Check, ArrowUp } from "lucide-react-native";
+import { Plus, Home, Users, UserCheck, SlidersHorizontal, Check } from "lucide-react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { ResponsiveContainer } from "@/components/ResponsiveContainer";
 import { PostCard } from "@/components/PostCard";
@@ -49,12 +49,10 @@ export default function HomeScreen() {
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
-  const [newPostsCount, setNewPostsCount] = useState(0);
 
   const cursorRef = useRef<string | undefined>(undefined);
   const postsRef = useRef<FeedPost[]>(posts);
   postsRef.current = posts;
-  const flatListRef = useRef<FlatList>(null);
   const isCheckingRef = useRef<boolean>(false);
 
   // Dynamic animations for Filter Icon
@@ -156,7 +154,6 @@ export default function HomeScreen() {
         cursorRef.current = feed.length > 0 ? feed[feed.length - 1].created_at : undefined;
         // Cache up to 20 posts
         await newsfeedCache.set(filterToUse, feed, user?.id);
-        setNewPostsCount(0);
       } catch (err) {
         console.warn("Failed to load feed data", err);
       }
@@ -304,8 +301,6 @@ export default function HomeScreen() {
         if (count > 20) {
           // Rule: More than 20 new posts while in app -> auto-refresh
           await loadData(activeFilter, true);
-        } else {
-          setNewPostsCount(count);
         }
       } catch {
       } finally {
@@ -594,48 +589,6 @@ export default function HomeScreen() {
         </Pressable>
       </Modal>
 
-      {/* ── Floating New Posts Indicator (Tap or pull down) ── */}
-      {newPostsCount > 0 && (
-        <View
-          pointerEvents="box-none"
-          style={{
-            position: "absolute",
-            top: insets.top > 0 ? insets.top + 60 : 64,
-            left: 0,
-            right: 0,
-            alignItems: "center",
-            zIndex: 30,
-          }}
-        >
-          <TouchableOpacity
-            activeOpacity={0.85}
-            onPress={() => {
-              onRefresh();
-              flatListRef.current?.scrollToOffset({ offset: 0, animated: true });
-            }}
-            style={{
-              flexDirection: "row",
-              alignItems: "center",
-              gap: 6,
-              backgroundColor: "#1A6B3C",
-              paddingHorizontal: 16,
-              paddingVertical: 8,
-              borderRadius: 24,
-              shadowColor: "#000",
-              shadowOffset: { width: 0, height: 4 },
-              shadowOpacity: 0.25,
-              shadowRadius: 6,
-              elevation: 6,
-            }}
-          >
-            <ArrowUp size={14} color="#FFFFFF" strokeWidth={2.5} />
-            <Text style={{ color: "#FFFFFF", fontSize: 13, fontWeight: "700" }}>
-              {newPostsCount} new {newPostsCount === 1 ? "post" : "posts"} • Tap to refresh
-            </Text>
-          </TouchableOpacity>
-        </View>
-      )}
-
       {/* Main Feed Content List */}
       {loading ? (
         <View className="flex-1 bg-background items-center justify-center">
@@ -643,7 +596,6 @@ export default function HomeScreen() {
         </View>
       ) : (
         <FlatList
-          ref={flatListRef}
           data={posts}
           keyExtractor={(item) => item.id}
           refreshControl={

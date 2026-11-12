@@ -1,7 +1,8 @@
-import React, { useEffect, useState, useRef, useCallback } from "react";
+import React, { memo, useEffect, useState, useRef, useCallback } from "react";
 import {
   View,
   Text,
+  Image,
   Modal,
   TouchableOpacity,
   ActivityIndicator,
@@ -14,8 +15,6 @@ import {
 import {
   X,
   Sparkles,
-  RotateCw,
-  Check,
 } from "lucide-react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -25,7 +24,7 @@ import { ANIMAL_KEYS } from "@/constants/matchOptions";
 
 const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
-// ─── Telemetry Status Messages (Exact Mirror from Web) ───────────────────────
+// ─── Telemetry Status Messages ───────────────────────────────────────────────
 const TELEMETRY_MESSAGES = [
   "Scanning active student souls on Alijis campus…",
   "Harmonizing mutual interests & curriculum year…",
@@ -33,104 +32,6 @@ const TELEMETRY_MESSAGES = [
   "Filtering campus vibes and shared passions…",
   "Locking onto an anonymous peer session…",
 ];
-
-// ─── Celestial Starfield Coordinates (Exact Match with Web) ──────────────────
-const STARFIELD_STARS = [
-  { id: 1, top: 0.07, left: 0.11, size: 2, color: "#E8A838" },
-  { id: 2, top: 0.14, left: 0.86, size: 2.5, color: "#56E39F" },
-  { id: 3, top: 0.21, left: 0.26, size: 1.5, color: "#FFFFFF" },
-  { id: 4, top: 0.26, left: 0.74, size: 2, color: "#FCD34D" },
-  { id: 5, top: 0.34, left: 0.07, size: 2, color: "#FFFFFF" },
-  { id: 6, top: 0.39, left: 0.93, size: 1.5, color: "#6EE7B7" },
-  { id: 7, top: 0.64, left: 0.13, size: 2.5, color: "#E8A838" },
-  { id: 8, top: 0.73, left: 0.84, size: 2, color: "#FFFFFF" },
-  { id: 9, top: 0.84, left: 0.22, size: 1.5, color: "#56E39F" },
-  { id: 10, top: 0.89, left: 0.69, size: 2, color: "#FCD34D" },
-  { id: 11, top: 0.09, left: 0.46, size: 1.5, color: "#FFFFFF" },
-  { id: 12, top: 0.58, left: 0.79, size: 2, color: "#6EE7B7" },
-  { id: 13, top: 0.79, left: 0.38, size: 1.5, color: "#E8A838" },
-  { id: 14, top: 0.47, left: 0.16, size: 2, color: "#FFFFFF" },
-  { id: 15, top: 0.31, left: 0.89, size: 2.5, color: "#56E39F" },
-  { id: 16, top: 0.04, left: 0.64, size: 2, color: "#FCD34D" },
-  { id: 17, top: 0.93, left: 0.09, size: 1.5, color: "#FFFFFF" },
-  { id: 18, top: 0.87, left: 0.91, size: 2, color: "#E8A838" },
-  { id: 19, top: 0.52, left: 0.83, size: 1.5, color: "#FFFFFF" },
-  { id: 20, top: 0.18, left: 0.05, size: 2, color: "#56E39F" },
-];
-
-const SPARKLE_CONSTELLATIONS = [
-  { id: "s1", top: 0.12, left: 0.18, size: 12, color: "#FCD34D" },
-  { id: "s2", top: 0.16, left: 0.81, size: 14, color: "#6EE7B7" },
-  { id: "s3", top: 0.70, left: 0.10, size: 12, color: "#A7F3D0" },
-  { id: "s4", top: 0.81, left: 0.87, size: 14, color: "#FDE68A" },
-  { id: "s5", top: 0.44, left: 0.95, size: 12, color: "#FFFFFF" },
-  { id: "s6", top: 0.03, left: 0.35, size: 12, color: "#FCD34D" },
-];
-
-function CelestialStarfield() {
-  const twinkleAnim = useRef(new Animated.Value(0.35)).current;
-
-  useEffect(() => {
-    const loop = Animated.loop(
-      Animated.sequence([
-        Animated.timing(twinkleAnim, {
-          toValue: 0.95,
-          duration: 2200,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }),
-        Animated.timing(twinkleAnim, {
-          toValue: 0.35,
-          duration: 2200,
-          easing: Easing.inOut(Easing.ease),
-          useNativeDriver: true,
-        }),
-      ])
-    );
-    loop.start();
-    return () => loop.stop();
-  }, [twinkleAnim]);
-
-  return (
-    <View style={StyleSheet.absoluteFill} pointerEvents="none">
-      {STARFIELD_STARS.map((star) => (
-        <Animated.View
-          key={star.id}
-          style={{
-            position: "absolute",
-            top: `${star.top * 100}%`,
-            left: `${star.left * 100}%`,
-            width: star.size,
-            height: star.size,
-            borderRadius: star.size / 2,
-            backgroundColor: star.color,
-            opacity: twinkleAnim,
-            shadowColor: star.color,
-            shadowOffset: { width: 0, height: 0 },
-            shadowOpacity: 0.8,
-            shadowRadius: 4,
-          }}
-        />
-      ))}
-
-      {SPARKLE_CONSTELLATIONS.map((c) => (
-        <Animated.Text
-          key={c.id}
-          style={{
-            position: "absolute",
-            top: `${c.top * 100}%`,
-            left: `${c.left * 100}%`,
-            fontSize: c.size,
-            color: c.color,
-            opacity: twinkleAnim,
-          }}
-        >
-          ✦
-        </Animated.Text>
-      ))}
-    </View>
-  );
-}
 
 // ─── Shockwave Burst Rings on Match Detected ──────────────────────────────────
 function ShockwaveRings() {
@@ -202,35 +103,36 @@ function ShockwaveRings() {
   );
 }
 
-// ─── Acoustic Frequency Equalizer Waveform ────────────────────────────────────
-function EqualizerWaveform({ paused }: { paused?: boolean }) {
+// ─── Native-Driven Acoustic Frequency Equalizer Waveform ─────────────────────
+const EqualizerWaveform = memo(function EqualizerWaveform({ paused }: { paused?: boolean }) {
   const barAnims = useRef(
-    [0, 1, 2, 3, 4, 5, 6].map(() => new Animated.Value(8))
+    [0, 1, 2, 3, 4, 5, 6].map(() => new Animated.Value(0.35))
   ).current;
 
   useEffect(() => {
     if (paused) return;
-    const anims = barAnims.map((anim, i) => {
-      return Animated.loop(
+    const anims = barAnims.map((anim, i) =>
+      Animated.loop(
         Animated.sequence([
           Animated.timing(anim, {
-            toValue: 20 + (i % 3) * 4,
+            toValue: 0.85 + (i % 3) * 0.1,
             duration: 320 + i * 35,
             easing: Easing.inOut(Easing.ease),
-            useNativeDriver: false,
+            useNativeDriver: true,
           }),
           Animated.timing(anim, {
-            toValue: 6 + (i % 2) * 3,
+            toValue: 0.25 + (i % 2) * 0.12,
             duration: 320 + i * 35,
             easing: Easing.inOut(Easing.ease),
-            useNativeDriver: false,
+            useNativeDriver: true,
           }),
         ])
-      );
-    });
+      )
+    );
 
-    Animated.parallel(anims).start();
-    return () => anims.forEach((a) => a.stop());
+    const parallel = Animated.parallel(anims);
+    parallel.start();
+    return () => parallel.stop();
   }, [paused, barAnims]);
 
   return (
@@ -240,20 +142,18 @@ function EqualizerWaveform({ paused }: { paused?: boolean }) {
           key={i}
           style={[
             styles.equalizerBar,
-            { height: anim },
+            {
+              backgroundColor: i % 2 === 0 ? "#38C185" : "#E8A838",
+              transform: [{ scaleY: anim }],
+            },
           ]}
-        >
-          <LinearGradient
-            colors={["#E8A838", "#1A6B3C"]}
-            style={StyleSheet.absoluteFill}
-          />
-        </Animated.View>
+        />
       ))}
     </View>
   );
-}
+});
 
-// ─── Carousel Slot Item with Spring Motion ────────────────────────────────────
+// ─── Carousel Slot Item with Native Spring Motion ─────────────────────────────
 interface CarouselSlotProps {
   avatarKey: string;
   targetX: number;
@@ -263,7 +163,7 @@ interface CarouselSlotProps {
   showShockwave: boolean;
 }
 
-function CarouselSlotItem({
+const CarouselSlotItem = memo(function CarouselSlotItem({
   avatarKey,
   targetX,
   targetScale,
@@ -293,7 +193,7 @@ function CarouselSlotItem({
       }),
       Animated.timing(animOpacity, {
         toValue: targetOpacity,
-        duration: 280,
+        duration: 240,
         easing: Easing.out(Easing.ease),
         useNativeDriver: true,
       }),
@@ -322,7 +222,7 @@ function CarouselSlotItem({
       </View>
     </Animated.View>
   );
-}
+});
 
 // ─── Component Props ─────────────────────────────────────────────────────────
 interface MatchmakingOverlayModalProps {
@@ -490,26 +390,13 @@ export function MatchmakingOverlayModal({
       statusBarTranslucent={true}
     >
       <View style={styles.overlayRoot}>
-        {/* ── Background: Deep Radial Forest Gradient ── */}
-        <LinearGradient
-          colors={["#0B1E13", "#06110A", "#030805"]}
-          locations={[0, 0.55, 1]}
-          style={StyleSheet.absoluteFill}
-        />
-
-        {/* ── Twinkling Starfield & Constellations ── */}
-        <CelestialStarfield />
-
-        {/* ── Top Header: Brand Bar with Litmatch Style Logo ── */}
+        {/* ── Top Header: Updated Ally-jis Emblem & Close ── */}
         <View style={[styles.topHeader, { paddingTop: Math.max(insets.top + 8, 20) }]}>
-          <View style={styles.brandRow}>
-            <View style={styles.brandLogoSquare}>
-              <Text style={styles.brandLogoLetter}>A</Text>
-            </View>
-            <Text style={styles.brandLogoText}>
-              Ally<Text style={styles.brandLogoAccent}>-jis</Text>
-            </Text>
-          </View>
+          <Image
+            source={require("../../assets/images/ally-jis.png")}
+            style={styles.brandLogoImage}
+            resizeMode="contain"
+          />
 
           <TouchableOpacity
             onPress={handleClose}
@@ -526,11 +413,7 @@ export function MatchmakingOverlayModal({
         <View style={styles.contentArea}>
           {stage !== "revealed" ? (
             /* ═══════════════════════════════════════════════════════════
-               STAGE 1 & 2: PURE CLEAN LITMATCH HORIZONTAL CAROUSEL
-               - 3-slot horizontal conveyor cycling
-               - Snapping lock into center on match found
-               - Shockwave explosion on match detected
-               - "Match Found!" gradient pill badge
+               STAGE 1 & 2: CLEAN HORIZONTAL CAROUSEL ON PLAIN BACKGROUND
                ═══════════════════════════════════════════════════════════ */
             <View style={styles.carouselArena}>
               {/* Header Title */}
@@ -540,25 +423,22 @@ export function MatchmakingOverlayModal({
                 </Text>
               </View>
 
-              {/* Avatar Conveyor Track with Seamless Natural Edge Fades and Sliding Spring Physics */}
+              {/* Avatar Conveyor Track */}
               <View style={styles.conveyorTrack}>
-                {/* Natural Edge fade gradient on Left - blends seamlessly into #06110A background */}
                 <LinearGradient
                   colors={[
                     "#06110A",
-                    "rgba(6, 17, 10, 0.95)",
-                    "rgba(6, 17, 10, 0.7)",
-                    "rgba(6, 17, 10, 0.3)",
+                    "rgba(6, 17, 10, 0.92)",
                     "rgba(6, 17, 10, 0)",
                   ]}
-                  locations={[0, 0.25, 0.55, 0.8, 1]}
+                  locations={[0, 0.35, 1]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 0 }}
                   style={styles.edgeFadeLeft}
                   pointerEvents="none"
                 />
 
-                {[-3, -2, -1, 0, 1, 2, 3].map((offset) => {
+                {[-2, -1, 0, 1, 2].map((offset) => {
                   const i = cycleStep - offset;
                   const pos = offset;
                   const slotAvatarKey =
@@ -576,7 +456,7 @@ export function MatchmakingOverlayModal({
                       targetScale = 1.35;
                       targetOpacity = 1.0;
                     } else {
-                      targetX = pos < 0 ? -260 : 260;
+                      targetX = pos < 0 ? -240 : 240;
                       targetScale = 0.4;
                       targetOpacity = 0;
                     }
@@ -595,16 +475,13 @@ export function MatchmakingOverlayModal({
                   );
                 })}
 
-                {/* Natural Edge fade gradient on Right - blends seamlessly into #06110A background */}
                 <LinearGradient
                   colors={[
                     "rgba(6, 17, 10, 0)",
-                    "rgba(6, 17, 10, 0.3)",
-                    "rgba(6, 17, 10, 0.7)",
-                    "rgba(6, 17, 10, 0.95)",
+                    "rgba(6, 17, 10, 0.92)",
                     "#06110A",
                   ]}
-                  locations={[0, 0.2, 0.45, 0.75, 1]}
+                  locations={[0, 0.65, 1]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 0 }}
                   style={styles.edgeFadeRight}
@@ -616,16 +493,11 @@ export function MatchmakingOverlayModal({
               <View style={styles.tickerSection}>
                 {stage === "detected" ? (
                   <View style={styles.detectedBadgeRow}>
-                    <LinearGradient
-                      colors={["#10B981", "#F59E0B", "#10B981"]}
-                      start={{ x: 0, y: 0 }}
-                      end={{ x: 1, y: 0 }}
-                      style={styles.detectedBadgeGradient}
-                    >
+                    <View style={styles.detectedBadgeGradient}>
                       <Sparkles size={13} color="#030805" />
                       <Text style={styles.detectedBadgeText}>Match Found!</Text>
                       <Sparkles size={13} color="#030805" />
-                    </LinearGradient>
+                    </View>
                   </View>
                 ) : (
                   <Animated.View style={{ opacity: telemetryFade, minHeight: 22, justifyContent: "center" }}>
@@ -648,7 +520,7 @@ export function MatchmakingOverlayModal({
             </View>
           ) : (
             /* ═══════════════════════════════════════════════════════════
-               STAGE 3: RENOVATED EDITORIAL CONFIRMATION CARD (MIRRORS WEB)
+               STAGE 3: CLEAN CONFIRMATION CARD
                ═══════════════════════════════════════════════════════════ */
             <Animated.View
               style={[
@@ -660,23 +532,6 @@ export function MatchmakingOverlayModal({
               ]}
             >
               <View style={styles.confirmationCard}>
-                {/* Deep Emerald Multi-Stop Background Gradient */}
-                <LinearGradient
-                  colors={["#1A6B3C", "#155731", "#0D3820", "#071F12"]}
-                  locations={[0, 0.28, 0.65, 1]}
-                  start={{ x: 0.1, y: 0 }}
-                  end={{ x: 0.9, y: 1 }}
-                  style={StyleSheet.absoluteFill}
-                />
-
-                {/* Diagonal Angled Sheen Overlay for Depth */}
-                <LinearGradient
-                  colors={["rgba(255,255,255,0.18)", "transparent", "rgba(0,0,0,0.35)"]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={StyleSheet.absoluteFill}
-                  pointerEvents="none"
-                />
 
                 {/* Card Top Row: Avatar on Left + 'X' Dismiss on Upper Right */}
                 <View style={styles.cardTopRow}>
@@ -798,7 +653,7 @@ export function MatchmakingOverlayModal({
 const styles = StyleSheet.create({
   overlayRoot: {
     flex: 1,
-    backgroundColor: "#030805",
+    backgroundColor: "#06110A",
   },
 
   // Top Header (Exact web brand alignment)
@@ -810,38 +665,9 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     zIndex: 30,
   },
-  brandRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-  },
-  brandLogoSquare: {
-    width: 32,
-    height: 32,
-    borderRadius: 10,
-    backgroundColor: "#1A6B3C",
-    alignItems: "center",
-    justifyContent: "center",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 3,
-  },
-  brandLogoLetter: {
-    color: "#FFFFFF",
-    fontSize: 16,
-    fontWeight: "bold",
-    fontFamily: "Fraunces_700Bold",
-  },
-  brandLogoText: {
-    fontSize: 18,
-    fontWeight: "bold",
-    color: "#FFFFFF",
-    letterSpacing: 0.4,
-    fontFamily: "Fraunces_700Bold",
-  },
-  brandLogoAccent: {
-    color: "#E8A838",
+  brandLogoImage: {
+    width: 34,
+    height: 34,
   },
   closeBtn: {
     width: 34,
@@ -947,6 +773,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 5,
     borderRadius: 999,
+    backgroundColor: "#10B981",
   },
   detectedBadgeText: {
     fontSize: 12,
@@ -979,6 +806,7 @@ const styles = StyleSheet.create({
   },
   equalizerBar: {
     width: 3.5,
+    height: 22,
     borderRadius: 2,
     overflow: "hidden",
   },
@@ -994,14 +822,15 @@ const styles = StyleSheet.create({
     width: "100%",
     borderRadius: 36,
     padding: 24,
+    backgroundColor: "#0D3820",
     borderWidth: 1,
     borderColor: "rgba(52, 211, 153, 0.25)",
     overflow: "hidden",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 24 },
-    shadowOpacity: 0.75,
-    shadowRadius: 30,
-    elevation: 20,
+    shadowOffset: { width: 0, height: 16 },
+    shadowOpacity: 0.45,
+    shadowRadius: 20,
+    elevation: 12,
   },
   cardTopRow: {
     flexDirection: "row",

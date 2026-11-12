@@ -52,6 +52,8 @@ export interface Message {
   reactions: MessageReaction[];
   clientMessageId?: string | null;
   status?: "sending" | "sent" | "delivered" | "read" | "failed";
+  /** Client-only upload progression percentage (0..100) while sending media. */
+  uploadProgress?: number;
   /** True when the sender deleted the message for everyone (tombstone). */
   is_deleted?: boolean;
   deleted_at?: string | null;

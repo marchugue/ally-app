@@ -3,12 +3,14 @@ import { View, Text, Pressable, Image, Platform } from "react-native";
 import { Clock, Check, CheckCheck, CircleAlert as AlertCircle } from "lucide-react-native";
 import { router } from "expo-router";
 import type { Message, MessageReaction, MessageGroupPosition } from "@/types/conversation";
-import { UserAvatar, resolveImageUri } from "./UserAvatar";
+import { UserAvatar } from "./UserAvatar";
 import { RevealAvatar } from "./RevealAvatar";
 import type { AvatarRevealView } from "@/lib/api/matchmaking";
 import { getFluentEmojiUrl } from "@/lib/fluentEmoji";
 import { OfflineAnimatedEmoji } from "./OfflineAnimatedEmoji";
 import { GameInviteCard } from "./GameInviteCard";
+import { ProgressiveMediaImage } from "./ProgressiveMediaImage";
+import { resolveCachedMediaUri } from "@/lib/mediaCache";
 
 export interface BubbleLayout {
   x: number;
@@ -197,7 +199,7 @@ export function ChatBubble({
       (message as any).media;
     if (raw) {
       if (Array.isArray(raw)) {
-        return raw.map(resolveImageUri).filter((u): u is string => Boolean(u));
+        return raw.map(resolveCachedMediaUri).filter((u): u is string => Boolean(u));
       }
       if (typeof raw === "string") {
         const trimmed = raw.trim();
@@ -205,11 +207,11 @@ export function ChatBubble({
           try {
             const parsed = JSON.parse(trimmed);
             if (Array.isArray(parsed)) {
-              return parsed.map(resolveImageUri).filter((u): u is string => Boolean(u));
+              return parsed.map(resolveCachedMediaUri).filter((u): u is string => Boolean(u));
             }
           } catch {}
         }
-        const uri = resolveImageUri(trimmed);
+        const uri = resolveCachedMediaUri(trimmed);
         if (uri) return [uri];
       }
     }
@@ -217,7 +219,7 @@ export function ChatBubble({
     if (message.content && typeof message.content === "string") {
       const trimmed = message.content.trim();
       if (/^https?:\/\/.+\.(jpg|jpeg|png|webp|gif)(\?.*)?$/i.test(trimmed)) {
-        const uri = resolveImageUri(trimmed);
+        const uri = resolveCachedMediaUri(trimmed);
         if (uri) return [uri];
       }
     }
@@ -467,7 +469,7 @@ export function ChatBubble({
                 ? "#8A2A2A"
                 : "#1A6B3C"
               : "#FFFFFF",
-          opacity: isSending ? 0.85 : 1,
+          opacity: isSending && !hasImage ? 0.85 : 1,
           ...(isImageOnly || isEmojiOnly || isGameInvite ? {} : radii),
           paddingHorizontal: isImageOnly || isEmojiOnly || isGameInvite ? 0 : hasImage ? 4 : 14,
           paddingTop: isImageOnly || isEmojiOnly || isGameInvite ? 0 : hasImage ? 4 : 10,
@@ -521,15 +523,15 @@ export function ChatBubble({
             onLongPress={handleBubbleLongPress}
             delayLongPress={300}
           >
-            <Image
-              source={{ uri: images[0] }}
-              style={{
-                width: 220,
-                height: 180,
-                borderRadius: 14,
-                marginBottom: message.content ? 6 : 0,
-              }}
-              resizeMode="cover"
+            <ProgressiveMediaImage
+              uri={images[0]}
+              width={220}
+              height={180}
+              borderRadius={14}
+              isSending={isSending}
+              uploadProgress={message.uploadProgress ?? 8}
+              showSendingLabel={true}
+              style={{ marginBottom: message.content ? 6 : 0 }}
             />
           </Pressable>
         )}
@@ -569,10 +571,11 @@ export function ChatBubble({
                   elevation: 2,
                 }}
               >
-                <Image
-                  source={{ uri: images[2] }}
-                  style={{ width: "100%", height: "100%" }}
-                  resizeMode="cover"
+                <ProgressiveMediaImage
+                  uri={images[2]}
+                  isSending={isSending}
+                  uploadProgress={message.uploadProgress ?? 8}
+                  showSendingLabel={false}
                 />
               </Pressable>
             )}
@@ -601,10 +604,11 @@ export function ChatBubble({
                   elevation: 3,
                 }}
               >
-                <Image
-                  source={{ uri: images[1] }}
-                  style={{ width: "100%", height: "100%" }}
-                  resizeMode="cover"
+                <ProgressiveMediaImage
+                  uri={images[1]}
+                  isSending={isSending}
+                  uploadProgress={message.uploadProgress ?? 8}
+                  showSendingLabel={false}
                 />
               </Pressable>
             )}
@@ -630,30 +634,33 @@ export function ChatBubble({
                 elevation: 4,
               }}
             >
-              <Image
-                source={{ uri: images[0] }}
-                style={{ width: "100%", height: "100%" }}
-                resizeMode="cover"
+              <ProgressiveMediaImage
+                uri={images[0]}
+                isSending={isSending}
+                uploadProgress={message.uploadProgress ?? 8}
+                showSendingLabel={true}
               />
-              {/* Badge showing photo count */}
-              <View
-                style={{
-                  position: "absolute",
-                  bottom: 8,
-                  right: 8,
-                  backgroundColor: "rgba(0, 0, 0, 0.65)",
-                  borderRadius: 12,
-                  paddingHorizontal: 8,
-                  paddingVertical: 3,
-                  flexDirection: "row",
-                  alignItems: "center",
-                  gap: 4,
-                }}
-              >
-                <Text style={{ color: "#FFFFFF", fontSize: 11, fontWeight: "700" }}>
-                  {images.length} photos
-                </Text>
-              </View>
+              {/* Badge showing photo count (hidden while sending so only masked image + Sending label appear) */}
+              {!isSending && (
+                <View
+                  style={{
+                    position: "absolute",
+                    bottom: 8,
+                    right: 8,
+                    backgroundColor: "rgba(0, 0, 0, 0.65)",
+                    borderRadius: 12,
+                    paddingHorizontal: 8,
+                    paddingVertical: 3,
+                    flexDirection: "row",
+                    alignItems: "center",
+                    gap: 4,
+                  }}
+                >
+                  <Text style={{ color: "#FFFFFF", fontSize: 11, fontWeight: "700" }}>
+                    {images.length} photos
+                  </Text>
+                </View>
+              )}
             </Pressable>
           </View>
         )}
@@ -697,8 +704,8 @@ export function ChatBubble({
           </View>
         ) : null}
 
-        {/* Timestamp & Status — interactive: single active message, or while sending */}
-        {(isActiveTime || isSending) && (
+        {/* Timestamp & Status — interactive: single active message, or while sending (text-only; image shows centered Sending label) */}
+        {(isActiveTime || (isSending && (!hasImage || isMediaRemoved))) && (
           <View
             style={{
               flexDirection: "row",

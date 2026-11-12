@@ -25,7 +25,7 @@ import Animated, {
   withSpring,
   withTiming,
 } from "react-native-reanimated";
-import ReanimatedSwipeable from "react-native-gesture-handler/ReanimatedSwipeable";
+import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import { router, useFocusEffect } from "expo-router";
 import { Search, X, MessageCircle, Trash2, Drama } from "lucide-react-native";
 import { ScreenHeader } from "@/components/ScreenHeader";
@@ -187,15 +187,39 @@ const SwipeableRow = React.memo(function SwipeableRow({
   isMovingUp = false,
   revealCacheRev: _revealCacheRev,
 }: SwipeableRowProps) {
-  const swipeRef = useRef<any>(null);
+  const swipeRef = useRef<{ close: () => void } | null>(null);
   const { colors, isDark } = useTheme();
+  const [rowWidth, setRowWidth] = useState(360);
+  const rowWidthSV = useSharedValue(360);
+  const translateX = useSharedValue(0);
+  const dragStartOffset = useSharedValue(0);
+  const anchoredWidth = useSharedValue(0);
+
+  const MIN_DELETE_WIDTH = 44;
+  const MAX_DELETE_WIDTH = 76;
+  const SNAP_THRESHOLD_RATIO = 0.3;
+
+  const closeRow = useCallback((immediate = false) => {
+    if (immediate) {
+      anchoredWidth.value = 0;
+      translateX.value = 0;
+      return;
+    }
+    translateX.value = withSpring(0, { damping: 24, stiffness: 210, mass: 0.9 }, (finished) => {
+      if (finished) {
+        anchoredWidth.value = 0;
+      }
+    });
+  }, [anchoredWidth, translateX]);
 
   useEffect(() => {
-    swipeableRefs.current.set(item.id, swipeRef.current);
+    const controller = { close: closeRow };
+    swipeRef.current = controller;
+    swipeableRefs.current.set(item.id, controller);
     return () => {
       swipeableRefs.current.delete(item.id);
     };
-  }, [item.id, swipeableRefs]);
+  }, [item.id, swipeableRefs, closeRow]);
 
   const scale = useSharedValue(1);
 
@@ -213,9 +237,86 @@ const SwipeableRow = React.memo(function SwipeableRow({
     transform: [{ scale: scale.value }],
   }));
 
+  const maxOpenWidth = Math.min(MAX_DELETE_WIDTH, Math.max(MIN_DELETE_WIDTH, Math.round(rowWidth * 0.25)));
+
+  const panGesture = Gesture.Pan()
+    .activeOffsetX([-10, 10])
+    .failOffsetY([-10, 10])
+    .onStart(() => {
+      dragStartOffset.value = translateX.value;
+    })
+    .onUpdate((e) => {
+      const next = Math.max(-maxOpenWidth, Math.min(0, dragStartOffset.value + e.translationX));
+      translateX.value = next;
+      // Expand anchored width smoothly when dragging further left so there is never a gap
+      if (-next > anchoredWidth.value) {
+        anchoredWidth.value = Math.max(MIN_DELETE_WIDTH, -next);
+      }
+    })
+    .onEnd(() => {
+      const currentNeg = -translateX.value;
+      const wasOpen = dragStartOffset.value < -10;
+      const snapThreshold = maxOpenWidth * SNAP_THRESHOLD_RATIO;
+      const springConfig = { damping: 24, stiffness: 210, mass: 0.9 };
+
+      if (!wasOpen) {
+        // Opening from closed: >= 30% snaps smoothly to full limit slide; < 30% retracts smoothly
+        if (currentNeg >= snapThreshold) {
+          anchoredWidth.value = maxOpenWidth;
+          translateX.value = withSpring(-maxOpenWidth, springConfig);
+        } else {
+          translateX.value = withSpring(0, springConfig, (finished) => {
+            if (finished) {
+              anchoredWidth.value = 0;
+            }
+          });
+        }
+      } else {
+        // Already open: sliding right >= 30% retracts smoothly; < 30% snaps smoothly back to limit
+        if (currentNeg <= anchoredWidth.value * (1 - SNAP_THRESHOLD_RATIO) || currentNeg < snapThreshold) {
+          translateX.value = withSpring(0, springConfig, (finished) => {
+            if (finished) {
+              anchoredWidth.value = 0;
+            }
+          });
+        } else {
+          anchoredWidth.value = maxOpenWidth;
+          translateX.value = withSpring(-maxOpenWidth, springConfig);
+        }
+      }
+    });
+
+  const rowTrackStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: translateX.value }],
+  }));
+
+  // Black delete button stays glued to the right edge of the row and slides together
+  const deleteButtonStyle = useAnimatedStyle(() => {
+    const activeWidth = Math.max(anchoredWidth.value, Math.max(MIN_DELETE_WIDTH, -translateX.value));
+    return {
+      width: activeWidth,
+      transform: [{ translateX: rowWidthSV.value + translateX.value }],
+    };
+  });
+
+  const handleRowPress = useCallback(() => {
+    if (translateX.value < -8) {
+      closeRow();
+      return;
+    }
+    onOpen(item, info);
+  }, [translateX, closeRow, onOpen, item, info]);
+
   return (
     <Animated.View
       layout={LinearTransition.springify().damping(22).stiffness(180)}
+      onLayout={(e) => {
+        const w = e.nativeEvent.layout.width;
+        if (w > 0 && Math.abs(w - rowWidth) > 1) {
+          setRowWidth(w);
+          rowWidthSV.value = w;
+        }
+      }}
       style={[
         {
           zIndex: isMovingUp ? 1 : 0,
@@ -225,62 +326,30 @@ const SwipeableRow = React.memo(function SwipeableRow({
           shadowOpacity: 0,
           shadowRadius: 0,
           backgroundColor: colors.surface,
+          overflow: "hidden",
+          position: "relative",
         },
         animatedStyle,
       ]}
     >
-      <ReanimatedSwipeable
-      ref={swipeRef}
-      friction={2}
-      overshootRight={false}
-      rightThreshold={60}
-      onSwipeableWillOpen={() => {
-        swipeableRefs.current.forEach((ref, key) => {
-          if (key !== item.id) ref?.close();
-        });
-      }}
-      onSwipeableOpen={() => {
-        onDeletePrompt(item.id, info.participantName);
-      }}
-      renderRightActions={() => (
-        <Pressable
-          onPress={() => onDeletePrompt(item.id, info.participantName)}
-          style={{
-            backgroundColor: "#EF4444",
-            justifyContent: "center",
-            alignItems: "center",
-            width: 90,
-          }}
-        >
-          <Trash2 size={22} color="#FFFFFF" />
-          <Text
-            style={{
-              color: "#FFFFFF",
-              fontWeight: "600",
-              fontSize: 12,
-              marginTop: 4,
-            }}
-          >
-            Delete
-          </Text>
-        </Pressable>
-      )}
-    >
-      <Pressable
-        disabled={disabled}
-        onPress={() => onOpen(item, info)}
-        android_ripple={{ color: "rgba(0,0,0,0.04)" }}
-        style={({ pressed }) => ({
-          opacity: isNavigatingThis ? 0.65 : 1,
-          backgroundColor: isNavigatingThis
-            ? (isDark ? "#262626" : "#F3F4F6")
-            : pressed
-              ? (isDark ? "#1F1F1F" : "#F9FAFB")
-              : unreadInfo.isUnread
-                ? (isDark ? "rgba(56, 193, 133, 0.12)" : "#F0FDF4")
-                : colors.surface,
-        })}
-      >
+      <GestureDetector gesture={panGesture}>
+        <View style={{ width: "100%", position: "relative" }}>
+          <Animated.View style={[{ width: "100%" }, rowTrackStyle]}>
+            <Pressable
+              disabled={disabled}
+              onPress={handleRowPress}
+              android_ripple={{ color: "rgba(0,0,0,0.04)" }}
+              style={({ pressed }) => ({
+                opacity: isNavigatingThis ? 0.65 : 1,
+                backgroundColor: isNavigatingThis
+                  ? (isDark ? "#262626" : "#F3F4F6")
+                  : pressed
+                    ? (isDark ? "#1F1F1F" : "#F9FAFB")
+                    : unreadInfo.isUnread
+                      ? (isDark ? "rgba(56, 193, 133, 0.12)" : "#F0FDF4")
+                      : colors.surface,
+              })}
+            >
         <View
           className="w-full flex-row items-center px-5 py-3.5"
           style={{ flexDirection: "row", width: "100%", flexWrap: "nowrap" }}
@@ -425,7 +494,39 @@ const SwipeableRow = React.memo(function SwipeableRow({
           </View>
         </View>
       </Pressable>
-    </ReanimatedSwipeable>
+          </Animated.View>
+
+          {/* Full-height red Delete button with centered trashbin icon, slides together with row */}
+          <Animated.View
+            style={[
+              {
+                position: "absolute",
+                top: 0,
+                bottom: 0,
+                left: 0,
+                backgroundColor: "#EF4444",
+                justifyContent: "center",
+                alignItems: "center",
+              },
+              deleteButtonStyle,
+            ]}
+          >
+            <Pressable
+              onPress={() => onDeletePrompt(item.id, info.participantName)}
+              accessibilityRole="button"
+              accessibilityLabel={`Delete conversation with ${info.participantName}`}
+              style={{
+                width: "100%",
+                height: "100%",
+                justifyContent: "center",
+                alignItems: "center",
+              }}
+            >
+              <Trash2 size={18} color="#FFFFFF" />
+            </Pressable>
+          </Animated.View>
+        </View>
+      </GestureDetector>
   </Animated.View>
   );
 });
@@ -507,15 +608,17 @@ export default function MessagesScreen() {
     }
   }, [navigatingId]);
 
-  const closeAllSwipeables = useCallback(() => {
-    swipeableRefs.current.forEach((ref) => ref?.close());
+  const closeAllSwipeables = useCallback((immediate = false) => {
+    swipeableRefs.current.forEach((ref) => ref?.close(immediate));
   }, []);
 
   const handleCancelDelete = useCallback(() => {
+    if (deleteTargetId) {
+      swipeableRefs.current.get(deleteTargetId)?.close(false);
+    }
     setDeleteTargetId(null);
     setDeleteTargetName("");
-    closeAllSwipeables();
-  }, [closeAllSwipeables]);
+  }, [deleteTargetId]);
 
   const loadConversations = useCallback(async (_silent = false) => {
     if (!accessToken) return;
@@ -613,6 +716,8 @@ export default function MessagesScreen() {
       openedConvIdRef.current = null;
 
       if (fromConv) {
+        // Reset any slid-open swipe gestures cleanly when returning from a conversation
+        closeAllSwipeables(true);
         // Returned from conversation panel mode!
         // Check if memory cache for the opened chat has a newer message (e.g. sent by user)
         if (openedId && user?.id) {
@@ -676,6 +781,7 @@ export default function MessagesScreen() {
           setConversations(pendingSortedConvsRef.current);
           pendingSortedConvsRef.current = null;
         }
+        closeAllSwipeables(true);
         void loadConversations(true);
         void refreshOnlineUsers();
 
@@ -683,7 +789,7 @@ export default function MessagesScreen() {
           isScreenFocusedRef.current = false;
         };
       }
-    }, [loadConversations, refreshOnlineUsers, user?.id])
+    }, [loadConversations, refreshOnlineUsers, user?.id, closeAllSwipeables])
   );
 
   // Real-time update on socket message
@@ -820,9 +926,9 @@ export default function MessagesScreen() {
 
   const handleHide = useCallback(
     async (id: string) => {
+      swipeableRefs.current.get(id)?.close();
       setDeleteTargetId(null);
       setDeleteTargetName("");
-      closeAllSwipeables();
       // Optimistic remove from local list
       setConversations((prev) => prev.filter((c) => c.id !== id));
       if (accessToken) {
@@ -830,7 +936,7 @@ export default function MessagesScreen() {
         hideConversation(id, accessToken).catch(() => {});
       }
     },
-    [accessToken, closeAllSwipeables]
+    [accessToken]
   );
 
   const filteredConversations = useMemo(() => conversations.filter((conv: any) => {
@@ -866,6 +972,7 @@ export default function MessagesScreen() {
       setNavigatingId(item.id);
       wasInConversationRef.current = true;
       openedConvIdRef.current = item.id;
+      closeAllSwipeables(true);
 
       // Prime chat cache with whatever messages this conversation already has
       if (item.messages && item.messages.length > 0) {
@@ -886,7 +993,7 @@ export default function MessagesScreen() {
         },
       });
     },
-    [user?.id]
+    [user?.id, closeAllSwipeables]
   );
 
   // ── Memoized FlatList renderItem ──────────────────────────────────────
@@ -1119,7 +1226,7 @@ export default function MessagesScreen() {
         contentContainerStyle={
           paginatedConversations.length === 0
             ? { flex: 1 }
-            : { paddingBottom: 20 }
+            : { flexGrow: 1, paddingBottom: 20 }
         }
         onEndReached={handleLoadMore}
         onEndReachedThreshold={0.3}
@@ -1128,6 +1235,15 @@ export default function MessagesScreen() {
         windowSize={7}
         removeClippedSubviews={false}
         renderItem={renderConversationItem}
+        ListFooterComponent={
+          paginatedConversations.length > 0 ? (
+            <Pressable
+              onPress={() => closeAllSwipeables(false)}
+              style={{ flex: 1, minHeight: 160 }}
+            />
+          ) : null
+        }
+        ListFooterComponentStyle={{ flexGrow: 1 }}
 
         ListEmptyComponent={
           <EmptyState
